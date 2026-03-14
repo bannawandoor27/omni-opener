@@ -10,7 +10,10 @@
       "title": "Draw.io Viewer",
       "h1": "Open & View .drawio Files Online",
       "meta_description": "View and explore Draw.io diagrams directly in your browser. No software needed — drag, drop, and view your .drawio files instantly.",
-      "formats": [".drawio", ".xml"],
+      "formats": [
+        ".drawio",
+        ".xml"
+      ],
       "category": "diagrams",
       "icon": "📐",
       "script_url": "/tools/drawio-viewer.js"
@@ -20,10 +23,38 @@
       "title": "Markdown to PDF",
       "h1": "Convert Markdown to PDF Online",
       "meta_description": "Convert Markdown files to beautifully formatted PDFs in your browser. Free, private, no upload required.",
-      "formats": [".md", ".markdown"],
+      "formats": [
+        ".md",
+        ".markdown"
+      ],
       "category": "documents",
       "icon": "📄",
       "script_url": "/tools/md-to-pdf.js"
+    },
+    {
+      "slug": "csv-opener",
+      "title": "CSV Opener",
+      "h1": "Open & View .csv Files Online",
+      "meta_description": "View and work with .csv and .tsv files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        "csv",
+        "tsv"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/csv-opener.js"
+    },
+    {
+      "slug": "json-opener",
+      "title": "JSON Opener",
+      "h1": "Open & View .json Files Online",
+      "meta_description": "View and work with .json files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".json"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/json-opener.js"
     }
   ]
 }

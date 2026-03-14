@@ -1,1 +1,1 @@
-<!-- Drop instructions here. The agentic loop reads this on every iteration and acts on it, then clears. -->
+<!-- Drop instructions here. The loop will read and clear this file. -->
