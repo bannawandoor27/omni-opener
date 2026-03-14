@@ -1,0 +1,5 @@
+{
+  "project": "OmniOpener",
+  "version": "1.0.0",
+  "features": ["json", "csv", "xml", "yaml"]
+}

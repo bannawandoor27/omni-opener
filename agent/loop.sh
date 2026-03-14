@@ -154,7 +154,7 @@ update_config() {
       "category": "general",
       "icon": "📁",
       "script_url": $script
-    }]' "$CONFIG" > "$tmp" && mv "$tmp" "$CONFIG"
+    }]' "$CONFIG" > "$tmp" && cat "$tmp" > "$CONFIG" && rm "$tmp"
 
   ok "Config updated for $slug"
 }
