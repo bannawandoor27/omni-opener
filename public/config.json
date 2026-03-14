@@ -55,6 +55,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/json-opener.js"
+    },
+    {
+      "slug": "xml-opener",
+      "title": "XML Opener",
+      "h1": "Open & View .xml Files Online",
+      "meta_description": "View and work with .xml files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".xml"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/xml-opener.js"
     }
   ]
 }
