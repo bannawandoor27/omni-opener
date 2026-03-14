@@ -1,0 +1,19 @@
+You are building a client-side JavaScript tool for OmniOpener (omniopener.dev).
+
+Create a new file at {{SCRIPT_PATH}} that implements a browser-based {{FORMAT}} file viewer/converter.
+
+STRICT REQUIREMENTS:
+1. Wrap ALL code in an IIFE: (function(){ ... })();
+2. Define window.initTool = function(toolConfig, mountEl) { ... } inside the IIFE
+3. The function receives toolConfig (metadata object) and mountEl (DOM element to render into)
+4. Include a drag-and-drop file zone + click-to-browse input
+5. Check for window.__droppedFile and process it if present (from global drop)
+6. Load any CDN dependencies dynamically using <script> injection (do NOT assume they're pre-loaded)
+7. Parse and render the {{FORMAT}} file content in the browser
+8. Include error handling for corrupt or invalid files
+9. Add a "copy to clipboard" button and/or "download converted" button where applicable
+10. Style using these Tailwind classes that are available: surface-50/100/200/300/400/500/600/700/800/900, brand-50/100/200/300/400/500/600/700/800/900
+11. Add an info section at the bottom explaining what the tool does and that it's 100% client-side
+12. Output ONLY the JavaScript file, no explanations
+
+Reference the existing tools in {{ROOT}}/public/tools/ for style and structure patterns.

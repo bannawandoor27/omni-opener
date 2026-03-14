@@ -1,0 +1,29 @@
+{
+  "site": {
+    "name": "OmniOpener",
+    "tagline": "Open any file, right in your browser.",
+    "description": "200+ browser-based file tools. No uploads, no installs. Everything runs client-side."
+  },
+  "tools": [
+    {
+      "slug": "drawio-viewer",
+      "title": "Draw.io Viewer",
+      "h1": "Open & View .drawio Files Online",
+      "meta_description": "View and explore Draw.io diagrams directly in your browser. No software needed — drag, drop, and view your .drawio files instantly.",
+      "formats": [".drawio", ".xml"],
+      "category": "diagrams",
+      "icon": "📐",
+      "script_url": "/tools/drawio-viewer.js"
+    },
+    {
+      "slug": "md-to-pdf",
+      "title": "Markdown to PDF",
+      "h1": "Convert Markdown to PDF Online",
+      "meta_description": "Convert Markdown files to beautifully formatted PDFs in your browser. Free, private, no upload required.",
+      "formats": [".md", ".markdown"],
+      "category": "documents",
+      "icon": "📄",
+      "script_url": "/tools/md-to-pdf.js"
+    }
+  ]
+}

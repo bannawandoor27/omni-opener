@@ -1,0 +1,24 @@
+name: Deploy to VM
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            cd ${{ vars.VM_PATH || '/opt/omniopener' }}
+            git pull origin main
+            # Copy nginx config if changed
+            sudo cp nginx/omniopener.conf /etc/nginx/sites-available/omniopener.conf 2>/dev/null || true
+            sudo ln -sf /etc/nginx/sites-available/omniopener.conf /etc/nginx/sites-enabled/ 2>/dev/null || true
+            sudo nginx -t && sudo nginx -s reload || true
+            echo "✅ Deployed at $(date)"

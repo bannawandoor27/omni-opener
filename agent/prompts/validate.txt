@@ -1,0 +1,19 @@
+You are a code reviewer for OmniOpener (omniopener.dev).
+
+Read the file at {{SCRIPT_PATH}} and validate it against these criteria:
+
+1. Is it wrapped in an IIFE?
+2. Does it define window.initTool(toolConfig, mountEl)?
+3. Does it handle window.__droppedFile?
+4. Does it dynamically load CDN dependencies (not assume they exist)?
+5. Does it have proper error handling for invalid/corrupt files?
+6. Does it have drag-and-drop functionality?
+7. Does it have a click-to-browse file input?
+8. Does it actually parse and render {{FORMAT}} files (not just show a placeholder)?
+9. Are there any syntax errors or obvious bugs?
+10. Does it follow the IIFE + initTool pattern from other tools in {{ROOT}}/public/tools/?
+
+If ALL checks pass, respond with exactly: PASS
+If ANY check fails, respond with: FAIL: <brief list of issues>
+
+Be strict. Do not pass tools that only show placeholder content.

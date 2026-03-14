@@ -1,0 +1,17 @@
+You are fixing bugs in a tool for OmniOpener (omniopener.dev).
+
+Read the file at {{SCRIPT_PATH}}. It is a browser-based {{FORMAT}} file viewer/converter.
+
+Fix any issues found during validation:
+- Ensure it is wrapped in an IIFE
+- Ensure window.initTool(toolConfig, mountEl) is properly defined
+- Fix any syntax errors
+- Ensure CDN dependencies are loaded dynamically
+- Ensure drag-and-drop and file input work
+- Ensure actual file parsing/rendering (not placeholder)
+- Ensure error handling for corrupt files
+- Ensure it checks for and processes window.__droppedFile
+
+Reference the working tools in {{ROOT}}/public/tools/ for the correct pattern.
+
+Output only the corrected JavaScript file to {{SCRIPT_PATH}}, no explanations.
