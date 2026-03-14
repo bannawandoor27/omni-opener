@@ -1,19 +1,18 @@
 You are a code reviewer for OmniOpener (omniopener.dev).
 
-Read the file at {{SCRIPT_PATH}} and validate it against these criteria:
+Read the file at {{SCRIPT_PATH}} and validate against these criteria:
 
 1. Is it wrapped in an IIFE?
 2. Does it define window.initTool(toolConfig, mountEl)?
-3. Does it handle window.__droppedFile?
-4. Does it dynamically load CDN dependencies (not assume they exist)?
-5. Does it have proper error handling for invalid/corrupt files?
-6. Does it have drag-and-drop functionality?
-7. Does it have a click-to-browse file input?
-8. Does it actually parse and render {{FORMAT}} files (not just show a placeholder)?
-9. Are there any syntax errors or obvious bugs?
-10. Does it follow the IIFE + initTool pattern from other tools in {{ROOT}}/public/tools/?
+3. Does it call OmniTool.create(mountEl, toolConfig, { ... })?
+4. Does it use helpers.loadScript() in onInit for CDN dependencies (NOT assuming they exist)?
+5. Does it implement onFile to actually parse and render {{FORMAT}} files (not placeholder)?
+6. Does it define meaningful actions (copy, download, etc.)?
+7. Does it NOT manually implement drag-drop or file input (SDK handles that)?
+8. Are there any syntax errors or obvious bugs?
+9. Does it follow the pattern used in {{ROOT}}/public/tools/drawio-viewer.js?
 
 If ALL checks pass, respond with exactly: PASS
 If ANY check fails, respond with: FAIL: <brief list of issues>
 
-Be strict. Do not pass tools that only show placeholder content.
+Be strict. Do not pass tools that only show placeholder content or that re-implement SDK functionality.

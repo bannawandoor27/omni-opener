@@ -100,24 +100,40 @@
     const oldScript = document.getElementById('tool-script');
     if (oldScript) oldScript.remove();
 
-    // Inject tool script
-    const script = document.createElement('script');
-    script.id = 'tool-script';
-    script.src = tool.script_url;
-    script.onload = () => {
-      if (typeof window.initTool === 'function') {
-        window.initTool(tool, document.getElementById('tool-mount'));
-      }
+    // Load SDK first, then tool script
+    const loadToolScript = () => {
+      const script = document.createElement('script');
+      script.id = 'tool-script';
+      script.src = tool.script_url;
+      script.onload = () => {
+        if (typeof window.initTool === 'function') {
+          window.initTool(tool, document.getElementById('tool-mount'));
+        }
+      };
+      script.onerror = () => {
+        document.getElementById('tool-mount').innerHTML = `
+          <div class="text-center py-12">
+            <p class="text-red-500 font-medium">Failed to load tool script</p>
+            <p class="text-sm text-surface-400 mt-1">${tool.script_url}</p>
+          </div>
+        `;
+      };
+      document.body.appendChild(script);
     };
-    script.onerror = () => {
-      document.getElementById('tool-mount').innerHTML = `
-        <div class="text-center py-12">
-          <p class="text-red-500 font-medium">Failed to load tool script</p>
-          <p class="text-sm text-surface-400 mt-1">${tool.script_url}</p>
-        </div>
-      `;
-    };
-    document.body.appendChild(script);
+
+    // Ensure OmniTool SDK is loaded
+    if (typeof window.OmniTool === 'undefined') {
+      const sdk = document.createElement('script');
+      sdk.src = '/tool-sdk.js';
+      sdk.onload = loadToolScript;
+      sdk.onerror = () => {
+        console.error('[OmniOpener] Failed to load tool-sdk.js');
+        loadToolScript(); // Try anyway, tool might not need SDK
+      };
+      document.body.appendChild(sdk);
+    } else {
+      loadToolScript();
+    }
   }
 
   function showNotFound(slug) {

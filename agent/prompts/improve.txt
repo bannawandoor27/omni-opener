@@ -1,17 +1,17 @@
 You are fixing bugs in a tool for OmniOpener (omniopener.dev).
 
-Read the file at {{SCRIPT_PATH}}. It is a browser-based {{FORMAT}} file viewer/converter.
+Read the file at {{SCRIPT_PATH}}. It should be a browser-based {{FORMAT}} file viewer/converter.
 
-Fix any issues found during validation:
-- Ensure it is wrapped in an IIFE
-- Ensure window.initTool(toolConfig, mountEl) is properly defined
-- Fix any syntax errors
-- Ensure CDN dependencies are loaded dynamically
-- Ensure drag-and-drop and file input work
-- Ensure actual file parsing/rendering (not placeholder)
-- Ensure error handling for corrupt files
-- Ensure it checks for and processes window.__droppedFile
+The tool MUST use the OmniTool SDK. Fix any issues:
+- Must be wrapped in an IIFE
+- Must define window.initTool(toolConfig, mountEl)
+- Must call OmniTool.create(mountEl, toolConfig, { ... })
+- Must NOT manually implement drag-drop, file input, or error handling (SDK does this)
+- Must load CDN dependencies in onInit via helpers.loadScript()
+- Must actually parse/render files in onFile (not placeholder)
+- Must include useful actions (copy, download, etc.)
 
-Reference the working tools in {{ROOT}}/public/tools/ for the correct pattern.
+Read {{ROOT}}/public/tool-sdk.js for the full SDK API.
+Read {{ROOT}}/public/tools/drawio-viewer.js for the correct pattern.
 
 Output only the corrected JavaScript file to {{SCRIPT_PATH}}, no explanations.
