@@ -67,6 +67,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/xml-opener.js"
+    },
+    {
+      "slug": "yaml-opener",
+      "title": "YAML Opener",
+      "h1": "Open & View .yaml Files Online",
+      "meta_description": "View and work with .yaml files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".yaml"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/yaml-opener.js"
     }
   ]
 }
