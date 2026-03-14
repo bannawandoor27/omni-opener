@@ -156,6 +156,20 @@ improve_tool() {
   call_gemini "$improve_prompt" > /dev/null
 }
 
+# ── Perfect Tool ──────────────────────────────────────────
+perfect_tool() {
+  local format="$1"
+  local slug="${format}-opener"
+  local script_path="$TOOLS_DIR/${slug}.js"
+
+  log "✨ Perfecting: $slug (Deep Iteration)"
+
+  local perfect_prompt
+  perfect_prompt=$(cat "$PROMPTS_DIR/perfect.txt" | sed "s/{{FORMAT}}/$format/g" | sed "s|{{SCRIPT_PATH}}|$script_path|g" | sed "s|{{ROOT}}|$ROOT|g")
+
+  call_gemini "$perfect_prompt" > /dev/null
+}
+
 # ── Update Config (using jq, NOT Gemini) ──────────────────
 update_config() {
   local format="$1"
@@ -188,7 +202,7 @@ update_config() {
       "category": "general",
       "icon": "📁",
       "script_url": $script
-    }]' "$CONFIG" > "$tmp" && cat "$tmp" > "$CONFIG" && rm "$tmp"
+    }]' "$CONFIG" > "$tmp" && mv "$tmp" "$CONFIG" && chmod 644 "$CONFIG"
 
   ok "Config updated for $slug"
 }
@@ -217,6 +231,18 @@ process_format() {
 
   while [[ $retries -lt $MAX_RETRIES ]]; do
     if validate_tool "$format"; then
+      
+      # Deep Iteration Phase (run twice for feedback loop)
+      perfect_tool "$format"
+      perfect_tool "$format"
+      
+      # Final validation before deploying to ensure perfection didnt break SDK rules
+      if ! validate_tool "$format"; then
+         warn "Perfection phase broke the tool SDK rules! Reverting to improvement loop..."
+         improve_tool "$format"
+         continue
+      fi
+
       update_config "$format"
       mark_built "$format"
       commit_and_push "$format"

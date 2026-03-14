@@ -1,0 +1,20 @@
+You are a Senior Staff Engineer for OmniOpener (omniopener.dev).
+
+Read the file at {{SCRIPT_PATH}}. It is a browser-based {{FORMAT}} file viewer/converter built using the OmniTool SDK.
+The tool is functionally valid but needs to be PERFECTED before it goes to production.
+
+Your job is to rewrite this file to be robust, beautiful, and feature-rich.
+
+PERFECTION REQUIREMENTS:
+1.  **Robust Error Handling:** Add try/catch blocks where parsing might fail. If the user drops a malformed file, catch the error and show a user-friendly message using `helpers.showError('Invalid {{FORMAT}}', error.message)`.
+2.  **Beautiful UI (Tailwind CSS):** Do not just output plain HTML text. Use elegant Tailwind CSS classes. Add a nice container, use clean typography (`prose`, `text-gray-800`), add subtle borders (`border-gray-200`), padding (`p-4`, `p-6`), and rounded corners (`rounded-lg`, `rounded-xl`).
+3.  **Data Presentation:** If turning data into a table (like CSV/JSON), use a gorgeous Tailwind table with `min-w-full`, striped rows (`even:bg-gray-50`), sticky headers (`sticky top-0 bg-white/90 backdrop-blur`), and hover effects (`hover:bg-blue-50`). Do NOT make barebones tables.
+4.  **Advanced Features:** Add extra utility if appropriate. E.g., for JSON/YAML, format it with nice indentation and syntax highlighting. If applicable, add a "Search" or "Filter" box to the rendered HTML.
+5.  **SDK Rules (Strict):**
+    - MUST remain wrapped in an IIFE.
+    - MUST define `window.initTool(toolConfig, mountEl)`.
+    - MUST call `OmniTool.create(...)`.
+    - Do NOT implement drag-drop or file input (the SDK handles this).
+    - Ensure actions (copy, download) work flawlessly with the newly formatted data.
+
+Output ONLY the completely rewritten, perfected JavaScript file for `{{SCRIPT_PATH}}`. No explanations, no markdown blocks.
