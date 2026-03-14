@@ -49,6 +49,40 @@ mark_failed() {
     '.failed += [{"format": $f, "reason": $r}]' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
 }
 
+# ── Resilient Gemini Execution ────────────────────────────
+call_gemini() {
+  local prompt="$1"
+  local max_api_retries=5
+  local attempt=1
+  local backoff=60
+  local result
+
+  while [[ $attempt -le $max_api_retries ]]; do
+    log "🤖 Calling Gemini (Attempt $attempt/$max_api_retries)..."
+    result=$(gemini -p "$prompt" --yolo 2>&1 || true)
+    
+    # Check for throttling (429), quota limits, or other transient errors
+    if echo "$result" | grep -qiE "(429 too many requests|quota exceeded|ratelimit|rate limit|bad file descriptor|unexpected critical error|error: internal)"; then
+      warn "⚠️  API Error or Throttling detected! (Attempt $attempt/$max_api_retries)"
+      # print the error lines nicely for logging
+      echo "$result" | tail -n 3 | sed 's/^/   | /'
+      if [[ $attempt -eq $max_api_retries ]]; then break; fi
+      warn "⏳ Sleeping for ${backoff}s before retrying..."
+      sleep $backoff
+      attempt=$((attempt + 1))
+      backoff=$((backoff * 2))
+    else
+      # Output result for caller
+      echo "$result"
+      return 0
+    fi
+  done
+  
+  err "❌ Gemini API failed completely after $max_api_retries attempts."
+  echo "$result"
+  return 1
+}
+
 # ── Instructions Check ───────────────────────────────────
 check_instructions() {
   if [[ -f "$INSTRUCTIONS" ]] && [[ -s "$INSTRUCTIONS" ]]; then
@@ -56,7 +90,7 @@ check_instructions() {
     content=$(cat "$INSTRUCTIONS")
     if [[ -n "${content// /}" ]]; then
       log "📋 Found human instructions. Passing to Gemini..."
-      gemini -p "You are working on OmniOpener, a client-side file utility SPA. The project root is at $ROOT. Here are instructions from the developer: $content. Execute these instructions now. Make any necessary changes to files." --yolo 2>&1 || true
+      call_gemini "You are working on OmniOpener, a client-side file utility SPA. The project root is at $ROOT. Here are instructions from the developer: $content. Execute these instructions now. Make any necessary changes to files." > /dev/null
       # Clear instructions after acting on them
       echo "<!-- Drop instructions here. The loop will read and clear this file. -->" > "$INSTRUCTIONS"
       ok "Instructions processed and cleared."
@@ -75,7 +109,7 @@ generate_tool() {
   local generate_prompt
   generate_prompt=$(cat "$PROMPTS_DIR/generate.txt" | sed "s/{{FORMAT}}/$format/g" | sed "s|{{SCRIPT_PATH}}|$script_path|g" | sed "s|{{ROOT}}|$ROOT|g")
 
-  gemini -p "$generate_prompt" --yolo 2>&1
+  call_gemini "$generate_prompt" > /dev/null
 
   if [[ ! -f "$script_path" ]]; then
     err "Script file not created: $script_path"
@@ -97,7 +131,7 @@ validate_tool() {
   validate_prompt=$(cat "$PROMPTS_DIR/validate.txt" | sed "s/{{FORMAT}}/$format/g" | sed "s|{{SCRIPT_PATH}}|$script_path|g" | sed "s|{{ROOT}}|$ROOT|g")
 
   local result
-  result=$(gemini -p "$validate_prompt" --yolo 2>&1)
+  result=$(call_gemini "$validate_prompt")
 
   if echo "$result" | grep -qi "PASS"; then
     ok "Validation passed for $slug"
@@ -119,7 +153,7 @@ improve_tool() {
   local improve_prompt
   improve_prompt=$(cat "$PROMPTS_DIR/improve.txt" | sed "s/{{FORMAT}}/$format/g" | sed "s|{{SCRIPT_PATH}}|$script_path|g" | sed "s|{{ROOT}}|$ROOT|g")
 
-  gemini -p "$improve_prompt" --yolo 2>&1
+  call_gemini "$improve_prompt" > /dev/null
 }
 
 # ── Update Config (using jq, NOT Gemini) ──────────────────
