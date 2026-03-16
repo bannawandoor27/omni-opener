@@ -343,6 +343,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/vcf-opener.js"
+    },
+    {
+      "slug": "eml-opener",
+      "title": "EML Opener",
+      "h1": "Open & View .eml Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .eml files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".eml"
+      ],
+      "category": "email",
+      "icon": "📧",
+      "script_url": "/tools/eml-opener.js"
     }
   ]
 }
