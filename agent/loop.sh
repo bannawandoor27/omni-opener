@@ -45,6 +45,15 @@ is_failed() {
   jq -e --arg f "$1" '[.failed[].format] | index($f)' "$STATE" > /dev/null 2>&1
 }
 
+is_reperfected() {
+  jq -e --arg f "$1" '.reperfected // [] | index($f)' "$STATE" > /dev/null 2>&1
+}
+
+mark_reperfected() {
+  local tmp; tmp=$(mktemp)
+  jq --arg f "$1" '.reperfected = ((.reperfected // []) + [$f])' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
+}
+
 mark_built() {
   local tmp=$(mktemp)
   jq --arg f "$1" --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -58,37 +67,49 @@ mark_failed() {
 }
 
 # ── Resilient Gemini Execution ────────────────────────────
+# Distinguishes two failure modes:
+#   - Per-minute rate limit (429): exponential backoff, max 5 retries
+#   - Daily quota exhausted:       sleep 1 hour and retry indefinitely
+#                                  (quota resets daily — never mark as failed)
 call_gemini() {
   local prompt="$1"
-  local max_api_retries=5
   local attempt=1
   local backoff=60
   local result
 
-  while [[ $attempt -le $max_api_retries ]]; do
-    log "🤖 Calling Gemini (Attempt $attempt/$max_api_retries)..."
+  while true; do
+    log "🤖 Calling Gemini (Attempt $attempt)..."
     result=$(gemini -p "$prompt" --yolo 2>&1 || true)
-    
-    # Check for throttling (429), quota limits, or other transient errors
-    if echo "$result" | grep -qiE "(429 too many requests|quota exceeded|ratelimit|rate limit|bad file descriptor|unexpected critical error|error: internal)"; then
-      warn "⚠️  API Error or Throttling detected! (Attempt $attempt/$max_api_retries)"
-      # print the error lines nicely for logging
+
+    # Daily quota exhausted — sleep 1h and retry indefinitely
+    if echo "$result" | grep -qiE "(quota exceeded|resource.?exhausted|daily.?limit|user.?rate.?limit|you have exceeded|RESOURCE_EXHAUSTED)"; then
+      warn "🛑 Daily quota exhausted! Sleeping 1 hour before retrying..."
       echo "$result" | tail -n 3 | sed 's/^/   | /'
-      if [[ $attempt -eq $max_api_retries ]]; then break; fi
-      warn "⏳ Sleeping for ${backoff}s before retrying..."
+      sleep 3600
+      attempt=$((attempt + 1))
+      continue
+    fi
+
+    # Per-minute rate limit or transient error — exponential backoff, max 5 tries
+    if echo "$result" | grep -qiE "(429|too many requests|rate.?limit|bad file descriptor|unexpected critical error|error: internal|UNAVAILABLE|overloaded)"; then
+      warn "⚠️  Rate limit / transient error (Attempt $attempt)"
+      echo "$result" | tail -n 3 | sed 's/^/   | /'
+      if [[ $attempt -ge 5 ]]; then
+        err "❌ Gemini transient errors persist after 5 attempts."
+        echo "$result"
+        return 1
+      fi
+      warn "⏳ Sleeping ${backoff}s before retrying..."
       sleep $backoff
       attempt=$((attempt + 1))
       backoff=$((backoff * 2))
-    else
-      # Output result for caller
-      echo "$result"
-      return 0
+      continue
     fi
+
+    # Success
+    echo "$result"
+    return 0
   done
-  
-  err "❌ Gemini API failed completely after $max_api_retries attempts."
-  echo "$result"
-  return 1
 }
 
 # ── Instructions Check ───────────────────────────────────
@@ -389,7 +410,35 @@ main() {
     done < "$QUEUE"
 
     if [[ -z "$next_format" ]]; then
-      ok "🎉 All formats in queue have been processed!"
+      # Queue exhausted — re-perfect any built tools not yet through the new prompts
+      local reperfect_format=""
+      while IFS=, read -r format _rest; do
+        format=$(echo "$format" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+        [[ -z "$format" || "$format" == "format" ]] && continue
+        if is_built "$format" && ! is_reperfected "$format"; then
+          reperfect_format="$format"
+          break
+        fi
+      done < "$QUEUE"
+
+      if [[ -n "$reperfect_format" ]]; then
+        log "🔁 Re-perfecting existing tool: $reperfect_format"
+        perfect_tool "$reperfect_format"
+        if validate_tool "$reperfect_format"; then
+          mark_reperfected "$reperfect_format"
+          commit_and_push "$reperfect_format"
+          ok "✅ Re-perfected and deployed: $reperfect_format"
+        else
+          warn "Re-perfection broke $reperfect_format — running improve and marking done anyway"
+          improve_tool "$reperfect_format"
+          mark_reperfected "$reperfect_format"
+          commit_and_push "$reperfect_format"
+        fi
+        sleep $SLEEP_BETWEEN
+        continue
+      fi
+
+      ok "🎉 All formats built and re-perfected!"
       log "Sleeping 1 hour before re-checking queue..."
       sleep 3600
       continue
