@@ -379,6 +379,18 @@
       "category": "security",
       "icon": "🔐",
       "script_url": "/tools/pem-opener.js"
+    },
+    {
+      "slug": "crt-opener",
+      "title": "CRT Opener",
+      "h1": "Open & View .crt Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .crt files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".crt"
+      ],
+      "category": "security",
+      "icon": "🔐",
+      "script_url": "/tools/crt-opener.js"
     }
   ]
 }
