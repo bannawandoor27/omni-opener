@@ -79,6 +79,258 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/yaml-opener.js"
+    },
+    {
+      "slug": "svg-opener",
+      "title": "SVG Opener",
+      "h1": "Open & View .svg Files Online",
+      "meta_description": "View and work with .svg files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".svg"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/svg-opener.js"
+    },
+    {
+      "slug": "pdf-opener",
+      "title": "PDF Opener",
+      "h1": "Open & View .pdf Files Online",
+      "meta_description": "View and work with .pdf files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".pdf"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/pdf-opener.js"
+    },
+    {
+      "slug": "docx-opener",
+      "title": "DOCX Opener",
+      "h1": "Open & View .docx Files Online",
+      "meta_description": "View and work with .docx files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".docx"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/docx-opener.js"
+    },
+    {
+      "slug": "xlsx-opener",
+      "title": "XLSX Opener",
+      "h1": "Open & View .xlsx Files Online",
+      "meta_description": "View and work with .xlsx files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".xlsx"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/xlsx-opener.js"
+    },
+    {
+      "slug": "pptx-opener",
+      "title": "PPTX Opener",
+      "h1": "Open & View .pptx Files Online",
+      "meta_description": "View and work with .pptx files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".pptx"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/pptx-opener.js"
+    },
+    {
+      "slug": "rtf-opener",
+      "title": "RTF Opener",
+      "h1": "Open & View .rtf Files Online",
+      "meta_description": "View and work with .rtf files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".rtf"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/rtf-opener.js"
+    },
+    {
+      "slug": "txt-opener",
+      "title": "TXT Opener",
+      "h1": "Open & View .txt Files Online",
+      "meta_description": "View and work with .txt files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".txt"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/txt-opener.js"
+    },
+    {
+      "slug": "html-opener",
+      "title": "HTML Opener",
+      "h1": "Open & View .html Files Online",
+      "meta_description": "View and work with .html files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".html"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/html-opener.js"
+    },
+    {
+      "slug": "log-opener",
+      "title": "LOG Opener",
+      "h1": "Open & View .log Files Online",
+      "meta_description": "View and work with .log files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".log"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/log-opener.js"
+    },
+    {
+      "slug": "ini-opener",
+      "title": "INI Opener",
+      "h1": "Open & View .ini Files Online",
+      "meta_description": "View and work with .ini files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".ini"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/ini-opener.js"
+    },
+    {
+      "slug": "sql-opener",
+      "title": "SQL Opener",
+      "h1": "Open & View .sql Files Online",
+      "meta_description": "View and work with .sql files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".sql"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/sql-opener.js"
+    },
+    {
+      "slug": "odt-opener",
+      "title": "ODT Opener",
+      "h1": "Open & View .odt Files Online",
+      "meta_description": "View and work with .odt files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".odt"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/odt-opener.js"
+    },
+    {
+      "slug": "ods-opener",
+      "title": "ODS Opener",
+      "h1": "Open & View .ods Files Online",
+      "meta_description": "View and work with .ods files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".ods"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/ods-opener.js"
+    },
+    {
+      "slug": "avro-opener",
+      "title": "AVRO Opener",
+      "h1": "Open & View .avro Files Online",
+      "meta_description": "View and work with .avro files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".avro"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/avro-opener.js"
+    },
+    {
+      "slug": "parquet-opener",
+      "title": "PARQUET Opener",
+      "h1": "Open & View .parquet Files Online",
+      "meta_description": "View and work with .parquet files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".parquet"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/parquet-opener.js"
+    },
+    {
+      "slug": "proto-opener",
+      "title": "PROTO Opener",
+      "h1": "Open & View .proto Files Online",
+      "meta_description": "View and work with .proto files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".proto"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/proto-opener.js"
+    },
+    {
+      "slug": "geojson-opener",
+      "title": "GEOJSON Opener",
+      "h1": "Open & View .geojson Files Online",
+      "meta_description": "View and work with .geojson files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".geojson"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/geojson-opener.js"
+    },
+    {
+      "slug": "kml-opener",
+      "title": "KML Opener",
+      "h1": "Open & View .kml Files Online",
+      "meta_description": "View and work with .kml files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".kml"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/kml-opener.js"
+    },
+    {
+      "slug": "gpx-opener",
+      "title": "GPX Opener",
+      "h1": "Open & View .gpx Files Online",
+      "meta_description": "View and work with .gpx files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".gpx"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/gpx-opener.js"
+    },
+    {
+      "slug": "graphql-opener",
+      "title": "GRAPHQL Opener",
+      "h1": "Open & View .graphql Files Online",
+      "meta_description": "View and work with .graphql files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".graphql"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/graphql-opener.js"
+    },
+    {
+      "slug": "ics-opener",
+      "title": "ICS Opener",
+      "h1": "Open & View .ics Files Online",
+      "meta_description": "View and work with .ics files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".ics"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/ics-opener.js"
     }
   ]
 }
