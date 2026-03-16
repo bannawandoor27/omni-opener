@@ -440,6 +440,18 @@
       "category": "3d",
       "icon": "🧊",
       "script_url": "/tools/gltf-opener.js"
+    },
+    {
+      "slug": "obj-opener",
+      "title": "OBJ Opener",
+      "h1": "Open & View .obj Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .obj files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".obj"
+      ],
+      "category": "3d",
+      "icon": "🧊",
+      "script_url": "/tools/obj-opener.js"
     }
   ]
 }
