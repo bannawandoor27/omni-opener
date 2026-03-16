@@ -37,8 +37,8 @@
       "h1": "Open & View .csv Files Online",
       "meta_description": "View and work with .csv and .tsv files directly in your browser. Free, private, no upload required.",
       "formats": [
-        "csv",
-        "tsv"
+        ".csv",
+        ".tsv"
       ],
       "category": "general",
       "icon": "📁",
@@ -415,6 +415,31 @@
       "category": "system",
       "icon": "⚙️",
       "script_url": "/tools/wasm-opener.js"
+    },
+    {
+      "slug": "glb-opener",
+      "title": "GLB Viewer",
+      "h1": "Open & View .glb 3D Models Online",
+      "meta_description": "View and explore GLB and GLTF 3D models directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".glb",
+        ".gltf"
+      ],
+      "category": "design",
+      "icon": "📦",
+      "script_url": "/tools/glb-opener.js"
+    },
+    {
+      "slug": "gltf-opener",
+      "title": "GLTF Opener",
+      "h1": "Open & View .gltf Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .gltf files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".gltf"
+      ],
+      "category": "3d",
+      "icon": "🧊",
+      "script_url": "/tools/gltf-opener.js"
     }
   ]
 }
