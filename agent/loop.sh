@@ -41,6 +41,10 @@ is_built() {
   jq -e --arg f "$1" '.built | index($f)' "$STATE" > /dev/null 2>&1
 }
 
+is_failed() {
+  jq -e --arg f "$1" '[.failed[].format] | index($f)' "$STATE" > /dev/null 2>&1
+}
+
 mark_built() {
   local tmp=$(mktemp)
   jq --arg f "$1" --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -289,7 +293,7 @@ main() {
     while IFS=, read -r format _rest; do
       format=$(echo "$format" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
       [[ -z "$format" || "$format" == "format" ]] && continue  # skip header/empty
-      if ! is_built "$format"; then
+      if ! is_built "$format" && ! is_failed "$format"; then
         next_format="$format"
         break
       fi
