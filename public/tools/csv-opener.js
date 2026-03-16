@@ -1,7 +1,244 @@
-/* @license
- Papa Parse
- v5.5.3
- https://github.com/mholt/PapaParse
- License: MIT
-*/
-((e,t)=>{"function"==typeof define&&define.amd?define([],t):"object"==typeof module&&"undefined"!=typeof exports?module.exports=t():e.Papa=t()})(this,function r(){var n="undefined"!=typeof self?self:"undefined"!=typeof window?window:void 0!==n?n:{};var d,s=!n.document&&!!n.postMessage,a=n.IS_PAPA_WORKER||!1,o={},h=0,v={};function u(e){this._handle=null,this._finished=!1,this._completed=!1,this._halted=!1,this._input=null,this._baseIndex=0,this._partialLine="",this._rowCount=0,this._start=0,this._nextChunk=null,this.isFirstChunk=!1,this._completeResults={data:[],errors:[],meta:{}},function(e){var t=b(e);t.chunkSize=parseInt(t.chunkSize),e.step||e.chunk||(t.chunkSize=null);this._handle=new i(t),(this._handle.streamer=this)._config=t}.call(this,e),this.parseChunk=function(t,e){var i=parseInt(this._config.skipFirstNLines)||0;if(this.isFirstChunk&&0<i){let e=this._config.newline;e||(r=this._config.quoteChar||'"',e=this._handle.guessLineEndings(t,r)),t=[...t.split(e).slice(i)].join(e)}this.isFirstChunk&&U(this._config.beforeFirstChunk)&&void 0!==(r=this._config.beforeFirstChunk(t))&&(t=r),this.isFirstChunk=!1,this._halted=!1;var i=this._partialLine+t,r=(this._partialLine="",this._handle.parse(i,this._baseIndex,!this._finished));if(!this._handle.paused()&&!this._handle.aborted()){t=r.meta.cursor,i=(this._finished||(this._partialLine=i.substring(t-this._baseIndex),this._baseIndex=t),r&&r.data&&(this._rowCount+=r.data.length),this._finished||this._config.preview&&this._rowCount>=this._config.preview);if(a)n.postMessage({results:r,workerId:v.WORKER_ID,finished:i});else if(U(this._config.chunk)&&!e){if(this._config.chunk(r,this._handle),this._handle.paused()||this._handle.aborted())return void(this._halted=!0);this._completeResults=r=void 0}return this._config.step||this._config.chunk||(this._completeResults.data=this._completeResults.data.concat(r.data),this._completeResults.errors=this._completeResults.errors.concat(r.errors),this._completeResults.meta=r.meta),this._completed||!i||!U(this._config.complete)||r&&r.meta.aborted||(this._config.complete(this._completeResults,this._input),this._completed=!0),i||r&&r.meta.paused||this._nextChunk(),r}this._halted=!0}}function f(e){(e=e||{}).chunkSize||(e.chunkSize=v.RemoteChunkSize),u.call(this,e),this._nextChunk=s?function(){this._readChunk(),this._chunkLoaded()}:function(){this._readChunk()},this.stream=function(e){this._input=e,this._nextChunk()},this._readChunk=function(){if(this._finished)this._chunkLoaded();else{if(r=new XMLHttpRequest,this._config.withCredentials&&(r.withCredentials=this._config.withCredentials),s||(r.onload=y(this._chunkLoaded,this),r.onerror=y(this._chunkError,this)),r.open(this._config.downloadRequestBody?"POST":"GET",this._input,!s),this._config.downloadRequestHeaders){var e,t=this._config.downloadRequestHeaders;for(e in t)r.setRequestHeader(e,t[e])}var i;this._config.chunkSize&&(i=this._start+this._config.chunkSize-1,r.setRequestHeader("Range","bytes="+this._start+"-"+i);try{r.send(this._config.downloadRequestBody)}catch(e){this._chunkError(e.message)}s&&0===r.status&&this._chunkError()}},this._chunkLoaded=function(){4===r.readyState&&(r.status<200||400<=r.status?this._chunkError():(this._start+=this._config.chunkSize||r.responseText.length,this._finished=!this._config.chunkSize||this._start>=(e=>null!==(e=e.getResponseHeader("Content-Range"))?parseInt(e.substring(e.lastIndexOf("/")+1)):-1)(r),this.parseChunk(r.responseText)))},this._chunkError=function(e){e=r.statusText||e;this._sendError(new Error(e))}}function l(e){(e=e||{}).chunkSize||(e.chunkSize=v.LocalChunkSize),u.call(this,e);var i,r,n="undefined"!=typeof FileReader;this.stream=function(e){this._input=e,r=e.slice||e.webkitSlice||e.mozSlice,n?((i=new FileReader).onload=y(this._chunkLoaded,this),i.onerror=y(this._chunkError,this)):i=new FileReaderSync,this._nextChunk()},this._nextChunk=function(){this._finished||this._config.preview&&!(this._rowCount<this._config.preview)||this._readChunk()},this._readChunk=function(){var e=this._input,t=(this._config.chunkSize&&(t=Math.min(this._start+this._config.chunkSize,this._input.size),e=r.call(e,this._start,t)),i.readAsText(e,this._config.encoding));n||this._chunkLoaded({target:{result:t}})},this._chunkLoaded=function(e){this._start+=this._config.chunkSize,this._finished=!this._config.chunkSize||this._start>=this._input.size,this.parseChunk(e.target.result)},this._chunkError=function(){this._sendError(i.error)}}function c(e){u.call(this,e=e||{}),this.stream=function(e){return i=e,this._nextChunk()},this._nextChunk=function(){var e,t;if(!this._finished)return e=this._config.chunkSize,i=e?(t=i.substring(0,e),i.substring(e)):(t=i,"" ),this._finished=!i,this.parseChunk(t)}}function p(e){u.call(this,e=e||{});var t=[],i=!0,r=!1;this.pause=function(){u.prototype.pause.apply(this,arguments),this._input.pause()},this.resume=function(){u.prototype.resume.apply(this,arguments),this._input.resume()},this.stream=function(e){this._input=e,this._input.on("data",this._streamData),this._input.on("end",this._streamEnd),this._input.on("error",this._streamError)},this._checkIsFinished=function(){r&&1===t.length&&(this._finished=!0)},this._nextChunk=function(){this._checkIsFinished(),t.length?this.parseChunk(t.shift()):i=!0},this._streamData=y(function(e){try{t.push("string"==typeof e?e:e.toString(this._config.encoding)),i&&(i=!1,this._checkIsFinished(),this.parseChunk(t.shift()))}catch(e){this._streamError(e)}},this),this._streamError=y(function(e){this._streamCleanUp(),this._sendError(e)},this),this._streamEnd=y(function(){this._streamCleanUp(),r=!0,this._streamData("")},this),this._streamCleanUp=y(function(){this._input.removeListener("data",this._streamData),this._input.removeListener("end",this._streamEnd),this._input.removeListener("error",this._streamError)},this)}function i(m){var n,s,a,t,o=Math.pow(2,53),h=-o,u=/^\s*-?(\d+\.?|\.\d+|\d+\.\d+)([eE][-+]?\d+)?\s*$/,d=/^((\d{4}-[01]\d-[0-3]\dT[0-2]\d:[0-5]\d:[0-5]\d\.\d+([+-][0-2]\d:[0-5]\d|Z))|(\d{4}-[01]\d-[0-3]\dT[0-2]\d:[0-5]\d:[0-5]\d([+-][0-2]\d:[0-5]\d|Z))|(\d{4}-[01]\d-[0-3]\dT[0-2]\d:[0-5]\d([+-][0-2]\d:[0-5]\d|Z)))$/,i=this,r=0,f=0,l=!1,e=!1,c=[],p={data:[],errors:[],meta:{}};function y(e){return"greedy"===m.skipEmptyLines?""===e.join("").trim():1===e.length&&0===e[0].length}function g(){if(p&&a&&(k("Delimiter","UndetectableDelimiter","Unable to auto-detect delimiting character; defaulted to '"+v.DefaultDelimiter+"'" ),a=!1),m.skipEmptyLines&&(p.data=p.data.filter(function(e){return!y(e)})),_()){if(p)if(Array.isArray(p.data[0])){for(var e=0;_()&&e<p.data.length;e++)p.data[e].forEach(t);p.data.splice(0,1)}else p.data.forEach(t);function t(e,t){U(m.transformHeader)&&(e=m.transformHeader(e,t)),c.push(e)}}function i(e,t){for(var i=m.header?{}:[],r=0;r<e.length;r++){var n=r,s=e[r],s=((e,t)=>(e=>(m.dynamicTypingFunction&&void 0===m.dynamicTyping[e]&&(m.dynamicTyping[e]=m.dynamicTypingFunction(e)),!0===(m.dynamicTyping[e]||m.dynamicTyping)))(e)?
+/**
+ * OmniOpener — CSV Opener Tool
+ * Uses OmniTool SDK and PapaParse. Renders .csv and .tsv files as an interactive table.
+ */
+(function () {
+  'use strict';
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+  }
+
+  function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  }
+
+  window.initTool = function (toolConfig, mountEl) {
+    OmniTool.create(mountEl, toolConfig, {
+      accept: '.csv,.tsv,.txt',
+      dropLabel: 'Drop a .csv or .tsv file here',
+      binary: false,
+      infoHtml: '<strong>CSV Viewer:</strong> Professional-grade CSV viewer with sorting and filtering. All processing is local.',
+      
+      actions: [
+        {
+          label: '📥 Download CSV',
+          id: 'dl-csv',
+          onClick: function (helpers) {
+            const data = helpers.getState().parsedData;
+            if (data) {
+              const csv = Papa.unparse(data);
+              helpers.download(helpers.getFile().name, csv, 'text/csv');
+            }
+          }
+        },
+        {
+          label: '📥 Export JSON',
+          id: 'export-json',
+          onClick: function (helpers) {
+            const data = helpers.getState().parsedData;
+            if (data) {
+              const json = JSON.stringify(data, null, 2);
+              helpers.download(helpers.getFile().name.replace(/\.(csv|tsv|txt)$/i, '.json'), json, 'application/json');
+            }
+          }
+        }
+      ],
+
+      onInit: function(helpers) {
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js');
+      },
+
+      onFile: function (file, content, helpers) {
+        if (typeof Papa === 'undefined') {
+          helpers.showLoading('Loading CSV engine...');
+          setTimeout(() => helpers.onFile(file, content, helpers), 500);
+          return;
+        }
+
+        helpers.showLoading('Parsing CSV...');
+        
+        Papa.parse(content, {
+          header: true,
+          skipEmptyLines: true,
+          dynamicTyping: true,
+          complete: function(results) {
+            renderTable(results, file, helpers);
+          },
+          error: function(err) {
+            helpers.showError('Failed to parse CSV', err.message);
+          }
+        });
+      }
+    });
+  };
+
+  function renderTable(results, file, helpers) {
+    const data = results.data;
+    const fields = results.meta.fields || [];
+    helpers.setState('parsedData', data);
+    helpers.setState('fields', fields);
+
+    if (data.length === 0) {
+      helpers.render(`
+        <div class="flex flex-col items-center justify-center h-64 text-surface-400">
+          <span class="text-4xl mb-2">📊</span>
+          <p class="font-medium">No data found in this file</p>
+        </div>
+      `);
+      return;
+    }
+
+    const fileSize = formatBytes(file.size);
+    const renderHtml = `
+      <div class="flex flex-col h-[75vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm">
+        <!-- Header -->
+        <div class="shrink-0 bg-surface-50 border-b border-surface-200">
+          <div class="flex items-center justify-between px-4 py-2 text-xs text-surface-500 font-medium">
+            <div class="flex items-center gap-2 truncate mr-4">
+              <span class="text-lg">📊</span>
+              <span class="truncate">${escapeHtml(file.name)}</span>
+            </div>
+            <div class="shrink-0 flex items-center gap-3">
+              <span>${fileSize}</span>
+              <span class="w-1 h-1 bg-surface-300 rounded-full"></span>
+              <span>${data.length.toLocaleString()} rows</span>
+              <span class="w-1 h-1 bg-surface-300 rounded-full"></span>
+              <span>${fields.length} columns</span>
+            </div>
+          </div>
+
+          <!-- Search -->
+          <div class="px-3 pb-3 pt-1">
+            <div class="relative group">
+              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400">🔍</span>
+              <input type="text" id="csv-search" 
+                placeholder="Filter rows..." 
+                class="w-full pl-9 pr-4 py-2 text-sm border border-surface-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all bg-white"
+              >
+            </div>
+          </div>
+        </div>
+
+        <!-- Table Area -->
+        <div id="csv-viewport" class="flex-1 overflow-auto bg-white">
+          <table class="w-full text-sm text-left border-collapse min-w-max">
+            <thead class="sticky top-0 z-20 bg-surface-50 shadow-sm">
+              <tr>
+                <th class="px-4 py-3 border-b border-surface-200 text-xs font-bold text-surface-400 uppercase tracking-wider w-12 text-center">#</th>
+                ${fields.map(f => `
+                  <th data-field="${escapeHtml(f)}" class="csv-header px-4 py-3 border-b border-surface-200 text-xs font-bold text-surface-700 uppercase tracking-wider cursor-pointer hover:bg-surface-100 transition-colors">
+                    <div class="flex items-center gap-2">
+                      ${escapeHtml(f)}
+                      <span class="sort-icon opacity-20 text-[10px]">⇅</span>
+                    </div>
+                  </th>
+                `).join('')}
+              </tr>
+            </thead>
+            <tbody id="csv-body">
+              ${renderRows(data, fields)}
+            </tbody>
+          </table>
+          
+          <!-- Empty State for Search -->
+          <div id="csv-search-empty" class="hidden h-64 flex flex-col items-center justify-center text-surface-400">
+            <span class="text-3xl mb-3">🔍</span>
+            <p class="font-medium text-surface-600">No rows match your filter</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    helpers.render(renderHtml);
+
+    // Sorting State
+    let sortField = null;
+    let sortDir = 1; // 1 = asc, -1 = desc
+
+    const searchInput = document.getElementById('csv-search');
+    const tbody = document.getElementById('csv-body');
+    const emptyState = document.getElementById('csv-search-empty');
+    const headers = document.querySelectorAll('.csv-header');
+
+    function renderRows(rows, cols) {
+      // Limit visible rows for performance
+      const limit = 1000;
+      const toShow = rows.slice(0, limit);
+      
+      return toShow.map((row, i) => `
+        <tr class="hover:bg-surface-50 transition-colors border-b border-surface-100 last:border-0">
+          <td class="px-4 py-2 text-surface-300 font-mono text-[10px] text-center bg-surface-50/50 sticky left-0 z-10">${i + 1}</td>
+          ${cols.map(f => `<td class="px-4 py-2 text-surface-600 truncate max-w-xs border-r border-surface-50 last:border-0">${escapeHtml(String(row[f] ?? ''))}</td>`).join('')}
+        </tr>
+      `).join('') + (rows.length > limit ? `<tr><td colspan="${cols.length + 1}" class="p-4 text-center text-surface-400 bg-surface-50 italic">Showing first ${limit} rows. Refine search or download for full file.</td></tr>` : '');
+    }
+
+    function updateTable() {
+      const term = searchInput.value.toLowerCase();
+      let filtered = data;
+
+      if (term) {
+        filtered = data.filter(row => {
+          return fields.some(f => String(row[f]).toLowerCase().includes(term));
+        });
+      }
+
+      if (sortField) {
+        filtered.sort((a, b) => {
+          const valA = a[sortField];
+          const valB = b[sortField];
+          if (valA < valB) return -1 * sortDir;
+          if (valA > valB) return 1 * sortDir;
+          return 0;
+        });
+      }
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        emptyState.classList.remove('hidden');
+      } else {
+        emptyState.classList.add('hidden');
+        tbody.innerHTML = renderRows(filtered, fields);
+      }
+    }
+
+    searchInput.addEventListener('input', updateTable);
+
+    headers.forEach(h => {
+      h.addEventListener('click', () => {
+        const field = h.getAttribute('data-field');
+        if (sortField === field) {
+          sortDir *= -1;
+        } else {
+          sortField = field;
+          sortDir = 1;
+        }
+
+        // Update UI
+        headers.forEach(header => {
+          const icon = header.querySelector('.sort-icon');
+          if (header === h) {
+            icon.textContent = sortDir === 1 ? '↑' : '↓';
+            icon.classList.remove('opacity-20');
+            icon.classList.add('text-brand-600', 'opacity-100');
+          } else {
+            icon.textContent = '⇅';
+            icon.classList.add('opacity-20');
+            icon.classList.remove('text-brand-600', 'opacity-100');
+          }
+        });
+
+        updateTable();
+      });
+    });
+  }
+})();

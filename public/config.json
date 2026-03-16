@@ -355,6 +355,18 @@
       "category": "email",
       "icon": "📧",
       "script_url": "/tools/eml-opener.js"
+    },
+    {
+      "slug": "mbox-opener",
+      "title": "MBOX Opener",
+      "h1": "Open & View .mbox Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .mbox files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".mbox"
+      ],
+      "category": "email",
+      "icon": "📧",
+      "script_url": "/tools/mbox-opener.js"
     }
   ]
 }
