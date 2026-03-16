@@ -452,6 +452,18 @@
       "category": "3d",
       "icon": "🧊",
       "script_url": "/tools/obj-opener.js"
+    },
+    {
+      "slug": "stl-opener",
+      "title": "STL Opener",
+      "h1": "Open & View .stl Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .stl files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".stl"
+      ],
+      "category": "3d",
+      "icon": "🧊",
+      "script_url": "/tools/stl-opener.js"
     }
   ]
 }
