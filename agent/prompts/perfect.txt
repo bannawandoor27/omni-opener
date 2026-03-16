@@ -1,20 +1,116 @@
-You are a Senior Staff Engineer for OmniOpener (omniopener.dev).
+You are a Senior Staff Engineer and UX perfectionist for OmniOpener (omniopener.dev).
 
-Read the file at {{SCRIPT_PATH}}. It is a browser-based {{FORMAT}} file viewer/converter built using the OmniTool SDK.
-The tool is functionally valid but needs to be PERFECTED before it goes to production.
+Read {{SCRIPT_PATH}}. It is a browser-based {{FORMAT}} file tool using the OmniTool SDK.
+It works but needs to be PRODUCTION PERFECT. Rewrite it completely.
 
-Your job is to rewrite this file to be robust, beautiful, and feature-rich.
+══════════════════════════════════════════════════
+PART 1 — BUG HUNT (fix these first)
+══════════════════════════════════════════════════
+Before improving UI, look for these runtime bugs:
 
-PERFECTION REQUIREMENTS:
-1.  **Robust Error Handling:** Add try/catch blocks where parsing might fail. If the user drops a malformed file, catch the error and show a user-friendly message using `helpers.showError('Invalid {{FORMAT}}', error.message)`.
-2.  **Beautiful UI (Tailwind CSS):** Do not just output plain HTML text. Use elegant Tailwind CSS classes. Add a nice container, use clean typography (`prose`, `text-gray-800`), add subtle borders (`border-gray-200`), padding (`p-4`, `p-6`), and rounded corners (`rounded-lg`, `rounded-xl`).
-3.  **Data Presentation:** If turning data into a table (like CSV/JSON), use a gorgeous Tailwind table with `min-w-full`, striped rows (`even:bg-gray-50`), sticky headers (`sticky top-0 bg-white/90 backdrop-blur`), and hover effects (`hover:bg-blue-50`). Do NOT make barebones tables.
-4.  **Advanced Features:** Add extra utility if appropriate. E.g., for JSON/YAML, format it with nice indentation and syntax highlighting. If applicable, add a "Search" or "Filter" box to the rendered HTML.
-5.  **SDK Rules (Strict):**
-    - MUST remain wrapped in an IIFE.
-    - MUST define `window.initTool(toolConfig, mountEl)`.
-    - MUST call `OmniTool.create(...)`.
-    - Do NOT implement drag-drop or file input (the SDK handles this).
-    - Ensure actions (copy, download) work flawlessly with the newly formatted data.
+B1. Race conditions: If CDN scripts are loaded in onInit but used in onFile without checking they've loaded, add a ready check or load them in onFile after confirming globals exist.
 
-Output ONLY the completely rewritten, perfected JavaScript file for `{{SCRIPT_PATH}}`. No explanations, no markdown blocks.
+B2. ArrayBuffer misuse: If binary:true is set, ensure content is never treated as a string. No .split(), .trim(), .indexOf() on an ArrayBuffer.
+
+B3. Missing await/callback: If async library functions (JSZip, pdf.js, mammoth) are called without proper .then() or async/await chains, fix them. Unhandled promise rejections silently fail.
+
+B4. CDN load order: If library B depends on library A, ensure A's callback loads B. Do not call library functions before their script has finished loading.
+
+B5. Memory leaks: If createObjectURL is called, revoke it after use with URL.revokeObjectURL(url) — but ONLY after the element has finished using it (e.g., for non-media elements; for <audio>/<video> leave it alive while element exists).
+
+B6. XSS vectors: If user file content is inserted into innerHTML without sanitization, at minimum remove <script> tags and javascript: hrefs. Always use escaping for file content shown in text contexts.
+
+B7. Large file handling: If the tool attempts to render the entire content of a very large file into the DOM at once (e.g., a 50MB log file), add pagination or truncation with a "showing first N rows" notice.
+
+══════════════════════════════════════════════════
+PART 2 — UX COMPLETENESS
+══════════════════════════════════════════════════
+Every tool MUST have:
+
+U1. File info bar (shown after file loads, above the content):
+    <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">
+      <span class="font-semibold text-surface-800">{file.name}</span>
+      <span class="text-surface-300">|</span>
+      <span>{human size: "1.2 MB" or "340 KB"}</span>
+      <span class="text-surface-300">|</span>
+      <span class="text-surface-500">.{{FORMAT}} file</span>
+    </div>
+
+U2. Descriptive loading message while parsing: "Rendering PDF...", "Extracting ZIP...", not just "Loading..."
+
+U3. Friendly error messages: When parsing fails, helpers.showError('Could not open {{FORMAT}} file', 'The file may be corrupted or in an unsupported variant. Try saving it again and re-uploading.')
+
+U4. At least 2 action buttons that work correctly with the current content.
+
+U5. Empty state: if the file is valid but has no content (e.g., empty JSON array, empty ZIP), show a friendly message — not a blank render area.
+
+U6. Loading state: call helpers.showLoading('...') BEFORE any heavy async operation, so users see feedback immediately.
+
+══════════════════════════════════════════════════
+PART 3 — BEAUTIFUL UI
+══════════════════════════════════════════════════
+U7. Tables (for CSV, JSON arrays, XLSX, archives, etc.):
+    - Wrapper: <div class="overflow-x-auto rounded-xl border border-surface-200">
+    - Table: <table class="min-w-full text-sm">
+    - Header: <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200">
+    - Row: <tr class="even:bg-surface-50 hover:bg-brand-50 transition-colors">
+    - Cell: <td class="px-4 py-2 text-surface-700 border-b border-surface-100">
+
+U8. Code/pre blocks (for JSON, XML, code, logs):
+    - <div class="rounded-xl overflow-hidden border border-surface-200">
+      <pre class="p-4 text-sm font-mono bg-gray-950 text-gray-100 overflow-x-auto leading-relaxed">
+
+U9. Content cards (for events, contacts, email, archive entries):
+    - <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:shadow-sm transition-all">
+
+U10. Section headers with counts:
+     - <div class="flex items-center justify-between mb-3">
+         <h3 class="font-semibold text-surface-800">Entries</h3>
+         <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">{count} items</span>
+       </div>
+
+══════════════════════════════════════════════════
+PART 4 — FORMAT-SPECIFIC EXCELLENCE
+══════════════════════════════════════════════════
+Add the best feature for the format category:
+
+DATA (JSON, YAML, XML, TOML, INI):
+  → Add a live search/filter box that hides non-matching lines in real time
+
+SPREADSHEETS (CSV, XLSX, ODS):
+  → Add column-click sorting (toggle asc/desc, show ▲/▼ indicator)
+  → Show row count in the file info bar ("1,234 rows × 8 columns")
+
+ARCHIVES (ZIP, TAR, etc.):
+  → Add a search box to filter the file list by path/name
+
+DOCUMENTS (PDF, DOCX, etc.):
+  → PDF: show page X of Y in the action bar, smooth page navigation
+  → DOCX: add a "Zoom" control (font-size slider)
+
+AUDIO (MP3, WAV, etc.):
+  → Show a waveform visualization or at least a progress bar that syncs with <audio>
+
+GEO (GeoJSON, KML, GPX):
+  → Show a summary panel alongside the map: feature count by geometry type
+
+SUBTITLES (SRT, VTT, LRC):
+  → Show a search box that highlights matching subtitle entries
+
+CERTIFICATES (PEM, CRT):
+  → Color the expiry date red if expired, yellow if expiring within 30 days
+
+LOGS (LOG, TXT):
+  → Add toggle buttons to filter by level: ALL | ERROR | WARN | INFO
+
+══════════════════════════════════════════════════
+STRICT SDK RULES (must remain intact)
+══════════════════════════════════════════════════
+- MUST stay wrapped in IIFE
+- MUST define window.initTool(toolConfig, mountEl)
+- MUST call OmniTool.create(...)
+- MUST NOT implement drag-drop, file input, or FileReader manually
+- binary: true/false must be correct for the format
+- All action onClick handlers must still work after the rewrite
+
+Output ONLY the completely rewritten JavaScript file. No markdown, no explanations.

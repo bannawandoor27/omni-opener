@@ -1,44 +1,257 @@
-You are building a client-side JavaScript tool for OmniOpener (omniopener.dev).
+You are building a browser-based file viewer for OmniOpener (omniopener.dev).
 
-Create a new file at {{SCRIPT_PATH}} that implements a browser-based {{FORMAT}} file viewer/converter.
+TASK: Create {{SCRIPT_PATH}} — a complete, production-quality {{FORMAT}} file viewer.
 
-IMPORTANT: Use the OmniTool SDK (window.OmniTool). It is pre-loaded by the router.
+Read {{ROOT}}/public/tool-sdk.js for the full SDK API.
+Read {{ROOT}}/public/tools/csv-opener.js and {{ROOT}}/public/tools/drawio-viewer.js as working examples.
 
-STRICT REQUIREMENTS:
-1. Wrap ALL code in an IIFE: (function(){ ... })();
-2. Define window.initTool = function(toolConfig, mountEl) { ... } inside the IIFE
-3. Inside initTool, call OmniTool.create(mountEl, toolConfig, { ... }) with these options:
+══════════════════════════════════════════════════
+MANDATORY STRUCTURE (do not deviate)
+══════════════════════════════════════════════════
 
-   OmniTool.create(mountEl, toolConfig, {
-     accept: '.ext1,.ext2',           // file extensions
-     dropLabel: 'Drop a .xxx file',   // drop zone label
-     binary: false,                    // true for binary files (images, zip, etc.)
-     infoHtml: '<strong>...</strong>', // info footer
-     actions: [                        // toolbar buttons
-       { label: '📋 Copy', id: 'copy', onClick: function(helpers, btn) { ... } },
-       { label: '📥 Download', id: 'dl', onClick: function(helpers, btn) { ... } },
-     ],
-     onInit: function(helpers) {
-       // Load CDN deps: helpers.loadScript(url, callback)
-       // Load CSS: helpers.loadCSS(url)
-     },
-     onFile: function(file, content, helpers) {
-       // content = file text (or ArrayBuffer if binary:true)
-       // helpers.render(html)      — show rendered output
-       // helpers.showLoading(msg)  — show spinner
-       // helpers.showError(title, detail) — show error
-       // helpers.download(filename, content, mime) — trigger download
-       // helpers.copyToClipboard(text, btn) — copy + button feedback
-       // helpers.getRenderEl()    — get the render container DOM element
-       // helpers.loadScript(url, cb) — load CDN dynamically
-     }
-   });
+(function() {
+  window.initTool = function(toolConfig, mountEl) {
+    OmniTool.create(mountEl, toolConfig, {
+      accept: '.ext1,.ext2',
+      dropLabel: 'Drop a .{{FORMAT}} file here',
+      binary: false,             // ← CRITICAL: see binary rules below
+      onInit: function(helpers) {
+        // helpers.loadScript(url, callback) for CDN dependencies
+        // helpers.loadCSS(url) for CSS
+      },
+      onFile: function(file, content, helpers) {
+        // content is string (binary:false) or ArrayBuffer (binary:true)
+        helpers.showLoading('Parsing {{FORMAT}}...');
+        try {
+          // parse and render
+          helpers.render(html);
+        } catch(e) {
+          helpers.showError('Could not parse {{FORMAT}} file', e.message);
+        }
+      },
+      actions: [
+        { label: '📋 Copy', id: 'copy', onClick: function(helpers, btn) { ... } },
+        { label: '📥 Download', id: 'dl', onClick: function(helpers, btn) { ... } }
+      ],
+      infoHtml: '<strong>Privacy:</strong> 100% client-side. Your files never leave your device.'
+    });
+  };
+})();
 
-4. Do NOT implement drag-drop, file input, error states manually — the SDK handles all of that.
-5. Load any CDN dependencies dynamically in onInit using helpers.loadScript()
-6. Parse and render the {{FORMAT}} file content in onFile
-7. Include meaningful actions (copy, download converted, etc.)
-8. Use Tailwind classes: surface-50/100/200/..., brand-50/100/200/...
-9. Output ONLY the JavaScript file, no explanations
+NEVER implement drag-drop, file input, or file reading manually — the SDK handles it.
 
-Reference the existing tools in {{ROOT}}/public/tools/ for patterns. Read {{ROOT}}/public/tool-sdk.js for the full API.
+══════════════════════════════════════════════════
+BINARY vs TEXT — CRITICAL
+══════════════════════════════════════════════════
+Set binary: true for these formats (content will be ArrayBuffer in onFile):
+  pdf, docx, doc, xlsx, xls, pptx, ppt, odt, ods, odp,
+  webp, avif, heic, tiff, bmp, ico, gif, png, jpg, jpeg, apng, psd, ai,
+  mp3, wav, ogg, flac, aac, midi, mid,
+  mp4, webm, avi, mkv, mov, m4v,
+  zip, 7z, rar, gz, bz2, xz, tar,
+  iso, dmg, deb, rpm, snap, flatpak, appimage,
+  jar, war, ear, apk, aab, ipa, exe, msi, dll, so, dylib,
+  whl, egg, gem, nupkg, crate, wasm, glb, gltf, stl, obj, step, iges, sketch, fig, xd
+
+Set binary: false (or omit) for text formats:
+  csv, tsv, json, xml, yaml, yml, toml, ini, sql, graphql, proto,
+  html, htm, svg, txt, log, md, rtf, eml, mbox, ics, vcf,
+  kml, gpx, geojson, pem, crt, key, srt, vtt, ass, lrc, dxf, dwg, eps
+
+With binary:true: use new Uint8Array(content) for bytes, or new TextDecoder().decode(content) for text extraction.
+
+══════════════════════════════════════════════════
+CDN LIBRARIES — USE THESE EXACT URLS
+══════════════════════════════════════════════════
+Load in onInit with helpers.loadScript(url, callback):
+
+PDF:
+  helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js', function() {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+  });
+
+DOCX/DOC → mammoth.js (converts to HTML):
+  'https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js'
+  Usage: mammoth.convertToHtml({arrayBuffer: content}).then(r => helpers.render(r.value))
+
+XLSX/XLS/ODS → SheetJS:
+  'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'
+  Usage: var wb = XLSX.read(new Uint8Array(content), {type:'array'});
+
+ZIP/JAR/APK/IPA and other archives → JSZip:
+  'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'
+  Usage: JSZip.loadAsync(content).then(zip => { ... })
+
+YAML → js-yaml:
+  'https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js'
+  Usage: jsyaml.load(content)
+
+Markdown → marked:
+  'https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js'
+  Usage: marked.parse(content)
+
+Syntax highlighting (SQL, GraphQL, Proto, LOG, code files):
+  CSS: 'https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css'
+  JS:  'https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js'
+  Lang extras: 'https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-sql.min.js' (etc.)
+
+ICS (calendar):
+  'https://cdn.jsdelivr.net/npm/ical.js@1.5.0/build/ical.min.js'
+
+Geo/Maps (GeoJSON, KML, GPX):
+  CSS: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+  JS:  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+
+3D Models (STL/OBJ/GLB/GLTF):
+  'https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.min.js'
+
+HEIC conversion:
+  'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js'
+
+TIFF:
+  'https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.js'
+
+PEM/CRT/KEY (certificates):
+  'https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js'
+
+PSD:
+  'https://cdn.jsdelivr.net/npm/psd@3.0.1/dist/psd.min.js'
+
+No CDN needed for: Audio/Video (use <audio>/<video> + createObjectURL), SVG (inline render),
+  VCF (manual parse), EML/MBOX (manual parse), SRT/VTT/LRC (manual parse),
+  WASM/EXE/DLL (hex dump with Uint8Array), RTF (strip control codes)
+
+══════════════════════════════════════════════════
+WHAT TO BUILD PER FORMAT CATEGORY
+══════════════════════════════════════════════════
+
+DOCUMENTS (pdf, docx, odt, rtf, pptx):
+  - Render readable content — never dump raw bytes
+  - PDF: render pages via canvas; include page nav (Prev/Next + page counter)
+  - DOCX/ODT: render full mammoth HTML output in a styled container
+  - PPTX: JSZip → extract ppt/slides/*.xml → parse and show slide text content
+  - RTF: strip \rtf1 control sequences, show clean text
+  - Actions: Copy Text, Download Original
+
+SPREADSHEETS (xlsx, xls, ods, csv, tsv):
+  - Render as a responsive table (cap at 500 rows for performance)
+  - XLSX/ODS: show sheet selector if multiple sheets
+  - Show row count and column count
+  - Sticky header row, striped rows, horizontal scroll wrapper
+  - Actions: Copy as CSV, Download as CSV
+
+DATA (json, yaml, xml, toml, ini):
+  - JSON: pretty-print, 2-space indent, syntax colors with Prism or manual coloring
+  - YAML: parse with js-yaml, show formatted YAML
+  - XML: format with indentation (DOMParser + XMLSerializer or manual)
+  - TOML/INI: show with Prism syntax highlighting
+  - Actions: Copy, Download Formatted; JSON also gets Download Minified
+
+CODE (sql, graphql, proto, log):
+  - Prism.js syntax highlighting with line numbers
+  - Show total line count
+  - Actions: Copy, Download
+
+ARCHIVES (zip, tar, gz, bz2, xz, 7z, rar):
+  - List all files with sizes in a clean table (path, size, modified date)
+  - Show total: file count, total uncompressed size
+  - ZIP: each row gets a Download button
+  - Actions: Copy File List, Download File List as TXT
+
+AUDIO (mp3, wav, ogg, flac, aac):
+  - Create Blob from ArrayBuffer, URL.createObjectURL, render <audio controls>
+  - Show filename and file size
+  - No extra CDN needed
+
+VIDEO (mp4, webm, avi, mkv, mov):
+  - Create Blob, createObjectURL, render <video controls style="max-width:100%">
+  - Show file size
+
+IMAGES (webp, avif, heic, tiff, bmp, ico, gif, png, jpg, apng):
+  - Display the image (convert HEIC first, decode TIFF via UTIF)
+  - Show: width × height, file size
+  - Actions: Download as PNG
+
+SVG:
+  - Render inline (strip <script> tags for safety)
+  - "View Source" toggle button
+  - Show dimensions from viewBox or width/height attributes
+  - Actions: Copy SVG Source, Download SVG
+
+MAPS/GEO (geojson, kml, gpx):
+  - Render Leaflet map, auto-fit bounds
+  - Show feature/point count
+  - KML/GPX: convert to GeoJSON before rendering
+  - Actions: Copy as GeoJSON, Download
+
+CALENDAR (ics):
+  - Parse with ical.js, show event cards
+  - Card fields: title, start/end date+time, location, description
+  - Show total event count
+  - Actions: Copy as Text
+
+CONTACTS (vcf):
+  - Parse manually (FN, EMAIL, TEL, ORG, NOTE fields)
+  - Show contact cards with name, email, phone, org
+  - Avatar: circle with initials in brand color
+  - Show total contact count
+  - Actions: Copy as Text
+
+EMAIL (eml):
+  - Parse headers: From, To, Subject, Date
+  - Render body (HTML or plain text)
+  - List attachment names + sizes
+  - Actions: Copy Plain Text
+
+TEXT/SUBTITLES (txt, log, srt, vtt, ass, lrc, md):
+  - TXT/LOG: monospace pre, line numbers, total line count; color ERROR/WARN/INFO lines
+  - SRT/VTT/ASS: parse and show subtitle entries as a timeline table
+  - LRC: parse and show lyrics with timestamps
+  - Markdown: render to HTML with marked.js and a `.prose` styled container
+  - Actions: Copy, Download
+
+CERTIFICATES (pem, crt, key):
+  - Use node-forge to parse; display Subject, Issuer, Valid From/To, Fingerprint
+  - Actions: Copy PEM
+
+3D (stl, glb, gltf, obj):
+  - Three.js canvas with OrbitControls and basic lighting
+  - Show vertex count, face count
+  - Auto-rotate on load
+
+WASM/BINARIES (wasm, exe, msi, dll, so, dylib):
+  - Show file size and magic bytes identification
+  - Hex dump table: offset | hex bytes | ASCII printable chars (first 256 bytes)
+  - WASM: also try WebAssembly.compile and list exports
+
+PACKAGES (deb, rpm, apk, ipa, jar, whl, gem, nupkg, crate, snap, flatpak, appimage):
+  - Most are ZIP-based: use JSZip to list contents
+  - Find and display the metadata file (MANIFEST.MF, AndroidManifest.xml, PKG-INFO, etc.)
+  - Show package name, version, description
+
+DESIGN (psd, ai, sketch, fig, xd):
+  - PSD: use psd.js to render a preview
+  - Others: show file size and format info; extract any readable metadata
+
+══════════════════════════════════════════════════
+UX REQUIREMENTS (ALL TOOLS)
+══════════════════════════════════════════════════
+1. Show a file info bar after loading:
+   <div class="flex items-center gap-3 p-3 bg-surface-50 rounded-lg text-sm text-surface-600 mb-4">
+     <span class="font-medium">{file.name}</span>
+     <span class="text-surface-400">·</span>
+     <span>{formatSize(file.size)}</span>
+   </div>
+   Use a helper: function formatSize(b){return b>1e6?(b/1e6).toFixed(1)+' MB':b>1e3?(b/1024).toFixed(0)+' KB':b+' B';}
+
+2. Descriptive loading messages: "Rendering PDF pages...", "Extracting ZIP contents...", "Parsing {{FORMAT}}..."
+
+3. For files > 20MB: show a warning notice before processing.
+
+4. Every tool needs at least 2 action buttons.
+
+5. Wrap ALL parsing in try/catch with helpers.showError() on failure.
+
+6. Beautiful Tailwind UI: rounded-xl containers, striped tables, proper padding, brand colors for headings.
+
+Output ONLY the JavaScript file. No markdown fences, no explanations, no comments about what you're doing.

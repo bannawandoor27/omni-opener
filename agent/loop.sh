@@ -178,15 +178,92 @@ perfect_tool() {
   call_gemini "$perfect_prompt" > /dev/null
 }
 
+# ── Syntax Check ──────────────────────────────────────────
+syntax_check() {
+  local format="$1"
+  local script_path="$TOOLS_DIR/${format}-opener.js"
+  log "🔎 Syntax checking: ${format}-opener.js"
+  if node --check "$script_path" 2>/dev/null; then
+    ok "Syntax OK"
+    return 0
+  else
+    warn "Syntax error detected:"
+    node --check "$script_path" 2>&1 | head -5 | sed 's/^/   | /'
+    return 1
+  fi
+}
+
+# ── Format Metadata Helpers ───────────────────────────────
+get_icon() {
+  case "$1" in
+    pdf|docx|doc|odt|rtf|pptx|ppt|odp) echo "📄" ;;
+    xlsx|xls|ods|csv|tsv) echo "📊" ;;
+    json|yaml|yml|xml|toml|ini|graphql|proto|sql) echo "🔧" ;;
+    zip|tar|gz|bz2|xz|7z|rar|iso|dmg) echo "📦" ;;
+    deb|rpm|snap|flatpak|appimage|jar|war|apk|ipa|whl|egg|gem|nupkg|crate) echo "📦" ;;
+    mp3|wav|ogg|flac|aac|midi|mid) echo "🎵" ;;
+    mp4|webm|avi|mkv|mov|m4v|m3u8) echo "🎬" ;;
+    svg|webp|avif|heic|tiff|bmp|ico|gif|png|jpg|jpeg|apng) echo "🖼️" ;;
+    geojson|kml|gpx) echo "🗺️" ;;
+    stl|glb|gltf|obj|step|iges|dxf|dwg) echo "🧊" ;;
+    eml|mbox) echo "📧" ;;
+    log|txt|md) echo "📋" ;;
+    ics) echo "📅" ;;
+    vcf) echo "👤" ;;
+    pem|crt|key) echo "🔐" ;;
+    wasm|exe|msi|dll|so|dylib) echo "⚙️" ;;
+    srt|vtt|ass|lrc) echo "💬" ;;
+    psd|ai|fig|xd|sketch) echo "🎨" ;;
+    *) echo "📁" ;;
+  esac
+}
+
+get_category() {
+  case "$1" in
+    pdf|docx|doc|odt|rtf|pptx|ppt|odp) echo "documents" ;;
+    xlsx|xls|ods) echo "spreadsheets" ;;
+    csv|tsv|json|yaml|yml|xml|toml|ini|sql|graphql|proto) echo "data" ;;
+    zip|tar|gz|bz2|xz|7z|rar|iso|dmg) echo "archives" ;;
+    deb|rpm|snap|flatpak|appimage|jar|war|apk|ipa|whl|egg|gem|nupkg|crate) echo "packages" ;;
+    mp3|wav|ogg|flac|aac|midi|mid) echo "audio" ;;
+    mp4|webm|avi|mkv|mov|m4v|m3u8) echo "video" ;;
+    svg|webp|avif|heic|tiff|bmp|ico|gif|png|jpg|jpeg|apng) echo "images" ;;
+    geojson|kml|gpx) echo "geo" ;;
+    stl|glb|gltf|obj|step|iges|dxf|dwg|eps) echo "3d" ;;
+    eml|mbox) echo "email" ;;
+    log|txt|md|srt|vtt|ass|lrc) echo "text" ;;
+    ics|vcf) echo "calendar" ;;
+    pem|crt|key) echo "security" ;;
+    wasm|exe|msi|dll|so|dylib) echo "system" ;;
+    psd|ai|fig|xd|sketch) echo "design" ;;
+    *) echo "general" ;;
+  esac
+}
+
+get_extensions() {
+  case "$1" in
+    yaml) echo ".yaml,.yml" ;;
+    jpg)  echo ".jpg,.jpeg" ;;
+    tar)  echo ".tar,.tar.gz,.tgz" ;;
+    midi) echo ".mid,.midi" ;;
+    gz)   echo ".gz,.gzip" ;;
+    mp4)  echo ".mp4,.m4v" ;;
+    *) echo ".$1" ;;
+  esac
+}
+
 # ── Update Config (using jq, NOT Gemini) ──────────────────
 update_config() {
   local format="$1"
   local slug="${format}-opener"
+  local icon; icon=$(get_icon "$format")
+  local category; category=$(get_category "$format")
+  local extensions; extensions=$(get_extensions "$format")
   local title="${format^^} Opener"
-  local h1="Open & View .${format} Files Online"
-  local meta="View and work with .${format} files directly in your browser. Free, private, no upload required."
+  local h1="Open & View .${format} Files Online — Free & Private"
+  local meta="Open, view, and convert .${format} files in your browser. No uploads, no installs — 100% private, runs entirely client-side."
 
-  log "📝 Updating config.json for: $slug"
+  log "📝 Updating config.json for: $slug ($icon $category)"
 
   # Check if slug already exists
   if jq -e --arg s "$slug" '.tools[] | select(.slug == $s)' "$CONFIG" > /dev/null 2>&1; then
@@ -194,21 +271,27 @@ update_config() {
     return 0
   fi
 
-  local tmp=$(mktemp)
+  # Build formats array from comma-separated extensions string
+  local formats_json
+  formats_json=$(echo "$extensions" | tr ',' '\n' | jq -R . | jq -s .)
+
+  local tmp; tmp=$(mktemp)
   jq --arg slug "$slug" \
      --arg title "$title" \
      --arg h1 "$h1" \
      --arg meta "$meta" \
-     --arg format ".$format" \
+     --arg category "$category" \
+     --arg icon "$icon" \
      --arg script "/tools/${slug}.js" \
+     --argjson formats "$formats_json" \
     '.tools += [{
       "slug": $slug,
       "title": $title,
       "h1": $h1,
       "meta_description": $meta,
-      "formats": [$format],
-      "category": "general",
-      "icon": "📁",
+      "formats": $formats,
+      "category": $category,
+      "icon": $icon,
       "script_url": $script
     }]' "$CONFIG" > "$tmp" && mv "$tmp" "$CONFIG" && chmod 644 "$CONFIG"
 
@@ -236,6 +319,12 @@ process_format() {
   fi
 
   generate_tool "$format"
+
+  # Fast syntax check — catch JS parse errors before wasting Gemini API calls
+  if ! syntax_check "$format"; then
+    warn "Syntax errors found, running improvement pass before validation..."
+    improve_tool "$format"
+  fi
 
   while [[ $retries -lt $MAX_RETRIES ]]; do
     if validate_tool "$format"; then
