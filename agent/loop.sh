@@ -99,8 +99,8 @@ check_instructions() {
     if [[ -n "${content// /}" ]]; then
       log "📋 Found human instructions. Passing to Gemini..."
       call_gemini "You are working on OmniOpener, a client-side file utility SPA. The project root is at $ROOT. Here are instructions from the developer: $content. Execute these instructions now. Make any necessary changes to files." > /dev/null
-      # Clear instructions after acting on them
-      echo "<!-- Drop instructions here. The loop will read and clear this file. -->" > "$INSTRUCTIONS"
+      # Clear instructions after acting on them (truncate to 0 bytes)
+      truncate -s 0 "$INSTRUCTIONS"
       ok "Instructions processed and cleared."
     fi
   fi
