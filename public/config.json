@@ -391,6 +391,18 @@
       "category": "security",
       "icon": "🔐",
       "script_url": "/tools/crt-opener.js"
+    },
+    {
+      "slug": "key-opener",
+      "title": "KEY Opener",
+      "h1": "Open & View .key Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .key files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".key"
+      ],
+      "category": "security",
+      "icon": "🔐",
+      "script_url": "/tools/key-opener.js"
     }
   ]
 }
