@@ -367,6 +367,18 @@
       "category": "email",
       "icon": "📧",
       "script_url": "/tools/mbox-opener.js"
+    },
+    {
+      "slug": "pem-opener",
+      "title": "PEM Opener",
+      "h1": "Open & View .pem Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .pem files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".pem"
+      ],
+      "category": "security",
+      "icon": "🔐",
+      "script_url": "/tools/pem-opener.js"
     }
   ]
 }
