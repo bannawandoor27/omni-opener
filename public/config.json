@@ -464,6 +464,18 @@
       "category": "3d",
       "icon": "🧊",
       "script_url": "/tools/stl-opener.js"
+    },
+    {
+      "slug": "step-opener",
+      "title": "STEP Opener",
+      "h1": "Open & View .step Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .step files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".step"
+      ],
+      "category": "3d",
+      "icon": "🧊",
+      "script_url": "/tools/step-opener.js"
     }
   ]
 }
