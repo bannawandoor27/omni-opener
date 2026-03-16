@@ -403,6 +403,18 @@
       "category": "security",
       "icon": "🔐",
       "script_url": "/tools/key-opener.js"
+    },
+    {
+      "slug": "wasm-opener",
+      "title": "WASM Opener",
+      "h1": "Open & View .wasm Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .wasm files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".wasm"
+      ],
+      "category": "system",
+      "icon": "⚙️",
+      "script_url": "/tools/wasm-opener.js"
     }
   ]
 }
