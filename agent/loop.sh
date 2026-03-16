@@ -9,6 +9,10 @@
 # =========================================================================
 set -euo pipefail
 
+# Load nvm so `gemini` is in PATH (needed for non-interactive/cron execution)
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 QUEUE="$ROOT/agent/queue.csv"
 STATE="$ROOT/agent/state.json"
