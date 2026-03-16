@@ -331,6 +331,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/ics-opener.js"
+    },
+    {
+      "slug": "vcf-opener",
+      "title": "VCF Opener",
+      "h1": "Open & View .vcf Files Online",
+      "meta_description": "View and work with .vcf (vCard) files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".vcf"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/vcf-opener.js"
     }
   ]
 }
