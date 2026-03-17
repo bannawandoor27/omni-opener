@@ -971,6 +971,18 @@
       "category": "archives",
       "icon": "📦",
       "script_url": "/tools/iso-opener.js"
+    },
+    {
+      "slug": "dmg-opener",
+      "title": "DMG Opener",
+      "h1": "Open & View .dmg Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .dmg files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".dmg"
+      ],
+      "category": "archives",
+      "icon": "📦",
+      "script_url": "/tools/dmg-opener.js"
     }
   ]
 }
