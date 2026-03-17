@@ -923,6 +923,18 @@
       "category": "archives",
       "icon": "📦",
       "script_url": "/tools/bz2-opener.js"
+    },
+    {
+      "slug": "xz-opener",
+      "title": "XZ Opener",
+      "h1": "Open & View .xz Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .xz files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".xz"
+      ],
+      "category": "archives",
+      "icon": "📦",
+      "script_url": "/tools/xz-opener.js"
     }
   ]
 }
