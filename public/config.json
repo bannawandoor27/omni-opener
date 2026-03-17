@@ -584,6 +584,18 @@
       "category": "design",
       "icon": "🎨",
       "script_url": "/tools/xd-opener.js"
+    },
+    {
+      "slug": "webp-opener",
+      "title": "WebP Opener",
+      "h1": "Open & View .webp Images Online",
+      "meta_description": "View and convert WebP images directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".webp"
+      ],
+      "category": "design",
+      "icon": "🖼️",
+      "script_url": "/tools/webp-opener.js"
     }
   ]
 }
