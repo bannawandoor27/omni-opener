@@ -1115,6 +1115,18 @@
       "category": "system",
       "icon": "⚙️",
       "script_url": "/tools/msi-opener.js"
+    },
+    {
+      "slug": "dll-opener",
+      "title": "DLL Opener",
+      "h1": "Open & View .dll Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .dll files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".dll"
+      ],
+      "category": "system",
+      "icon": "⚙️",
+      "script_url": "/tools/dll-opener.js"
     }
   ]
 }
