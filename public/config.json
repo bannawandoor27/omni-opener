@@ -1079,6 +1079,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/aab-opener.js"
+    },
+    {
+      "slug": "ipa-opener",
+      "title": "IPA Opener",
+      "h1": "Open & View .ipa Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .ipa files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".ipa"
+      ],
+      "category": "packages",
+      "icon": "📦",
+      "script_url": "/tools/ipa-opener.js"
     }
   ]
 }
