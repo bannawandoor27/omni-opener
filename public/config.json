@@ -766,6 +766,18 @@
       "category": "video",
       "icon": "🎬",
       "script_url": "/tools/mp4-opener.js"
+    },
+    {
+      "slug": "webm-opener",
+      "title": "WEBM Opener",
+      "h1": "Open & View .webm Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .webm files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".webm"
+      ],
+      "category": "video",
+      "icon": "🎬",
+      "script_url": "/tools/webm-opener.js"
     }
   ]
 }
