@@ -826,6 +826,18 @@
       "category": "video",
       "icon": "🎬",
       "script_url": "/tools/m3u8-opener.js"
+    },
+    {
+      "slug": "srt-opener",
+      "title": "SRT Opener",
+      "h1": "Open & View .srt Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .srt files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".srt"
+      ],
+      "category": "text",
+      "icon": "💬",
+      "script_url": "/tools/srt-opener.js"
     }
   ]
 }
