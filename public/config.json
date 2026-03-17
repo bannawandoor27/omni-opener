@@ -935,6 +935,18 @@
       "category": "archives",
       "icon": "📦",
       "script_url": "/tools/xz-opener.js"
+    },
+    {
+      "slug": "7z-opener",
+      "title": "7Z Opener",
+      "h1": "Open & View .7z Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .7z files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".7z"
+      ],
+      "category": "archives",
+      "icon": "📦",
+      "script_url": "/tools/7z-opener.js"
     }
   ]
 }
