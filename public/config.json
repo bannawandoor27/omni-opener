@@ -488,6 +488,18 @@
       "category": "3d",
       "icon": "🧊",
       "script_url": "/tools/iges-opener.js"
+    },
+    {
+      "slug": "dxf-opener",
+      "title": "DXF Opener",
+      "h1": "Open & View .dxf Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .dxf files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".dxf"
+      ],
+      "category": "3d",
+      "icon": "🧊",
+      "script_url": "/tools/dxf-opener.js"
     }
   ]
 }
