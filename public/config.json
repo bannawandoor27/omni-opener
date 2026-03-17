@@ -1199,6 +1199,18 @@
       "category": "packages",
       "icon": "📦",
       "script_url": "/tools/nupkg-opener.js"
+    },
+    {
+      "slug": "crate-opener",
+      "title": "CRATE Opener",
+      "h1": "Open & View .crate Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .crate files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".crate"
+      ],
+      "category": "packages",
+      "icon": "📦",
+      "script_url": "/tools/crate-opener.js"
     }
   ]
 }
