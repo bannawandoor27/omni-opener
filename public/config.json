@@ -656,6 +656,18 @@
       "category": "images",
       "icon": "🖼️",
       "script_url": "/tools/ico-opener.js"
+    },
+    {
+      "slug": "gif-opener",
+      "title": "GIF Opener",
+      "h1": "Open & View .gif Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .gif files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".gif"
+      ],
+      "category": "images",
+      "icon": "🖼️",
+      "script_url": "/tools/gif-opener.js"
     }
   ]
 }
