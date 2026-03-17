@@ -1031,6 +1031,18 @@
       "category": "packages",
       "icon": "📦",
       "script_url": "/tools/appimage-opener.js"
+    },
+    {
+      "slug": "war-opener",
+      "title": "WAR Opener",
+      "h1": "Open & View .war Files Online — Free & Private",
+      "meta_description": "Open, view, and extract .war files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".war"
+      ],
+      "category": "packages",
+      "icon": "📦",
+      "script_url": "/tools/war-opener.js"
     }
   ]
 }
