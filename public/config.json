@@ -790,6 +790,18 @@
       "category": "video",
       "icon": "🎬",
       "script_url": "/tools/avi-opener.js"
+    },
+    {
+      "slug": "mkv-opener",
+      "title": "MKV Opener",
+      "h1": "Open & View .mkv Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .mkv files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".mkv"
+      ],
+      "category": "video",
+      "icon": "🎬",
+      "script_url": "/tools/mkv-opener.js"
     }
   ]
 }
