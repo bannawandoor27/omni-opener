@@ -1175,6 +1175,18 @@
       "category": "packages",
       "icon": "📦",
       "script_url": "/tools/egg-opener.js"
+    },
+    {
+      "slug": "gem-opener",
+      "title": "GEM Opener",
+      "h1": "Open & View .gem Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .gem files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".gem"
+      ],
+      "category": "packages",
+      "icon": "📦",
+      "script_url": "/tools/gem-opener.js"
     }
   ]
 }
