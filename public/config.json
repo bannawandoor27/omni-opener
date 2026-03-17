@@ -1139,6 +1139,18 @@
       "category": "system",
       "icon": "⚙️",
       "script_url": "/tools/so-opener.js"
+    },
+    {
+      "slug": "dylib-opener",
+      "title": "DYLIB Opener",
+      "h1": "Open & View .dylib Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .dylib files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".dylib"
+      ],
+      "category": "system",
+      "icon": "⚙️",
+      "script_url": "/tools/dylib-opener.js"
     }
   ]
 }
