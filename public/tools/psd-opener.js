@@ -2,12 +2,14 @@
   'use strict';
 
   /**
-   * OmniOpener PSD Tool
-   * A production-grade browser-based PSD viewer and metadata extractor.
+   * OmniOpener PSD Tool - Production Grade
+   * A high-performance, client-side Photoshop file viewer and inspector.
    */
 
+  const PSD_LIB_URL = 'https://cdn.jsdelivr.net/npm/psd@3.4.0/dist/psd.min.js';
+
   function formatSize(bytes) {
-    if (bytes === 0) return '0 B';
+    if (!bytes) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -16,68 +18,57 @@
 
   function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/[&<>"']/g, function(m) {
-      return {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-      }[m];
-    });
+    return str.toString().replace(/[&<>"']/g, m => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+    }[m]));
   }
 
   window.initTool = function(toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       accept: '.psd',
-      dropLabel: 'Drop a .psd file here',
+      dropLabel: 'Drop your .psd file here',
       binary: true,
       onInit: function(helpers) {
-        // Load PSD.js from CDN
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/psd@3.4.0/dist/psd.min.js');
+        // Pre-load the library
+        helpers.loadScript(PSD_LIB_URL);
       },
       onFile: async function(file, content, helpers) {
-        // B2: Ensure we have a Uint8Array from the ArrayBuffer
-        const data = new Uint8Array(content);
+        // U6: Initial feedback
+        helpers.showLoading('Preparing Photoshop engine...');
 
-        // U6: Immediate loading feedback
-        helpers.showLoading('Reading PSD structure...');
-
-        // B1: Wait for library to be ready if not already
-        const waitForLib = async (retries = 10) => {
-          if (window.PSD) return true;
-          if (retries <= 0) return false;
-          await new Promise(r => setTimeout(r, 100));
-          return waitForLib(retries - 1);
-        };
-
-        const libReady = await waitForLib();
-        if (!libReady) {
-          helpers.showError('Library Load Failed', 'The PSD processing library could not be loaded. Please check your internet connection and try again.');
-          return;
+        // B1, B4: Ensure library is loaded
+        if (typeof window.PSD === 'undefined') {
+          try {
+            await helpers.loadScript(PSD_LIB_URL);
+          } catch (e) {
+            helpers.showError('Engine Load Failed', 'Could not load PSD.js from CDN. Please check your connection.');
+            return;
+          }
         }
 
-        // B7: Large file handling - use a small delay to let UI update
-        await new Promise(r => setTimeout(r, 100));
-
+        // B2: Handle binary content safely
+        const data = new Uint8Array(content);
+        
         try {
+          // U2: Descriptive progress
+          helpers.showLoading('Parsing PSD structure...');
+          
+          // B7: Small async break for UI responsiveness
+          await new Promise(r => setTimeout(r, 0));
+
           const psd = new window.PSD(data);
-          
-          // U2: Descriptive loading message
-          helpers.showLoading('Parsing layers and metadata...');
-          
-          // B3: Heavy operation wrapped in try/catch
           const success = psd.parse();
-          if (!success) throw new Error('Failed to parse PSD file.');
+          
+          if (!success) {
+            throw new Error('PSD library failed to parse the file structure.');
+          }
 
           const header = psd.header;
           const tree = psd.tree();
           
+          // Data Extraction
           const getColorMode = (mode) => {
-            const modes = {
-              0: 'Bitmap', 1: 'Grayscale', 2: 'Indexed', 3: 'RGB', 
-              4: 'CMYK', 7: 'Multichannel', 8: 'Duotone', 9: 'Lab'
-            };
+            const modes = { 0: 'Bitmap', 1: 'Grayscale', 2: 'Indexed', 3: 'RGB', 4: 'CMYK', 7: 'Multichannel', 8: 'Duotone', 9: 'Lab' };
             return modes[mode] || `Unknown (${mode})`;
           };
 
@@ -90,7 +81,6 @@
             layerCount: 0
           };
 
-          // Count layers and prepare tree data
           const layers = [];
           const processNode = (node, depth = 0) => {
             const children = node.children ? node.children() : [];
@@ -102,75 +92,77 @@
                 visible: child.visible(),
                 depth: depth,
                 opacity: child.layer ? child.layer.opacity : 255,
-                blendMode: child.layer ? child.layer.blendMode.key : 'norm'
+                blendMode: (child.layer && child.layer.blendMode) ? child.layer.blendMode.key : 'norm'
               });
-              if (child.isFolder()) {
-                processNode(child, depth + 1);
-              }
+              if (child.isFolder()) processNode(child, depth + 1);
             });
           };
           processNode(tree);
 
-          helpers.setState('metadata', metadata);
-          helpers.setState('fileName', file.name);
+          helpers.setState({ metadata, fileName: file.name, layers });
 
-          // U2: Next stage of loading
-          helpers.showLoading('Generating preview...');
-          
-          // B3: psd.image.toCanvas() can be slow for large files
+          // U2: Final rendering stage
+          helpers.showLoading('Generating high-fidelity preview...');
+          await new Promise(r => setTimeout(r, 10));
+
+          // B3: Handle heavy canvas operation
           const canvas = psd.image.toCanvas();
-          canvas.id = 'psd-preview-canvas';
-          canvas.className = 'max-w-full h-auto mx-auto shadow-2xl rounded-lg border border-surface-200';
+          canvas.id = 'psd-preview-main';
+          canvas.className = 'max-w-full h-auto shadow-2xl rounded-lg border border-surface-200 transition-transform duration-200 origin-center';
           
-          // Build UI
           const html = `
-            <div class="max-w-6xl mx-auto p-4 md:p-6">
+            <div class="max-w-7xl mx-auto p-4 animate-in fade-in duration-500">
               <!-- U1: File Info Bar -->
-              <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">
-                <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
+              <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100">
+                <span class="font-bold text-surface-900">${escapeHtml(file.name)}</span>
                 <span class="text-surface-300">|</span>
                 <span>${formatSize(file.size)}</span>
                 <span class="text-surface-300">|</span>
-                <span class="text-surface-500">.psd file</span>
+                <span class="px-2 py-0.5 bg-brand-100 text-brand-700 rounded text-xs font-bold uppercase">PSD File</span>
                 <span class="text-surface-300">|</span>
-                <span class="bg-brand-50 text-brand-700 px-2 py-0.5 rounded text-xs font-medium">${metadata.width} × ${metadata.height}</span>
+                <span class="text-surface-500">${metadata.width} &times; ${metadata.height} px</span>
               </div>
 
-              <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 <!-- Main Preview Area -->
                 <div class="lg:col-span-8 space-y-6">
-                  <div class="bg-surface-100 rounded-2xl p-4 md:p-8 flex items-center justify-center min-h-[400px] border-2 border-dashed border-surface-200 overflow-hidden">
-                    <div id="canvas-container" class="transition-transform duration-300 hover:scale-[1.01]"></div>
+                  <div class="relative group bg-surface-100 rounded-3xl p-6 md:p-12 flex flex-col items-center justify-center min-h-[500px] border-2 border-dashed border-surface-200 overflow-hidden">
+                    <div id="canvas-container" class="relative z-10 flex items-center justify-center w-full h-full overflow-auto max-h-[70vh]">
+                      <!-- Canvas injected here -->
+                    </div>
+                    
+                    <!-- Zoom Control -->
+                    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 bg-white/90 backdrop-blur px-4 py-2 rounded-full shadow-lg border border-surface-200 flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span class="text-xs font-bold text-surface-500">Zoom</span>
+                      <input type="range" id="zoom-slider" min="0.1" max="2" step="0.1" value="1" class="w-32 accent-brand-600 cursor-pointer" />
+                      <span id="zoom-value" class="text-xs font-mono font-bold text-brand-700 min-w-[3rem]">100%</span>
+                    </div>
                   </div>
 
-                  <!-- Metadata Table (U7) -->
-                  <div class="overflow-x-auto rounded-xl border border-surface-200">
+                  <!-- U7: Specs Table -->
+                  <div class="overflow-x-auto rounded-2xl border border-surface-200 shadow-sm bg-white">
                     <table class="min-w-full text-sm">
                       <thead>
                         <tr>
-                          <th colspan="2" class="bg-surface-50 px-4 py-3 text-left font-bold text-surface-800 border-b border-surface-200 uppercase tracking-wider text-xs">Technical Specifications</th>
+                          <th colspan="2" class="bg-surface-50/50 px-6 py-4 text-left font-bold text-surface-800 border-b border-surface-200 uppercase tracking-widest text-xs">Technical Parameters</th>
                         </tr>
                       </thead>
-                      <tbody class="bg-white">
-                        <tr class="hover:bg-brand-50 transition-colors">
-                          <td class="px-4 py-3 text-surface-500 border-b border-surface-100 font-medium w-1/3">Dimensions</td>
-                          <td class="px-4 py-3 text-surface-900 border-b border-surface-100">${metadata.width} × ${metadata.height} px</td>
+                      <tbody class="divide-y divide-surface-100">
+                        <tr class="hover:bg-brand-50/30 transition-colors">
+                          <td class="px-6 py-4 text-surface-500 font-medium w-1/3">Dimensions</td>
+                          <td class="px-6 py-4 text-surface-900">${metadata.width} &times; ${metadata.height} px <span class="text-surface-400 ml-2">(${((metadata.width * metadata.height) / 1000000).toFixed(1)} MP)</span></td>
                         </tr>
-                        <tr class="even:bg-surface-50 hover:bg-brand-50 transition-colors">
-                          <td class="px-4 py-3 text-surface-500 border-b border-surface-100 font-medium">Color Mode</td>
-                          <td class="px-4 py-3 text-surface-900 border-b border-surface-100">${metadata.colorMode}</td>
+                        <tr class="even:bg-surface-50/30 hover:bg-brand-50/30 transition-colors">
+                          <td class="px-6 py-4 text-surface-500 font-medium">Color Management</td>
+                          <td class="px-6 py-4 text-surface-900">${metadata.colorMode} / ${metadata.depth}-bit per channel</td>
                         </tr>
-                        <tr class="hover:bg-brand-50 transition-colors">
-                          <td class="px-4 py-3 text-surface-500 border-b border-surface-100 font-medium">Color Depth</td>
-                          <td class="px-4 py-3 text-surface-900 border-b border-surface-100">${metadata.depth}-bit</td>
+                        <tr class="hover:bg-brand-50/30 transition-colors">
+                          <td class="px-6 py-4 text-surface-500 font-medium">Composite Channels</td>
+                          <td class="px-6 py-4 text-surface-900">${metadata.channels} channels</td>
                         </tr>
-                        <tr class="even:bg-surface-50 hover:bg-brand-50 transition-colors">
-                          <td class="px-4 py-3 text-surface-500 border-b border-surface-100 font-medium">Channels</td>
-                          <td class="px-4 py-3 text-surface-900 border-b border-surface-100">${metadata.channels}</td>
-                        </tr>
-                        <tr class="hover:bg-brand-50 transition-colors">
-                          <td class="px-4 py-3 text-surface-500 font-medium">Total Layers</td>
-                          <td class="px-4 py-3 text-surface-900 font-semibold">${metadata.layerCount}</td>
+                        <tr class="even:bg-surface-50/30 hover:bg-brand-50/30 transition-colors">
+                          <td class="px-6 py-4 text-surface-500 font-medium">Total Layers</td>
+                          <td class="px-6 py-4 text-surface-900 font-bold text-brand-700">${metadata.layerCount}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -178,32 +170,45 @@
                 </div>
 
                 <!-- Sidebar: Layer Tree -->
-                <div class="lg:col-span-4 space-y-4">
+                <div class="lg:col-span-4 flex flex-col space-y-4 h-full">
                   <!-- U10: Section Header -->
-                  <div class="flex items-center justify-between mb-1 px-1">
-                    <h3 class="font-bold text-surface-800 text-sm uppercase tracking-widest">Layer Inspector</h3>
-                    <span class="text-xs bg-brand-100 text-brand-700 px-2.5 py-1 rounded-full font-semibold">${metadata.layerCount} Items</span>
+                  <div class="flex items-center justify-between px-1">
+                    <h3 class="font-bold text-surface-800 text-xs uppercase tracking-widest">Layers & Folders</h3>
+                    <span class="text-[10px] bg-brand-100 text-brand-700 px-2 py-1 rounded-full font-black">${metadata.layerCount}</span>
                   </div>
 
-                  <div class="bg-white rounded-xl border border-surface-200 shadow-sm overflow-hidden flex flex-col max-h-[700px]">
-                    <div class="p-3 bg-surface-50 border-b border-surface-200">
-                       <input type="text" id="layer-search" placeholder="Filter layers..." class="w-full px-3 py-2 text-sm rounded-lg border border-surface-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all" />
+                  <div class="flex-1 bg-white rounded-2xl border border-surface-200 shadow-sm overflow-hidden flex flex-col min-h-[400px] max-h-[800px]">
+                    <div class="p-4 bg-surface-50/80 border-b border-surface-200 backdrop-blur">
+                       <div class="relative">
+                         <input type="text" id="layer-search" placeholder="Search layers..." class="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-surface-200 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all shadow-inner" />
+                         <svg class="absolute left-3 top-2.5 w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                       </div>
                     </div>
-                    <div class="overflow-y-auto p-2 space-y-1 bg-surface-50/30" id="layer-list">
-                      ${layers.length === 0 ? '<div class="p-8 text-center text-surface-400 text-sm italic">No layers detected in this file.</div>' : layers.map((l, i) => `
-                        <div class="layer-item flex items-center gap-2 p-2 rounded-lg border border-transparent hover:border-brand-200 hover:bg-white transition-all group ${l.visible ? '' : 'opacity-40'}" 
+                    
+                    <div class="overflow-y-auto p-3 space-y-1.5 custom-scrollbar" id="layer-list">
+                      ${layers.length === 0 ? `
+                        <div class="flex flex-col items-center justify-center p-12 text-center">
+                          <div class="w-12 h-12 bg-surface-100 rounded-full flex items-center justify-center mb-3">
+                            <svg class="w-6 h-6 text-surface-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path></svg>
+                          </div>
+                          <p class="text-sm text-surface-400 italic font-medium">No layers found</p>
+                        </div>
+                      ` : layers.map((l, i) => `
+                        <!-- U9: Content Cards for Layers -->
+                        <div class="layer-item group flex items-start gap-3 p-3 rounded-xl border border-transparent hover:border-brand-100 hover:bg-brand-50/40 transition-all cursor-default ${l.visible ? '' : 'opacity-40 filter grayscale'}" 
                              data-name="${escapeHtml(l.name.toLowerCase())}"
-                             style="margin-left: ${l.depth * 16}px">
-                          <span class="text-lg leading-none">${l.type === 'folder' ? '📁' : '📄'}</span>
+                             style="margin-left: ${l.depth * 12}px">
+                          <div class="mt-0.5 text-lg shrink-0">
+                            ${l.type === 'folder' ? '📁' : '📄'}
+                          </div>
                           <div class="flex-1 min-w-0">
-                            <div class="text-sm font-medium text-surface-800 truncate">${escapeHtml(l.name)}</div>
-                            <div class="text-[10px] text-surface-400 flex gap-2">
-                              <span class="uppercase">${l.blendMode}</span>
-                              <span>·</span>
-                              <span>${Math.round((l.opacity / 255) * 100)}%</span>
+                            <div class="text-sm font-semibold text-surface-800 truncate leading-tight">${escapeHtml(l.name)}</div>
+                            <div class="flex items-center gap-2 mt-1">
+                              <span class="text-[9px] font-black uppercase text-surface-400 bg-surface-100 px-1.5 py-0.5 rounded tracking-tighter">${l.blendMode}</span>
+                              <span class="text-[10px] text-surface-400 font-medium">${Math.round((l.opacity / 255) * 100)}% opacity</span>
                             </div>
                           </div>
-                          ${l.visible ? '' : '<span class="text-[10px] font-bold text-surface-400 uppercase">Hidden</span>'}
+                          ${!l.visible ? '<div class="shrink-0 text-[8px] font-bold text-surface-400 border border-surface-200 px-1 rounded">HIDDEN</div>' : ''}
                         </div>
                       `).join('')}
                     </div>
@@ -211,20 +216,38 @@
                 </div>
               </div>
             </div>
+            
+            <style>
+              .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+              .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+              .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+              .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+            </style>
           `;
 
           helpers.render(html);
           
-          // Attach canvas
+          // Inject Canvas
           const container = document.getElementById('canvas-container');
           if (container) container.appendChild(canvas);
 
-          // Add search functionality (Part 4: Data/Archive excellence)
+          // Interaction: Zoom
+          const zoomSlider = document.getElementById('zoom-slider');
+          const zoomValue = document.getElementById('zoom-value');
+          if (zoomSlider && zoomValue) {
+            zoomSlider.addEventListener('input', (e) => {
+              const val = e.target.value;
+              canvas.style.transform = `scale(${val})`;
+              zoomValue.innerText = `${Math.round(val * 100)}%`;
+            });
+          }
+
+          // Interaction: Search (Part 4: Specific Excellence)
           const searchInput = document.getElementById('layer-search');
           const layerItems = document.querySelectorAll('.layer-item');
           if (searchInput) {
             searchInput.addEventListener('input', (e) => {
-              const term = e.target.value.toLowerCase();
+              const term = e.target.value.toLowerCase().trim();
               layerItems.forEach(item => {
                 const name = item.getAttribute('data-name');
                 item.style.display = name.includes(term) ? 'flex' : 'none';
@@ -234,26 +257,25 @@
 
         } catch (err) {
           console.error('[PSD Tool Error]', err);
-          // U3: Friendly error message
+          // U3: Friendly Error
           helpers.showError(
-            'Could not process PSD', 
-            'This file might be using an unsupported feature, a newer version of Photoshop, or is corrupted. ' + (err.message || '')
+            'Failed to render PSD', 
+            'The file structure could not be parsed. This tool supports standard PSD files, but some advanced PSB or highly compressed features might fail.'
           );
         }
       },
       actions: [
         {
-          label: '📥 Download as PNG',
+          label: '📥 Download PNG Preview',
           id: 'export-png',
-          // U4: Action button with correct context
           onClick: function(helpers) {
-            const canvas = document.getElementById('psd-preview-canvas');
+            const canvas = document.getElementById('psd-preview-main');
             if (!canvas) return;
             
-            canvas.toBlob(function(blob) {
-              const fileName = helpers.getState().fileName || 'exported-image';
-              const name = fileName.replace(/\.psd$/i, '') + '.png';
-              helpers.download(name, blob, 'image/png');
+            canvas.toBlob((blob) => {
+              const state = helpers.getState();
+              const baseName = (state.fileName || 'document').replace(/\.psd$/i, '');
+              helpers.download(`${baseName}-preview.png`, blob, 'image/png');
             }, 'image/png');
           }
         },
@@ -261,16 +283,17 @@
           label: '📋 Copy Metadata',
           id: 'copy-meta',
           onClick: function(helpers, btn) {
-            const meta = helpers.getState().metadata;
-            if (!meta) return;
+            const state = helpers.getState();
+            if (!state || !state.metadata) return;
             
+            const meta = state.metadata;
             const text = [
-              `File: ${helpers.getState().fileName}`,
+              `File: ${state.fileName}`,
               `Dimensions: ${meta.width} x ${meta.height} px`,
               `Color Mode: ${meta.colorMode}`,
-              `Depth: ${meta.depth}-bit`,
               `Channels: ${meta.channels}`,
-              `Layers: ${meta.layerCount}`
+              `BPC: ${meta.depth}`,
+              `Layer Count: ${meta.layerCount}`
             ].join('\n');
             
             helpers.copyToClipboard(text, btn);
@@ -278,9 +301,9 @@
         }
       ],
       infoHtml: `
-        <div class="flex items-center gap-2 text-surface-500">
-          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
-          <span>Client-side Processing: Your file never leaves your browser.</span>
+        <div class="flex items-center gap-3 text-surface-400 text-xs">
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+          <span>Privacy Guaranteed: All processing happens locally in your browser session.</span>
         </div>
       `
     });
