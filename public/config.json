@@ -983,6 +983,18 @@
       "category": "archives",
       "icon": "📦",
       "script_url": "/tools/dmg-opener.js"
+    },
+    {
+      "slug": "deb-opener",
+      "title": "DEB Opener",
+      "h1": "Open & View .deb Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .deb files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".deb"
+      ],
+      "category": "packages",
+      "icon": "📦",
+      "script_url": "/tools/deb-opener.js"
     }
   ]
 }
