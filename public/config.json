@@ -911,6 +911,18 @@
       "category": "archives",
       "icon": "📦",
       "script_url": "/tools/gz-opener.js"
+    },
+    {
+      "slug": "bz2-opener",
+      "title": "BZ2 Opener",
+      "h1": "Open & View .bz2 Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .bz2 files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".bz2"
+      ],
+      "category": "archives",
+      "icon": "📦",
+      "script_url": "/tools/bz2-opener.js"
     }
   ]
 }
