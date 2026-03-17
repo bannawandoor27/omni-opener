@@ -1,7 +1,3 @@
-/**
- * OmniOpener — MP3 Opener Tool
- * Uses OmniTool SDK. Renders a waveform and provides playback controls for MP3 files.
- */
 (function () {
   'use strict';
 
@@ -9,51 +5,28 @@
     OmniTool.create(mountEl, toolConfig, {
       accept: '.mp3',
       binary: true,
-      dropLabel: 'Drop an MP3 file here',
+      dropLabel: 'Drop an MP3 file to play and visualize',
       infoHtml: '<strong>Privacy:</strong> Your audio is processed entirely in your browser. No data is uploaded to any server.',
 
       actions: [
         {
-          label: '▶️ Play/Pause',
+          label: 'Play/Pause',
           id: 'play-pause',
+          icon: 'play',
           onClick: function (h) {
             var ws = h.getState().wavesurfer;
             if (ws) ws.playPause();
           }
         },
         {
-          label: '📋 Copy as Data URL',
-          id: 'copy-data',
-          onClick: function (h, btn) {
-            var content = h.getContent();
-            if (!content) return;
-            var blob = new Blob([content], { type: 'audio/mpeg' });
-            var reader = new FileReader();
-            reader.onload = function (e) {
-              h.copyToClipboard(e.target.result, btn);
-            };
-            reader.readAsDataURL(blob);
-          }
-        },
-        {
-          label: '📥 Download',
-          id: 'download',
-          onClick: function (h) {
-            var file = h.getFile();
-            var content = h.getContent();
-            if (file && content) {
-              h.download(file.name, content, 'audio/mpeg');
-            }
-          }
-        },
-        {
-          label: '🔄 Export as WAV',
+          label: 'Export WAV',
           id: 'export-wav',
+          icon: 'download',
           onClick: function (h, btn) {
             var content = h.getContent();
             if (!content) return;
-            var origText = btn.textContent;
-            btn.textContent = '⌛ Converting...';
+            var origLabel = btn.innerHTML;
+            btn.innerHTML = 'Converting...';
             btn.disabled = true;
 
             var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -61,28 +34,48 @@
               var wavBlob = audioBufferToWav(buffer);
               var fileName = (h.getFile().name || 'audio').replace(/\.[^/.]+$/, "") + ".wav";
               h.download(fileName, wavBlob, 'audio/wav');
-              btn.textContent = origText;
+              btn.innerHTML = origLabel;
               btn.disabled = false;
             }, function (err) {
-              h.showError('Conversion failed', err.message);
-              btn.textContent = origText;
+              h.showError('Conversion failed', 'The audio data could not be decoded. ' + (err.message || ''));
+              btn.innerHTML = origLabel;
               btn.disabled = false;
             });
+          }
+        },
+        {
+          label: 'Download MP3',
+          id: 'download',
+          icon: 'download',
+          onClick: function (h) {
+            var file = h.getFile();
+            var content = h.getContent();
+            if (file && content) {
+              h.download(file.name, content, 'audio/mpeg');
+            }
           }
         }
       ],
 
       onInit: function (h) {
-        // Pre-load WaveSurfer from CDN
         h.loadScript('https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js');
       },
 
       onFile: function (file, content, h) {
-        h.showLoading('Initializing player...');
+        if (!content || content.byteLength === 0) {
+          h.render('<div class="p-12 text-center text-surface-500">The MP3 file appears to be empty.</div>');
+          return;
+        }
+
+        h.showLoading('Analyzing audio spectrum...');
 
         h.loadScript('https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js', function () {
+          if (typeof WaveSurfer === 'undefined') {
+            h.showError('Library Load Failed', 'Could not load WaveSurfer.js. Please check your internet connection.');
+            return;
+          }
+
           var state = h.getState();
-          // Cleanup previous instances
           if (state.wavesurfer) {
             try { state.wavesurfer.destroy(); } catch (e) {}
           }
@@ -90,44 +83,107 @@
             URL.revokeObjectURL(state.blobUrl);
           }
 
-          var url = URL.createObjectURL(new Blob([content], { type: 'audio/mpeg' }));
-          h.setState('blobUrl', url);
+          var blobUrl = URL.createObjectURL(new Blob([content], { type: 'audio/mpeg' }));
+          h.setState('blobUrl', blobUrl);
 
+          var sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+          
           h.render(
-            '<div class="p-8 space-y-6">' +
-              '<div class="waveform-container bg-surface-50 rounded-lg p-4 min-h-[128px]"></div>' +
-              '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm text-surface-600 border-t border-surface-100 pt-6">' +
-                '<div class="flex flex-col"><span class="text-xs font-bold uppercase text-surface-400">Filename</span><span class="meta-name font-medium truncate"></span></div>' +
-                '<div class="flex flex-col"><span class="text-xs font-bold uppercase text-surface-400">Size</span><span class="meta-size font-medium"></span></div>' +
-                '<div class="flex flex-col"><span class="text-xs font-bold uppercase text-surface-400">Duration</span><span class="meta-duration font-medium">--:--</span></div>' +
-                '<div class="flex flex-col"><span class="text-xs font-bold uppercase text-surface-400">Sample Rate</span><span class="meta-rate font-medium">--</span></div>' +
-                '<div class="flex flex-col"><span class="text-xs font-bold uppercase text-surface-400">Channels</span><span class="meta-channels font-medium">--</span></div>' +
-                '<div class="flex flex-col"><span class="text-xs font-bold uppercase text-surface-400">Status</span><span class="meta-status font-medium">Ready</span></div>' +
+            '<div class="p-6 max-w-5xl mx-auto">' +
+              // U1. File info bar
+              '<div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">' +
+                '<span class="font-semibold text-surface-800">' + h.escapeHtml(file.name) + '</span>' +
+                '<span class="text-surface-300">|</span>' +
+                '<span>' + sizeMb + ' MB</span>' +
+                '<span class="text-surface-300">|</span>' +
+                '<span class="text-surface-500">MP3 Audio</span>' +
+              '</div>' +
+
+              // Waveform Card
+              '<div class="bg-white rounded-2xl border border-surface-200 overflow-hidden shadow-sm mb-6">' +
+                '<div class="p-6">' +
+                  '<div class="waveform-container min-h-[128px] mb-4"></div>' +
+                  
+                  // Controls Row
+                  '<div class="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-surface-100">' +
+                    '<div class="flex items-center gap-4">' +
+                      '<button class="play-btn bg-brand-600 hover:bg-brand-700 text-white w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-sm">' +
+                        '<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>' +
+                      '</button>' +
+                      '<div class="text-lg font-mono text-surface-800">' +
+                        '<span class="current-time">0:00</span>' +
+                        '<span class="text-surface-400 mx-1">/</span>' +
+                        '<span class="total-duration">0:00</span>' +
+                      '</div>' +
+                    '</div>' +
+                    
+                    '<div class="flex items-center gap-6 flex-1 max-w-xs">' +
+                      '<div class="flex-1">' +
+                        '<label class="text-[10px] font-bold uppercase text-surface-400 block mb-1">Volume</label>' +
+                        '<input type="range" class="volume-slider w-full h-1.5 bg-surface-200 rounded-lg appearance-none cursor-pointer accent-brand-600" min="0" max="1" step="0.1" value="1">' +
+                      '</div>' +
+                      '<div class="flex-1">' +
+                        '<label class="text-[10px] font-bold uppercase text-surface-400 block mb-1">Zoom</label>' +
+                        '<input type="range" class="zoom-slider w-full h-1.5 bg-surface-200 rounded-lg appearance-none cursor-pointer accent-brand-600" min="10" max="500" value="10">' +
+                      '</div>' +
+                    '</div>' +
+                  '</div>' +
+                '</div>' +
+              '</div>' +
+
+              // Metadata Grid
+              '<div class="grid grid-cols-2 md:grid-cols-4 gap-4">' +
+                '<div class="bg-surface-50 rounded-xl p-4 border border-surface-100">' +
+                  '<div class="text-xs font-bold uppercase text-surface-400 mb-1">Sample Rate</div>' +
+                  '<div class="meta-rate font-semibold text-surface-700">-- Hz</div>' +
+                '</div>' +
+                '<div class="bg-surface-50 rounded-xl p-4 border border-surface-100">' +
+                  '<div class="text-xs font-bold uppercase text-surface-400 mb-1">Channels</div>' +
+                  '<div class="meta-channels font-semibold text-surface-700">--</div>' +
+                '</div>' +
+                '<div class="bg-surface-50 rounded-xl p-4 border border-surface-100">' +
+                  '<div class="text-xs font-bold uppercase text-surface-400 mb-1">Status</div>' +
+                  '<div class="meta-status font-semibold text-brand-600">Loading...</div>' +
+                '</div>' +
+                '<div class="bg-surface-50 rounded-xl p-4 border border-surface-100 text-center flex items-center justify-center">' +
+                  '<button class="reset-btn text-xs font-bold uppercase text-surface-500 hover:text-brand-600 transition-colors">Reset View</button>' +
+                '</div>' +
               '</div>' +
             '</div>'
           );
 
           var renderEl = h.getRenderEl();
-          renderEl.querySelector('.meta-name').textContent = file.name;
-          renderEl.querySelector('.meta-size').textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+          var playBtn = renderEl.querySelector('.play-btn');
+          var currentTimeEl = renderEl.querySelector('.current-time');
+          var totalDurationEl = renderEl.querySelector('.total-duration');
+          var volumeSlider = renderEl.querySelector('.volume-slider');
+          var zoomSlider = renderEl.querySelector('.zoom-slider');
+          var resetBtn = renderEl.querySelector('.reset-btn');
+
+          var formatTime = function (seconds) {
+            var mins = Math.floor(seconds / 60);
+            var secs = Math.floor(seconds % 60);
+            return mins + ':' + (secs < 10 ? '0' : '') + secs;
+          };
 
           try {
             var ws = WaveSurfer.create({
               container: renderEl.querySelector('.waveform-container'),
-              waveColor: '#4f46e5',
-              progressColor: '#818cf8',
+              waveColor: '#cbd5e1', // surface-300
+              progressColor: '#4f46e5', // brand-600
               cursorColor: '#4f46e5',
               barWidth: 2,
-              barRadius: 3,
+              barGap: 3,
+              barRadius: 4,
               height: 128,
+              normalize: true,
+              interact: true
             });
             h.setState('wavesurfer', ws);
 
             ws.on('ready', function () {
               var dur = ws.getDuration();
-              var mins = Math.floor(dur / 60);
-              var secs = Math.floor(dur % 60);
-              renderEl.querySelector('.meta-duration').textContent = mins + ':' + (secs < 10 ? '0' : '') + secs;
+              totalDurationEl.textContent = formatTime(dur);
               renderEl.querySelector('.meta-status').textContent = 'Ready';
               
               var data = ws.getDecodedData();
@@ -137,14 +193,40 @@
               }
             });
 
-            ws.on('play', function () { renderEl.querySelector('.meta-status').textContent = 'Playing'; });
-            ws.on('pause', function () { renderEl.querySelector('.meta-status').textContent = 'Paused'; });
-            ws.on('finish', function () { renderEl.querySelector('.meta-status').textContent = 'Finished'; });
-            ws.on('error', function (err) { h.showError('Playback Error', err.message || err); });
+            ws.on('audioprocess', function () {
+              currentTimeEl.textContent = formatTime(ws.getCurrentTime());
+            });
 
-            ws.load(url);
+            ws.on('play', function () {
+              playBtn.innerHTML = '<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+              renderEl.querySelector('.meta-status').textContent = 'Playing';
+            });
+
+            ws.on('pause', function () {
+              playBtn.innerHTML = '<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+              renderEl.querySelector('.meta-status').textContent = 'Paused';
+            });
+
+            ws.on('finish', function () {
+              renderEl.querySelector('.meta-status').textContent = 'Finished';
+            });
+
+            ws.on('error', function (err) {
+              h.showError('Playback Error', err.message || 'An error occurred during audio processing.');
+            });
+
+            playBtn.onclick = function () { ws.playPause(); };
+            volumeSlider.oninput = function () { ws.setVolume(parseFloat(volumeSlider.value)); };
+            zoomSlider.oninput = function () { ws.zoom(parseFloat(zoomSlider.value)); };
+            resetBtn.onclick = function () {
+              ws.zoom(10);
+              zoomSlider.value = 10;
+              ws.setTime(0);
+            };
+
+            ws.load(blobUrl);
           } catch (err) {
-            h.showError('Player Initialization Failed', err.message);
+            h.showError('Initialization Failed', 'Could not initialize the audio visualizer: ' + err.message);
           }
         });
       }
@@ -170,7 +252,7 @@
     setUint16(1); // PCM
     setUint16(numOfChan);
     setUint32(buffer.sampleRate);
-    setUint32(buffer.sampleRate * 4);
+    setUint32(buffer.sampleRate * numOfChan * 2);
     setUint16(numOfChan * 2);
     setUint16(16);
     setUint32(0x61746164); // "data"
