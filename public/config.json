@@ -548,6 +548,18 @@
       "category": "design",
       "icon": "🎨",
       "script_url": "/tools/psd-opener.js"
+    },
+    {
+      "slug": "sketch-opener",
+      "title": "SKETCH Opener",
+      "h1": "Open & View .sketch Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .sketch files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".sketch"
+      ],
+      "category": "design",
+      "icon": "🎨",
+      "script_url": "/tools/sketch-opener.js"
     }
   ]
 }
