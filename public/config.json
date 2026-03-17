@@ -560,6 +560,18 @@
       "category": "design",
       "icon": "🎨",
       "script_url": "/tools/sketch-opener.js"
+    },
+    {
+      "slug": "fig-opener",
+      "title": "FIG Opener",
+      "h1": "Open & View .fig Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .fig files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".fig"
+      ],
+      "category": "design",
+      "icon": "🎨",
+      "script_url": "/tools/fig-opener.js"
     }
   ]
 }
