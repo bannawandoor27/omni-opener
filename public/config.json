@@ -524,6 +524,18 @@
       "category": "3d",
       "icon": "📁",
       "script_url": "/tools/eps-opener.js"
+    },
+    {
+      "slug": "ai-opener",
+      "title": "AI Opener",
+      "h1": "Open & View .ai Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .ai files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".ai"
+      ],
+      "category": "design",
+      "icon": "🎨",
+      "script_url": "/tools/ai-opener.js"
     }
   ]
 }
