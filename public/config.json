@@ -608,6 +608,18 @@
       "category": "images",
       "icon": "🖼️",
       "script_url": "/tools/avif-opener.js"
+    },
+    {
+      "slug": "heic-opener",
+      "title": "HEIC Opener",
+      "h1": "Open & View .heic Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .heic files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".heic"
+      ],
+      "category": "images",
+      "icon": "🖼️",
+      "script_url": "/tools/heic-opener.js"
     }
   ]
 }
