@@ -959,6 +959,18 @@
       "category": "archives",
       "icon": "📦",
       "script_url": "/tools/rar-opener.js"
+    },
+    {
+      "slug": "iso-opener",
+      "title": "ISO Opener",
+      "h1": "Open & View .iso Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .iso files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".iso"
+      ],
+      "category": "archives",
+      "icon": "📦",
+      "script_url": "/tools/iso-opener.js"
     }
   ]
 }
