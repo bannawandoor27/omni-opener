@@ -596,6 +596,18 @@
       "category": "design",
       "icon": "🖼️",
       "script_url": "/tools/webp-opener.js"
+    },
+    {
+      "slug": "avif-opener",
+      "title": "AVIF Opener",
+      "h1": "Open & View .avif Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .avif files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".avif"
+      ],
+      "category": "images",
+      "icon": "🖼️",
+      "script_url": "/tools/avif-opener.js"
     }
   ]
 }
