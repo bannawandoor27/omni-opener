@@ -632,6 +632,18 @@
       "category": "images",
       "icon": "🖼️",
       "script_url": "/tools/tiff-opener.js"
+    },
+    {
+      "slug": "bmp-opener",
+      "title": "BMP Opener",
+      "h1": "Open & View .bmp Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .bmp files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".bmp"
+      ],
+      "category": "images",
+      "icon": "🖼️",
+      "script_url": "/tools/bmp-opener.js"
     }
   ]
 }
