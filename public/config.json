@@ -802,6 +802,18 @@
       "category": "video",
       "icon": "🎬",
       "script_url": "/tools/mkv-opener.js"
+    },
+    {
+      "slug": "mov-opener",
+      "title": "MOV Opener",
+      "h1": "Open & View .mov Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .mov files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".mov"
+      ],
+      "category": "video",
+      "icon": "🎬",
+      "script_url": "/tools/mov-opener.js"
     }
   ]
 }
