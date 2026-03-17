@@ -536,6 +536,18 @@
       "category": "design",
       "icon": "🎨",
       "script_url": "/tools/ai-opener.js"
+    },
+    {
+      "slug": "psd-opener",
+      "title": "PSD Opener",
+      "h1": "Open & View .psd Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .psd files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".psd"
+      ],
+      "category": "design",
+      "icon": "🎨",
+      "script_url": "/tools/psd-opener.js"
     }
   ]
 }
