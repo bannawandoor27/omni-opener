@@ -850,6 +850,18 @@
       "category": "text",
       "icon": "💬",
       "script_url": "/tools/vtt-opener.js"
+    },
+    {
+      "slug": "ass-opener",
+      "title": "ASS Opener",
+      "h1": "Open & View .ass Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .ass files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".ass"
+      ],
+      "category": "text",
+      "icon": "💬",
+      "script_url": "/tools/ass-opener.js"
     }
   ]
 }
