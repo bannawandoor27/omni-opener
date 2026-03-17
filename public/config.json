@@ -1007,6 +1007,18 @@
       "category": "packages",
       "icon": "📦",
       "script_url": "/tools/rpm-opener.js"
+    },
+    {
+      "slug": "flatpak-opener",
+      "title": "FLATPAK Opener",
+      "h1": "Open & View .flatpak Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .flatpak files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".flatpak"
+      ],
+      "category": "packages",
+      "icon": "📦",
+      "script_url": "/tools/flatpak-opener.js"
     }
   ]
 }
