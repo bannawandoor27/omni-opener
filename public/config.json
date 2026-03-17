@@ -680,6 +680,18 @@
       "category": "images",
       "icon": "🖼️",
       "script_url": "/tools/apng-opener.js"
+    },
+    {
+      "slug": "mp3-opener",
+      "title": "MP3 Opener",
+      "h1": "Open & View .mp3 Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .mp3 files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".mp3"
+      ],
+      "category": "audio",
+      "icon": "🎵",
+      "script_url": "/tools/mp3-opener.js"
     }
   ]
 }
