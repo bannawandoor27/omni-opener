@@ -814,6 +814,18 @@
       "category": "video",
       "icon": "🎬",
       "script_url": "/tools/mov-opener.js"
+    },
+    {
+      "slug": "m3u8-opener",
+      "title": "M3U8 Opener",
+      "h1": "Open & View .m3u8 Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .m3u8 files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".m3u8"
+      ],
+      "category": "video",
+      "icon": "🎬",
+      "script_url": "/tools/m3u8-opener.js"
     }
   ]
 }
