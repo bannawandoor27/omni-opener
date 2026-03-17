@@ -500,6 +500,18 @@
       "category": "3d",
       "icon": "🧊",
       "script_url": "/tools/dxf-opener.js"
+    },
+    {
+      "slug": "dwg-opener",
+      "title": "DWG Opener",
+      "h1": "Open & View .dwg Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .dwg files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".dwg"
+      ],
+      "category": "3d",
+      "icon": "🧊",
+      "script_url": "/tools/dwg-opener.js"
     }
   ]
 }
