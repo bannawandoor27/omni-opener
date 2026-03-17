@@ -704,6 +704,18 @@
       "category": "audio",
       "icon": "🎵",
       "script_url": "/tools/wav-opener.js"
+    },
+    {
+      "slug": "ogg-opener",
+      "title": "OGG Opener",
+      "h1": "Open & View .ogg Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .ogg files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".ogg"
+      ],
+      "category": "audio",
+      "icon": "🎵",
+      "script_url": "/tools/ogg-opener.js"
     }
   ]
 }
