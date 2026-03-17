@@ -995,6 +995,18 @@
       "category": "packages",
       "icon": "📦",
       "script_url": "/tools/deb-opener.js"
+    },
+    {
+      "slug": "rpm-opener",
+      "title": "RPM Opener",
+      "h1": "Open & View .rpm Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .rpm files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".rpm"
+      ],
+      "category": "packages",
+      "icon": "📦",
+      "script_url": "/tools/rpm-opener.js"
     }
   ]
 }
