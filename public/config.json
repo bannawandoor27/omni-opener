@@ -1103,6 +1103,18 @@
       "category": "system",
       "icon": "⚙️",
       "script_url": "/tools/exe-opener.js"
+    },
+    {
+      "slug": "msi-opener",
+      "title": "MSI Opener",
+      "h1": "Open & View .msi Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .msi files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".msi"
+      ],
+      "category": "system",
+      "icon": "⚙️",
+      "script_url": "/tools/msi-opener.js"
     }
   ]
 }
