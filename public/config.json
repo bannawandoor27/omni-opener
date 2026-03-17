@@ -512,6 +512,18 @@
       "category": "3d",
       "icon": "🧊",
       "script_url": "/tools/dwg-opener.js"
+    },
+    {
+      "slug": "eps-opener",
+      "title": "EPS Opener",
+      "h1": "Open & View .eps Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .eps files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".eps"
+      ],
+      "category": "3d",
+      "icon": "📁",
+      "script_url": "/tools/eps-opener.js"
     }
   ]
 }
