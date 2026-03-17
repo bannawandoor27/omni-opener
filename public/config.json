@@ -886,6 +886,18 @@
       "category": "archives",
       "icon": "📦",
       "script_url": "/tools/zip-opener.js"
+    },
+    {
+      "slug": "tar-opener",
+      "title": "TAR Opener",
+      "h1": "Open & View .tar Files Online — Free & Private",
+      "meta_description": "Open, view, and extract .tar files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".tar"
+      ],
+      "category": "archives",
+      "icon": "📦",
+      "script_url": "/tools/tar-opener.js"
     }
   ]
 }
