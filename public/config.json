@@ -1019,6 +1019,18 @@
       "category": "packages",
       "icon": "📦",
       "script_url": "/tools/flatpak-opener.js"
+    },
+    {
+      "slug": "appimage-opener",
+      "title": "APPIMAGE Opener",
+      "h1": "Open & View .appimage Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .appimage files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".appimage"
+      ],
+      "category": "packages",
+      "icon": "📦",
+      "script_url": "/tools/appimage-opener.js"
     }
   ]
 }
