@@ -1043,6 +1043,18 @@
       "category": "packages",
       "icon": "📦",
       "script_url": "/tools/war-opener.js"
+    },
+    {
+      "slug": "ear-opener",
+      "title": "EAR Opener",
+      "h1": "Open & View .ear Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .ear files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".ear"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/ear-opener.js"
     }
   ]
 }
