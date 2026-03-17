@@ -740,6 +740,19 @@
       "category": "audio",
       "icon": "🎵",
       "script_url": "/tools/aac-opener.js"
+    },
+    {
+      "slug": "midi-opener",
+      "title": "MIDI Opener",
+      "h1": "Open & View .midi Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .midi files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".mid",
+        ".midi"
+      ],
+      "category": "audio",
+      "icon": "🎵",
+      "script_url": "/tools/midi-opener.js"
     }
   ]
 }
