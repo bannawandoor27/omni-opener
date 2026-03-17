@@ -716,6 +716,18 @@
       "category": "audio",
       "icon": "🎵",
       "script_url": "/tools/ogg-opener.js"
+    },
+    {
+      "slug": "flac-opener",
+      "title": "FLAC Opener",
+      "h1": "Open & View .flac Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .flac files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".flac"
+      ],
+      "category": "audio",
+      "icon": "🎵",
+      "script_url": "/tools/flac-opener.js"
     }
   ]
 }
