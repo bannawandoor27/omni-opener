@@ -572,6 +572,18 @@
       "category": "design",
       "icon": "🎨",
       "script_url": "/tools/fig-opener.js"
+    },
+    {
+      "slug": "xd-opener",
+      "title": "XD Opener",
+      "h1": "Open & View .xd Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .xd files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".xd"
+      ],
+      "category": "design",
+      "icon": "🎨",
+      "script_url": "/tools/xd-opener.js"
     }
   ]
 }
