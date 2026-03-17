@@ -838,6 +838,18 @@
       "category": "text",
       "icon": "💬",
       "script_url": "/tools/srt-opener.js"
+    },
+    {
+      "slug": "vtt-opener",
+      "title": "VTT Opener",
+      "h1": "Open & View .vtt Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .vtt files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".vtt"
+      ],
+      "category": "text",
+      "icon": "💬",
+      "script_url": "/tools/vtt-opener.js"
     }
   ]
 }
