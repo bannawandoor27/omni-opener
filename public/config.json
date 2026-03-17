@@ -874,6 +874,18 @@
       "category": "text",
       "icon": "💬",
       "script_url": "/tools/lrc-opener.js"
+    },
+    {
+      "slug": "zip-opener",
+      "title": "ZIP Opener",
+      "h1": "Open & View .zip Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .zip files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".zip"
+      ],
+      "category": "archives",
+      "icon": "📦",
+      "script_url": "/tools/zip-opener.js"
     }
   ]
 }
