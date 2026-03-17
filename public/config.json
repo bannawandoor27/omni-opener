@@ -668,6 +668,18 @@
       "category": "images",
       "icon": "🖼️",
       "script_url": "/tools/gif-opener.js"
+    },
+    {
+      "slug": "apng-opener",
+      "title": "APNG Opener",
+      "h1": "Open & View .apng Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .apng files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".apng"
+      ],
+      "category": "images",
+      "icon": "🖼️",
+      "script_url": "/tools/apng-opener.js"
     }
   ]
 }
