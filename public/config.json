@@ -862,6 +862,18 @@
       "category": "text",
       "icon": "💬",
       "script_url": "/tools/ass-opener.js"
+    },
+    {
+      "slug": "lrc-opener",
+      "title": "LRC Opener",
+      "h1": "Open & View .lrc Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .lrc files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".lrc"
+      ],
+      "category": "text",
+      "icon": "💬",
+      "script_url": "/tools/lrc-opener.js"
     }
   ]
 }
