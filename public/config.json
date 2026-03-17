@@ -476,6 +476,18 @@
       "category": "3d",
       "icon": "🧊",
       "script_url": "/tools/step-opener.js"
+    },
+    {
+      "slug": "iges-opener",
+      "title": "IGES Opener",
+      "h1": "Open & View .iges Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .iges files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".iges"
+      ],
+      "category": "3d",
+      "icon": "🧊",
+      "script_url": "/tools/iges-opener.js"
     }
   ]
 }
