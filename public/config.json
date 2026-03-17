@@ -1127,6 +1127,18 @@
       "category": "system",
       "icon": "⚙️",
       "script_url": "/tools/dll-opener.js"
+    },
+    {
+      "slug": "so-opener",
+      "title": "SO Opener",
+      "h1": "Open & View .so Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .so files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".so"
+      ],
+      "category": "system",
+      "icon": "⚙️",
+      "script_url": "/tools/so-opener.js"
     }
   ]
 }
