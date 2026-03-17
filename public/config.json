@@ -1091,6 +1091,18 @@
       "category": "packages",
       "icon": "📦",
       "script_url": "/tools/ipa-opener.js"
+    },
+    {
+      "slug": "exe-opener",
+      "title": "EXE Opener",
+      "h1": "Open & View .exe Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .exe files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".exe"
+      ],
+      "category": "system",
+      "icon": "⚙️",
+      "script_url": "/tools/exe-opener.js"
     }
   ]
 }
