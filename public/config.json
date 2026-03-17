@@ -1151,6 +1151,18 @@
       "category": "system",
       "icon": "⚙️",
       "script_url": "/tools/dylib-opener.js"
+    },
+    {
+      "slug": "whl-opener",
+      "title": "WHL Opener",
+      "h1": "Open & View .whl Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .whl files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".whl"
+      ],
+      "category": "packages",
+      "icon": "📦",
+      "script_url": "/tools/whl-opener.js"
     }
   ]
 }
