@@ -947,6 +947,18 @@
       "category": "archives",
       "icon": "📦",
       "script_url": "/tools/7z-opener.js"
+    },
+    {
+      "slug": "rar-opener",
+      "title": "RAR Opener",
+      "h1": "Open & View .rar Files Online — Free & Private",
+      "meta_description": "Open, view, and extract .rar files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".rar"
+      ],
+      "category": "archives",
+      "icon": "📦",
+      "script_url": "/tools/rar-opener.js"
     }
   ]
 }
