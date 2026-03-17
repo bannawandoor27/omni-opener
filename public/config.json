@@ -620,6 +620,18 @@
       "category": "images",
       "icon": "🖼️",
       "script_url": "/tools/heic-opener.js"
+    },
+    {
+      "slug": "tiff-opener",
+      "title": "TIFF Opener",
+      "h1": "Open & View .tiff Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .tiff files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".tiff"
+      ],
+      "category": "images",
+      "icon": "🖼️",
+      "script_url": "/tools/tiff-opener.js"
     }
   ]
 }
