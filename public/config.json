@@ -728,6 +728,18 @@
       "category": "audio",
       "icon": "🎵",
       "script_url": "/tools/flac-opener.js"
+    },
+    {
+      "slug": "aac-opener",
+      "title": "AAC Opener",
+      "h1": "Open & View .aac Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .aac files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".aac"
+      ],
+      "category": "audio",
+      "icon": "🎵",
+      "script_url": "/tools/aac-opener.js"
     }
   ]
 }
