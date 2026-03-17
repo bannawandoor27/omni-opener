@@ -1067,6 +1067,18 @@
       "category": "packages",
       "icon": "📦",
       "script_url": "/tools/apk-opener.js"
+    },
+    {
+      "slug": "aab-opener",
+      "title": "AAB Opener",
+      "h1": "Open & View .aab Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .aab files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".aab"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/aab-opener.js"
     }
   ]
 }
