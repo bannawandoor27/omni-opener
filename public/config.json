@@ -778,6 +778,18 @@
       "category": "video",
       "icon": "🎬",
       "script_url": "/tools/webm-opener.js"
+    },
+    {
+      "slug": "avi-opener",
+      "title": "AVI Opener",
+      "h1": "Open & View .avi Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .avi files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".avi"
+      ],
+      "category": "video",
+      "icon": "🎬",
+      "script_url": "/tools/avi-opener.js"
     }
   ]
 }
