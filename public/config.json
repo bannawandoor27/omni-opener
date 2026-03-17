@@ -1163,6 +1163,18 @@
       "category": "packages",
       "icon": "📦",
       "script_url": "/tools/whl-opener.js"
+    },
+    {
+      "slug": "egg-opener",
+      "title": "EGG Opener",
+      "h1": "Open & View .egg Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .egg files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".egg"
+      ],
+      "category": "packages",
+      "icon": "📦",
+      "script_url": "/tools/egg-opener.js"
     }
   ]
 }
