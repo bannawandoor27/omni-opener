@@ -692,6 +692,18 @@
       "category": "audio",
       "icon": "🎵",
       "script_url": "/tools/mp3-opener.js"
+    },
+    {
+      "slug": "wav-opener",
+      "title": "WAV Opener",
+      "h1": "Open & View .wav Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .wav files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".wav"
+      ],
+      "category": "audio",
+      "icon": "🎵",
+      "script_url": "/tools/wav-opener.js"
     }
   ]
 }
