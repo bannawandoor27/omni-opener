@@ -753,6 +753,19 @@
       "category": "audio",
       "icon": "🎵",
       "script_url": "/tools/midi-opener.js"
+    },
+    {
+      "slug": "mp4-opener",
+      "title": "MP4 Opener",
+      "h1": "Open & View .mp4 Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .mp4 files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".mp4",
+        ".m4v"
+      ],
+      "category": "video",
+      "icon": "🎬",
+      "script_url": "/tools/mp4-opener.js"
     }
   ]
 }
