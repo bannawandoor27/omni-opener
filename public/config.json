@@ -1055,6 +1055,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/ear-opener.js"
+    },
+    {
+      "slug": "apk-opener",
+      "title": "APK Opener",
+      "h1": "Open & View .apk Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .apk files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".apk"
+      ],
+      "category": "packages",
+      "icon": "📦",
+      "script_url": "/tools/apk-opener.js"
     }
   ]
 }
