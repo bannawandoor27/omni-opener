@@ -1,48 +1,35 @@
-/**
- * OmniOpener — ODT Viewer Tool
- * Uses OmniTool SDK and odt.js. Renders .odt files as HTML.
- */
 (function () {
   'use strict';
-
-  let isOdtJsReady = false;
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       accept: '.odt',
-      dropLabel: 'Drop an .odt file here',
       binary: true,
-      infoHtml: '<strong>ODT Viewer:</strong> Renders a preview of .odt files.',
-      
-      onInit: function(helpers) {
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/odt.js/odt.min.js', function() {
-          isOdtJsReady = true;
-        });
+      onInit: function (h) {
+        h.loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
       },
-
-      onFile: function (file, content, helpers) {
-        if (!isOdtJsReady) {
-          helpers.showError('Dependency not loaded', 'The odt.js library is still loading. Please try again in a moment.');
+      onFile: function (file, content, h) {
+        if (typeof JSZip === 'undefined') {
+          h.showLoading('Loading engine...');
+          h.loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', () => this.onFile(file, content, h));
           return;
         }
 
-        helpers.showLoading('Converting .odt to HTML...');
-
-        try {
-          const odt = new ODT(content);
-          const html = odt.getHTML();
-          
-          const renderHtml = `
-            <div class="p-4 bg-white rounded-lg shadow-inner overflow-auto h-full">
-              <div class="prose max-w-none">${html}</div>
-            </div>
-          `;
-          helpers.render(renderHtml);
-          
-        } catch (err) {
-            helpers.showError('Error rendering .odt', err.message);
-        }
+        JSZip.loadAsync(content).then(zip => {
+          const contentXml = zip.file('content.xml');
+          if (contentXml) {
+            contentXml.async('string').then(xml => {
+              h.render(`<div class="p-4"><div class="font-bold mb-4">${esc(file.name)}</div><div class="bg-white p-4 border rounded shadow-sm text-sm overflow-auto max-h-[70vh]">${esc(xml.substring(0, 10000))}...</div></div>`);
+            });
+          } else {
+            h.showError('ODT Error', 'content.xml not found');
+          }
+        }).catch(err => h.showError('ODT Error', err.message));
       }
     });
   };
+
+  function esc(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
 })();
