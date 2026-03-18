@@ -1,58 +1,45 @@
-/**
- * OmniOpener — GeoJSON Viewer Tool
- * Uses OmniTool SDK and highlight.js. Renders .geojson files with syntax highlighting.
- */
 (function () {
   'use strict';
 
-  let isHighlightJsReady = false;
-
-  function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(str));
-    return div.innerHTML;
-  }
-
   window.initTool = function (toolConfig, mountEl) {
-    OmniTool.create(mountEl, toolConfig, {
-      accept: '.geojson',
-      dropLabel: 'Drop a .geojson file here',
-      binary: false,
-      infoHtml: '<strong>GeoJSON Viewer:</strong> Displays .geojson files with syntax highlighting.',
-      
-      onInit: function(helpers) {
-        helpers.loadCSS('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css');
-        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js', function() {
-            isHighlightJsReady = true;
-        });
-        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js');
-      },
+    let map = null;
 
-      onFile: function (file, content, helpers) {
-        if (!isHighlightJsReady) {
-          helpers.showError('Dependency not loaded', 'The highlight.js library is still loading. Please try again in a moment.');
+    OmniTool.create(mountEl, toolConfig, {
+      accept: '.geojson,.json',
+      binary: false,
+      onInit: function (h) {
+        h.loadCSS('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
+        h.loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js');
+      },
+      onFile: function (file, content, h) {
+        if (typeof L === 'undefined') {
+          h.showLoading('Loading map...');
+          h.loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', () => this.onFile(file, content, h));
           return;
         }
 
-        helpers.showLoading('Highlighting GeoJSON...');
-
         try {
-          // First, try to parse as JSON to validate
-          const parsed = JSON.parse(content);
-          const pretty = JSON.stringify(parsed, null, 2);
-
-          const highlightedCode = hljs.highlight(pretty, {language: 'json'}).value;
-          const renderHtml = `
-            <div class="p-4 bg-surface-100 rounded-lg shadow-inner overflow-auto h-full">
-              <pre class="flex-grow bg-surface-200 p-3 rounded-md text-sm text-surface-900 overflow-auto"><code class="language-json">${highlightedCode}</code></pre>
+          const data = JSON.parse(content);
+          h.render(`
+            <div class="p-4">
+              <div class="mb-4 font-bold">${esc(file.name)}</div>
+              <div id="map" class="w-full h-[60vh] rounded shadow-lg bg-surface-100"></div>
             </div>
-          `;
-          helpers.render(renderHtml);
-        } catch (e) {
-          helpers.showError('Error parsing .geojson file', 'The file does not appear to be valid JSON.');
+          `);
+
+          if (map) map.remove();
+          map = L.map('map').setView([0, 0], 2);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+          const geojsonLayer = L.geoJSON(data).addTo(map);
+          map.fitBounds(geojsonLayer.getBounds());
+        } catch (err) {
+          h.showError('GeoJSON Error', err.message);
         }
       }
     });
   };
+
+  function esc(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
 })();
