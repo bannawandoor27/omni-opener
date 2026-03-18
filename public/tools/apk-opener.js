@@ -3,17 +3,20 @@
 
   /**
    * OmniOpener APK Tool
-   * A production-perfect browser-based APK inspector.
+   * A production-grade browser-based APK inspector using OmniTool SDK.
    */
 
-  const MAX_VISIBLE_ROWS = 500;
+  const MAX_VISIBLE_ROWS = 1000;
+  const LIBS = {
+    jszip: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'
+  };
 
   function formatSize(bytes) {
-    if (!bytes || bytes === 0) return '0 B';
+    if (bytes === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
   function escapeHtml(str) {
@@ -32,128 +35,158 @@
       dropLabel: 'Drop an Android APK file to inspect',
       binary: true,
       onInit: function(helpers) {
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+        helpers.loadScript(LIBS.jszip);
       },
       onFile: async function(file, content, helpers) {
-        // B1: Handle race condition for CDN script
+        // B1: Race condition check for JSZip
         if (typeof JSZip === 'undefined') {
-          helpers.showLoading('Initializing engine...');
+          helpers.showLoading('Initializing decompression engine...');
           let attempts = 0;
           while (typeof JSZip === 'undefined' && attempts < 50) {
             await new Promise(r => setTimeout(r, 100));
             attempts++;
           }
           if (typeof JSZip === 'undefined') {
-            helpers.showError('Library Load Failed', 'JSZip could not be loaded from CDN. Please check your connection.');
+            helpers.showError('Engine Load Failed', 'Could not load decompression library. Please check your internet connection.');
             return;
           }
         }
 
-        // U2, U6: Descriptive loading state
-        helpers.showLoading('Decompressing Android Package...');
+        // U2, U6: Descriptive loading
+        helpers.showLoading('Analyzing Android Package...');
 
         try {
           const zip = await JSZip.loadAsync(content);
-          const files = [];
-          let totalUncompressedSize = 0;
-          let manifestFile = null;
+          const entries = [];
+          let manifestEntry = null;
+          let certEntry = null;
 
-          zip.forEach((relativePath, zipEntry) => {
-            const entry = {
-              name: relativePath,
-              size: zipEntry._data.uncompressedSize || 0,
-              date: zipEntry.date,
-              isDirectory: zipEntry.dir
-            };
-            files.push(entry);
-            totalUncompressedSize += entry.size;
-            
-            if (relativePath === 'AndroidManifest.xml') {
-              manifestFile = zipEntry;
+          zip.forEach((path, entry) => {
+            entries.push({
+              path,
+              size: entry._data.uncompressedSize || 0,
+              date: entry.date,
+              isDirectory: entry.dir,
+              ext: path.split('.').pop().toLowerCase()
+            });
+            if (path === 'AndroidManifest.xml') manifestEntry = entry;
+            if (path.startsWith('META-INF/') && (path.endsWith('.RSA') || path.endsWith('.DSA') || path.endsWith('.SF'))) {
+              certEntry = entry;
             }
           });
 
-          // Sort files: Directories first, then alphabetically
-          files.sort((a, b) => {
-            if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-            return a.name.localeCompare(b.name);
-          });
+          // Metadata extraction
+          let packageName = 'Unknown';
+          let versionName = 'Unknown';
+          let permissions = [];
 
-          const apkData = {
-            files,
-            totalUncompressedSize,
-            fileCount: files.length,
-            packageName: 'Searching...',
-            versionName: 'Unknown',
-            filter: ''
-          };
-
-          helpers.setState('apkData', apkData);
-
-          // Try to extract basic info from binary manifest
-          if (manifestFile) {
+          if (manifestEntry) {
             try {
-              const manifestBuffer = await manifestFile.async('uint8array');
-              const info = extractHeuristicInfo(manifestBuffer);
-              apkData.packageName = info.packageName || 'com.example.app';
-              apkData.versionName = info.versionName || '1.0.0';
+              const manifestBuf = await manifestEntry.async('uint8array');
+              const info = heuristicAXML(manifestBuf);
+              packageName = info.packageName || 'Unknown';
+              versionName = info.versionName || 'Unknown';
+              permissions = info.permissions || [];
             } catch (e) {
-              console.warn('Manifest extraction failed', e);
-              apkData.packageName = 'Unknown Package';
+              console.warn('Manifest parsing failed', e);
             }
-          } else {
-            apkData.packageName = 'No Manifest Found';
           }
 
-          render(helpers, file, apkData);
+          const state = {
+            entries,
+            packageName,
+            versionName,
+            permissions,
+            filter: '',
+            sortKey: 'path',
+            sortOrder: 'asc'
+          };
+
+          helpers.setState(state);
+          render(helpers, file, state);
+
         } catch (err) {
-          // U3: Friendly error message
-          helpers.showError('Could not open APK file', 'This file might be corrupted or not a valid ZIP-based APK. ' + err.message);
+          // U3: Friendly error
+          helpers.showError('Could not open APK', 'This file may be corrupted or is not a valid Android Package. ' + err.message);
         }
       },
       actions: [
         {
           label: '📋 Copy File List',
-          id: 'copy-list',
+          id: 'copy-files',
           onClick: function(helpers, btn) {
-            const data = helpers.getState().apkData;
-            if (!data || !data.files) return;
-            const text = data.files
-              .map(f => `${f.isDirectory ? '[DIR] ' : ''}${f.name} (${formatSize(f.size)})`)
+            const state = helpers.getState();
+            if (!state || !state.entries) return;
+            const text = state.entries
+              .map(e => `${e.path}\t${formatSize(e.size)}`)
               .join('\n');
             helpers.copyToClipboard(text, btn);
           }
         },
         {
-          label: '📥 Export Manifest Metadata',
-          id: 'export-meta',
+          label: '🛡️ View Permissions',
+          id: 'view-perms',
           onClick: function(helpers) {
-            const data = helpers.getState().apkData;
-            if (!data) return;
-            const meta = {
-              packageName: data.packageName,
-              version: data.versionName,
-              fileCount: data.fileCount,
-              uncompressedSize: data.totalUncompressedSize,
-              files: data.files.map(f => ({ name: f.name, size: f.size }))
-            };
-            helpers.download(`${helpers.getFile().name}-metadata.json`, JSON.stringify(meta, null, 2), 'application/json');
+            const state = helpers.getState();
+            if (!state.permissions || state.permissions.length === 0) {
+              helpers.showError('No Permissions Found', 'Could not find or decode permissions in AndroidManifest.xml.');
+              return;
+            }
+            
+            const permsHtml = `
+              <div class="p-6">
+                <div class="flex items-center justify-between mb-4">
+                  <h2 class="text-xl font-bold text-surface-900">Requested Permissions</h2>
+                  <span class="bg-brand-100 text-brand-700 px-3 py-1 rounded-full text-sm font-semibold">${state.permissions.length}</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  ${state.permissions.map(p => `
+                    <div class="p-3 bg-surface-50 border border-surface-200 rounded-lg text-sm font-mono text-surface-700 break-all">
+                      ${escapeHtml(p.replace('android.permission.', ''))}
+                    </div>
+                  `).join('')}
+                </div>
+                <button id="close-modal" class="mt-6 w-full py-2 bg-surface-900 text-white rounded-lg hover:bg-surface-800 transition-colors">Close</button>
+              </div>
+            `;
+            
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm';
+            modal.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">${permsHtml}</div>`;
+            document.body.appendChild(modal);
+            modal.querySelector('#close-modal').onclick = () => modal.remove();
+            modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
           }
         }
-      ],
-      infoHtml: '<strong>APK Inspector:</strong> Securely view the internal file structure and metadata of any Android Package. Everything stays in your browser.'
+      ]
     });
   };
 
-  function render(helpers, file, data) {
-    const searchTerm = (data.filter || '').toLowerCase();
-    const filteredFiles = data.files.filter(f => f.name.toLowerCase().includes(searchTerm));
-    const isTruncated = filteredFiles.length > MAX_VISIBLE_ROWS;
-    const displayFiles = filteredFiles.slice(0, MAX_VISIBLE_ROWS);
+  function render(helpers, file, state) {
+    const { entries, filter, sortKey, sortOrder, packageName, versionName } = state;
 
-    // U1: File info bar
+    // Filtering
+    const searchTerm = filter.toLowerCase();
+    let filtered = entries.filter(e => e.path.toLowerCase().includes(searchTerm));
+
+    // Sorting
+    filtered.sort((a, b) => {
+      let valA = a[sortKey];
+      let valB = b[sortKey];
+      
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    const displayEntries = filtered.slice(0, MAX_VISIBLE_ROWS);
+
+    // U1: File Info Bar
     const infoBar = `
-      <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100">
+      <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-200">
         <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
         <span class="text-surface-300">|</span>
         <span>${formatSize(file.size)}</span>
@@ -162,142 +195,201 @@
       </div>
     `;
 
-    // U10: Section headers with counts
-    const statsCards = `
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 transition-all bg-white shadow-sm">
-          <h3 class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-1">Package Name</h3>
-          <p class="text-base font-mono font-semibold text-brand-700 truncate" title="${escapeHtml(data.packageName)}">${escapeHtml(data.packageName)}</p>
+    // U9/U10: Metadata Cards
+    const metaCards = `
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm hover:border-brand-300 transition-all">
+          <div class="flex items-center justify-between mb-1">
+            <h3 class="text-xs font-bold text-surface-400 uppercase tracking-wider">Package</h3>
+            <span class="text-[10px] bg-brand-50 text-brand-600 px-1.5 py-0.5 rounded font-mono">ID</span>
+          </div>
+          <p class="text-sm font-mono font-semibold text-surface-900 truncate" title="${escapeHtml(packageName)}">${escapeHtml(packageName)}</p>
         </div>
-        <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 transition-all bg-white shadow-sm">
-          <h3 class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-1">Version</h3>
-          <p class="text-base font-semibold text-surface-800">${escapeHtml(data.versionName)}</p>
+        <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm hover:border-brand-300 transition-all">
+          <div class="flex items-center justify-between mb-1">
+            <h3 class="text-xs font-bold text-surface-400 uppercase tracking-wider">Version</h3>
+            <span class="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono">VER</span>
+          </div>
+          <p class="text-sm font-semibold text-surface-900">${escapeHtml(versionName)}</p>
         </div>
-        <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 transition-all bg-white shadow-sm">
-          <h3 class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-1">Contents</h3>
-          <p class="text-base font-semibold text-surface-800">${data.fileCount.toLocaleString()} items (${formatSize(data.totalUncompressedSize)} uncompressed)</p>
+        <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm hover:border-brand-300 transition-all">
+          <div class="flex items-center justify-between mb-1">
+            <h3 class="text-xs font-bold text-surface-400 uppercase tracking-wider">Storage</h3>
+            <span class="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded font-mono">ZIP</span>
+          </div>
+          <p class="text-sm font-semibold text-surface-900">${entries.length.toLocaleString()} files (${formatSize(entries.reduce((a, b) => a + b.size, 0))} uncompressed)</p>
         </div>
       </div>
     `;
 
-    // SEARCH BOX (Format-Specific Excellence)
-    const searchHtml = `
+    // PART 4: Search/Filter Box
+    const searchBar = `
       <div class="mb-4 relative">
         <input 
           type="text" 
-          id="apk-search" 
-          placeholder="Filter files by name (e.g. .so, classes.dex)..." 
-          value="${escapeHtml(data.filter || '')}"
-          class="w-full pl-10 pr-4 py-2 bg-white border border-surface-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+          id="apk-filter" 
+          placeholder="Search files by name or extension (e.g. classes.dex, .so, .xml)..." 
+          value="${escapeHtml(filter)}"
+          class="w-full pl-10 pr-4 py-2.5 bg-white border border-surface-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition-all shadow-sm"
         />
-        <div class="absolute left-3 top-2.5 text-surface-400">
+        <div class="absolute left-3 top-3 text-surface-400">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
         </div>
       </div>
     `;
 
-    // U7: Table
-    let tableHtml = '';
-    if (filteredFiles.length === 0) {
+    // U7/U10: Table and Header
+    let contentHtml = '';
+    if (filtered.length === 0) {
       // U5: Empty state
-      tableHtml = `
-        <div class="text-center py-12 bg-surface-50 rounded-xl border border-dashed border-surface-300">
-          <p class="text-surface-500">No files found matching "${escapeHtml(data.filter)}"</p>
+      contentHtml = `
+        <div class="flex flex-col items-center justify-center py-16 bg-surface-50 rounded-2xl border-2 border-dashed border-surface-200">
+          <div class="w-12 h-12 bg-surface-200 rounded-full flex items-center justify-center mb-4 text-surface-400">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 9.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          </div>
+          <h3 class="text-surface-900 font-semibold">No files found</h3>
+          <p class="text-surface-500 text-sm mt-1">Try a different search term or check the file structure.</p>
         </div>
       `;
     } else {
-      tableHtml = `
+      const sortIcon = (key) => {
+        if (sortKey !== key) return '<span class="ml-1 text-surface-300">↕</span>';
+        return sortOrder === 'asc' ? '<span class="ml-1 text-brand-500">↑</span>' : '<span class="ml-1 text-brand-500">↓</span>';
+      };
+
+      contentHtml = `
         <div class="flex items-center justify-between mb-3">
-          <h3 class="font-semibold text-surface-800">Archive Entries</h3>
-          <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${filteredFiles.length} matched</span>
+          <h3 class="font-semibold text-surface-800">Archive Contents</h3>
+          <span class="text-xs font-medium bg-brand-100 text-brand-700 px-2.5 py-1 rounded-full">${filtered.length} entries</span>
         </div>
         <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm bg-white">
           <table class="min-w-full text-sm">
             <thead>
-              <tr class="bg-surface-50">
-                <th class="sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200">File Path</th>
-                <th class="sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200">Size</th>
-                <th class="sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200">Modified</th>
+              <tr class="bg-surface-50/50 backdrop-blur-sm border-b border-surface-200">
+                <th class="px-4 py-3 text-left font-semibold text-surface-700 cursor-pointer hover:bg-surface-100 transition-colors" data-sort="path">
+                  File Path ${sortIcon('path')}
+                </th>
+                <th class="px-4 py-3 text-right font-semibold text-surface-700 cursor-pointer hover:bg-surface-100 transition-colors w-24" data-sort="size">
+                  Size ${sortIcon('size')}
+                </th>
+                <th class="px-4 py-3 text-right font-semibold text-surface-700 cursor-pointer hover:bg-surface-100 transition-colors w-32" data-sort="date">
+                  Modified ${sortIcon('date')}
+                </th>
               </tr>
             </thead>
             <tbody class="divide-y divide-surface-100">
-              ${displayFiles.map(f => `
+              ${displayEntries.map(e => `
                 <tr class="even:bg-surface-50/30 hover:bg-brand-50 transition-colors group">
-                  <td class="px-4 py-2.5 text-surface-700 font-mono text-xs break-all">
-                    ${f.isDirectory ? '<span class="text-brand-500 mr-1">📁</span>' : '<span class="text-surface-400 mr-1">📄</span>'}
-                    ${escapeHtml(f.name)}
+                  <td class="px-4 py-2.5 font-mono text-xs text-surface-700 break-all flex items-center gap-2">
+                    <span class="text-lg opacity-70 leading-none">${getFileIcon(e.ext, e.isDirectory)}</span>
+                    <span class="${e.isDirectory ? 'font-semibold text-brand-700' : ''}">${escapeHtml(e.path)}</span>
                   </td>
-                  <td class="px-4 py-2.5 text-right text-surface-600 whitespace-nowrap tabular-nums">
-                    ${f.isDirectory ? '-' : formatSize(f.size)}
+                  <td class="px-4 py-2.5 text-right text-surface-600 whitespace-nowrap tabular-nums font-medium">
+                    ${e.isDirectory ? '-' : formatSize(e.size)}
                   </td>
-                  <td class="px-4 py-2.5 text-right text-surface-400 text-xs whitespace-nowrap">
-                    ${f.date.toLocaleDateString()}
+                  <td class="px-4 py-2.5 text-right text-surface-400 text-xs whitespace-nowrap tabular-nums">
+                    ${e.date.toLocaleDateString()}
                   </td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
         </div>
-        ${isTruncated ? `
-          <div class="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200 text-amber-700 text-xs text-center">
-            Showing first ${MAX_VISIBLE_ROWS} of ${filteredFiles.length} matching files. Use search to narrow down results.
+        ${filtered.length > MAX_VISIBLE_ROWS ? `
+          <div class="mt-4 p-4 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-center text-sm font-medium">
+            Showing first ${MAX_VISIBLE_ROWS} of ${filtered.length} files. Narrow results using the search box above.
           </div>
         ` : ''}
       `;
     }
 
     helpers.render(`
-      <div class="max-w-6xl mx-auto p-4 md:p-6 animate-in fade-in duration-500">
+      <div class="max-w-6xl mx-auto p-4 md:p-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
         ${infoBar}
-        ${statsCards}
-        ${searchHtml}
-        ${tableHtml}
+        ${metaCards}
+        ${searchBar}
+        ${contentHtml}
       </div>
     `);
 
-    // Attach search listener
-    const searchInput = document.getElementById('apk-search');
-    if (searchInput) {
-      searchInput.addEventListener('input', (e) => {
-        data.filter = e.target.value;
-        render(helpers, file, data);
+    // Listeners
+    const filterInput = document.getElementById('apk-filter');
+    if (filterInput) {
+      filterInput.addEventListener('input', (e) => {
+        state.filter = e.target.value;
+        render(helpers, file, state);
+        // Maintain focus after re-render
+        const newInput = document.getElementById('apk-filter');
+        newInput.focus();
+        newInput.setSelectionRange(e.target.value.length, e.target.value.length);
       });
-      // Maintain focus after re-render
-      if (data.filter) {
-        searchInput.focus();
-        searchInput.setSelectionRange(data.filter.length, data.filter.length);
-      }
+    }
+
+    mountEl.querySelectorAll('th[data-sort]').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.getAttribute('data-sort');
+        if (state.sortKey === key) {
+          state.sortOrder = state.sortOrder === 'asc' ? 'desc' : 'asc';
+        } else {
+          state.sortKey = key;
+          state.sortOrder = 'asc';
+        }
+        render(helpers, file, state);
+      });
+    });
+  }
+
+  function getFileIcon(ext, isDir) {
+    if (isDir) return '📁';
+    switch (ext) {
+      case 'dex': return '⚙️';
+      case 'xml': return '📝';
+      case 'png':
+      case 'webp':
+      case 'jpg': return '🖼️';
+      case 'so': return '🔌';
+      case 'arsc': return '📦';
+      default: return '📄';
     }
   }
 
   /**
-   * Heuristic search for strings in binary AndroidManifest.xml
-   * This is not a formal AXML parser, but it reliably extracts the package name
-   * from the string pool at the start of the file.
+   * Heuristic AXML parser to extract package name and version
+   * AXML is a binary format. We look for the string pool and common attributes.
    */
-  function extractHeuristicInfo(buffer) {
-    const info = { packageName: '', versionName: '' };
+  function heuristicAXML(buffer) {
+    const info = { packageName: '', versionName: '', permissions: [] };
     try {
-      // Find the first occurrence of common package name patterns
-      // Package names must have at least one dot and start with a letter
+      // Decode as latin1 to find text chunks
       const text = new TextDecoder('latin1').decode(buffer);
       
-      // Look for strings like "com.something.app"
-      // They are often prefixed by null bytes or length indicators in AXML
+      // 1. Find Package Name: Usually com.something.something
       const pkgMatches = text.match(/[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}/g);
       if (pkgMatches) {
-        // Filter out common false positives and take the first likely candidate
-        const candidates = pkgMatches.filter(p => !p.includes('android.schema') && !p.includes('google.com'));
+        // Filter out common false positives from the string pool
+        const candidates = pkgMatches.filter(p => 
+          !p.includes('android') && 
+          !p.includes('schema') && 
+          !p.includes('google') &&
+          p.length > 5
+        );
         if (candidates.length > 0) info.packageName = candidates[0];
       }
 
-      // Look for something that looks like a version string
-      const verMatches = text.match(/\d+\.\d+\.\d+/g);
+      // 2. Find Permissions: android.permission.XYZ
+      const permMatches = text.match(/android\.permission\.[A-Z_0-9]+/g);
+      if (permMatches) {
+        info.permissions = [...new Set(permMatches)];
+      }
+
+      // 3. Find Version Name: Usually x.y.z
+      const verMatches = text.match(/\d+\.\d+(\.\d+)?/g);
       if (verMatches) {
+        // Take the first one that looks like a version (often near the start)
         info.versionName = verMatches[0];
       }
     } catch (e) {
-      console.error('Heuristic parsing failed', e);
+      console.warn('AXML Heuristics failed', e);
     }
     return info;
   }
