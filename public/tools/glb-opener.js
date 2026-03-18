@@ -11,7 +11,7 @@
       dropLabel: 'Drop a .glb or .gltf file here',
       binary: true,
       onInit: function(helpers) {
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.min.js');
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js');
         
         // Add import map to handle three.js modules dependency
         if (!document.querySelector('script[type="importmap"]')) {
@@ -19,7 +19,7 @@
           map.type = 'importmap';
           map.textContent = JSON.stringify({
             imports: {
-              "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js"
+              "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js"
             }
           });
           document.head.appendChild(map);
@@ -53,8 +53,8 @@
             }
 
             // Load dependencies via dynamic import (requires the import map added in onInit)
-            const { GLTFLoader } = await import('https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/loaders/GLTFLoader.js');
-            const { OrbitControls } = await import('https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/controls/OrbitControls.js');
+            const { GLTFLoader } = await import('https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/loaders/GLTFLoader.js');
+            const { OrbitControls } = await import('https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/controls/OrbitControls.js');
 
             helpers.showLoading('Rendering scene...');
 

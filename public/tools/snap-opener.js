@@ -16,7 +16,7 @@
       binary: true,
 
       onInit: function (h) {
-        h.loadScript('https://cdn.jsdelivr.net/npm/libarchive.js@1.3.0/dist/libarchive.min.js');
+        h.loadScript('https://cdn.jsdelivr.net/npm/libarchive.js@1.3.0/main.min.js');
         h.loadScript('https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js');
       },
 

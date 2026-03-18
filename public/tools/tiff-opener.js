@@ -73,7 +73,7 @@
             canvas.className = 'max-w-full h-auto mx-auto shadow-md rounded-lg bg-white';
 
             var ctx = canvas.getContext('2d');
-            var imgData = ctx.createImageData(width, height);
+            var imgData = ctx.createImageData(Math.floor(width), Math.floor(height));
             imgData.data.set(rgba);
             ctx.putImageData(imgData, 0, 0);
 

@@ -19,9 +19,9 @@
       infoHtml: '<strong>PDF Viewer:</strong> Renders PDF files in your browser. Powered by Mozilla PDF.js.',
       
       onInit: function(helpers) {
-        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js', function() {
+        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdfjs-dist@4.0.379/build/pdf.min.mjs', function() {
           // PDF.js worker is needed
-          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
         });
       },
 
@@ -36,7 +36,6 @@
 
         loadingTask.promise.then(function(pdf) {
           pdfDoc = pdf;
-          helpers.hideLoading();
           // Initial page render
           renderPage(1, helpers);
         }, function (reason) {
@@ -48,6 +47,7 @@
 
   function renderPage(num, helpers) {
     pageRendering = true;
+    pageNum = num;
     
     helpers.showLoading('Rendering page ' + num + '...');
 
@@ -57,11 +57,13 @@
       const renderHtml = `
         <div class="flex flex-col items-center p-4 bg-surface-100">
           <div id="pdf-controls" class="flex items-center space-x-4 mb-4">
-            <button id="prev-page" class="px-4 py-2 bg-brand-500 text-white rounded hover:bg-brand-600 disabled:bg-surface-300">&lt; Prev</button>
+            <button id="prev-page" class="px-4 py-2 bg-brand-500 text-white rounded hover:bg-brand-600 disabled:bg-surface-300">Prev</button>
             <span>Page: <span id="page-num">${num}</span> / <span id="page-count">${pdfDoc.numPages}</span></span>
-            <button id="next-page" class="px-4 py-2 bg-brand-500 text-white rounded hover:bg-brand-600 disabled:bg-surface-300">Next &gt;</button>
+            <button id="next-page" class="px-4 py-2 bg-brand-500 text-white rounded hover:bg-brand-600 disabled:bg-surface-300">Next</button>
           </div>
-          <canvas id="pdf-canvas" class="shadow-lg"></canvas>
+          <div class="overflow-auto max-w-full">
+            <canvas id="pdf-canvas" class="shadow-lg"></canvas>
+          </div>
         </div>
       `;
       helpers.render(renderHtml);
@@ -83,7 +85,6 @@
           renderPage(pageNumPending, helpers);
           pageNumPending = null;
         }
-        helpers.hideLoading();
         updateNavButtons(helpers);
       });
       

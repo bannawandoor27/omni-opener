@@ -117,15 +117,15 @@
                       <tbody>
                         <tr class="hover:bg-brand-50/30 transition-colors">
                           <td class="px-4 py-3 text-surface-500 font-medium border-b border-surface-100 w-1/3">Resolution</td>
-                          <td id="td-resolution" class="px-4 py-3 text-surface-800 font-mono border-b border-surface-100">${escape(s.meta.resolution)}</td>
+                          <td id="td-resolution" class="px-4 py-3 text-surface-800 font-mono border-b border-surface-100">${escape(s.meta ? s.meta.resolution : "Analyzing...")}</td>
                         </tr>
                         <tr class="even:bg-surface-50/30 hover:bg-brand-50/30 transition-colors">
                           <td class="px-4 py-3 text-surface-500 font-medium border-b border-surface-100">Duration</td>
-                          <td id="td-duration" class="px-4 py-3 text-surface-800 font-mono border-b border-surface-100">${escape(s.meta.duration)}</td>
+                          <td id="td-duration" class="px-4 py-3 text-surface-800 font-mono border-b border-surface-100">${escape(s.meta ? s.meta.duration : "Calculating...")}</td>
                         </tr>
                         <tr class="hover:bg-brand-50/30 transition-colors">
                           <td class="px-4 py-3 text-surface-500 font-medium border-b border-surface-100">Video Codec</td>
-                          <td id="td-codec" class="px-4 py-3 text-surface-800 font-mono border-b border-surface-100">${escape(s.meta.codec)}</td>
+                          <td id="td-codec" class="px-4 py-3 text-surface-800 font-mono border-b border-surface-100">${escape(s.meta ? s.meta.codec : "Detecting...")}</td>
                         </tr>
                         <tr class="even:bg-surface-50/30 hover:bg-brand-50/30 transition-colors">
                           <td class="px-4 py-3 text-surface-500 font-medium border-b border-surface-100">MIME Type</td>

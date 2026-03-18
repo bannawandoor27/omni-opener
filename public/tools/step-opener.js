@@ -23,9 +23,9 @@
       binary: true,
       onInit: function(helpers) {
         // Load dependencies
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.min.js', function() {
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js', function() {
           // OrbitControls from a version that still has the js/ folder for easy loading
-          helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/controls/OrbitControls.js', function() {
+          helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/controls/OrbitControls.js', function() {
             helpers.loadScript('https://cdn.jsdelivr.net/npm/occt-import-js@0.0.12/dist/occt-import-js.js', function() {
               // Set initial button styles
               var rotateBtn = helpers.getMountEl().querySelector('#omni-action-rotate');

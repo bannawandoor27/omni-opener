@@ -56,7 +56,6 @@
                   const orig = btn.textContent;
                   btn.textContent = '✓ Copied!';
                   setTimeout(function () { btn.textContent = orig; }, 2000);
-                  h.hideLoading();
                 }).catch(function(err) {
                   h.showError('Clipboard error', 'Failed to copy image: ' + err.message);
                 });
@@ -211,7 +210,6 @@
           `;
           
           h.render(renderHtml);
-          h.hideLoading();
         };
 
         img.onerror = function () {

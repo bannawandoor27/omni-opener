@@ -17,9 +17,10 @@
       onInit: function(helpers) {
         helpers.loadCSS('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css');
         helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js', function() {
-            isHighlightJsReady = true;
+            helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js', function() {
+              isHighlightJsReady = true;
+            });
         });
-        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js');
       },
 
       onFile: function (file, content, helpers) {

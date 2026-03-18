@@ -14,10 +14,15 @@
       binary: true,
       infoHtml: '<strong>Parquet Viewer:</strong> Displays the content of .parquet files as JSON.',
       
-      onInit: function(helpers) {
-          helpers.loadScript('https://unpkg.com/parquet-wasm@0.4.0/esm/arrow1.js', function() {
+      onInit: async function(helpers) {
+          try {
+            const mod = await import('https://cdn.jsdelivr.net/npm/parquet-wasm@0.4.0/esm/arrow1.js');
+            await mod.default(); // Initialize WASM
+            window.parquet_wasm = mod;
             isParquetWasmReady = true;
-          });
+          } catch (e) {
+            helpers.showError('WASM Load Failed', 'Failed to initialize Parquet engine: ' + e.message);
+          }
       },
 
       onFile: async function (file, content, helpers) {
@@ -29,9 +34,8 @@
         helpers.showLoading('Parsing Parquet file...');
         
         try {
-          const wasm = await parquet_wasm();
           const arr = new Uint8Array(content);
-          const table = wasm.readParquet(arr);
+          const table = window.parquet_wasm.readParquet(arr);
           const json = table.toArray().map(row => row.toJSON());
           
           const prettyJson = JSON.stringify(json, null, 2);

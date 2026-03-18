@@ -8,7 +8,7 @@
       binary: true,
       onInit: function(helpers) {
         if (typeof ICO === 'undefined') {
-          helpers.loadScript('https://cdn.jsdelivr.net/npm/icojs@0.10.0/dist/icojs.browser.js');
+          helpers.loadScript('https://cdn.jsdelivr.net/npm/icojs@0.19.1/dist/icojs.browser.js');
         }
       },
       onFile: function(file, content, helpers) {
@@ -33,7 +33,7 @@
         };
 
         if (typeof ICO === 'undefined') {
-          helpers.loadScript('https://cdn.jsdelivr.net/npm/icojs@0.10.0/dist/icojs.browser.js', processICO);
+          helpers.loadScript('https://cdn.jsdelivr.net/npm/icojs@0.19.1/dist/icojs.browser.js', processICO);
         } else {
           processICO();
         }

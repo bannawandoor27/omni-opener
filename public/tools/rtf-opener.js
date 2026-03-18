@@ -15,7 +15,7 @@
       infoHtml: '<strong>RTF Viewer:</strong> Renders a preview of .rtf files.',
       
       onInit: function(helpers) {
-        helpers.loadScript('https://unpkg.com/rtf.js/dist/rtf.min.js', function() {
+        helpers.loadScript('https://unpkg.com/rtf.js@3.0.0/dist/RTFJS.bundle.min.js', function() {
           isRtfJsReady = true;
           RTFJS.logging = false;
           RTFJS.rendering = false;

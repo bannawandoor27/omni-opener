@@ -33,7 +33,7 @@
       onInit: function(helpers) {
         helpers.loadScript('https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js');
       },
-      onFile: function(file, content, helpers) {
+      onFile: function _onFile(file, content, helpers) {
         if (file.size > 20 * 1024 * 1024 && !helpers.getState().proceedLarge) {
           helpers.render(`
             <div class="p-8 text-center h-full flex flex-col items-center justify-center">
@@ -47,14 +47,14 @@
           `);
           document.getElementById('proceed-large-file').onclick = () => {
             helpers.setState('proceedLarge', true);
-            helpers.onFile(file, content, helpers);
+            _onFile(file, content, helpers);
           };
           return;
         }
 
         if (typeof forge === 'undefined') {
           helpers.showLoading('Loading parsing engine...');
-          setTimeout(() => helpers.onFile(file, content, helpers), 500);
+          setTimeout(() => _onFile(file, content, helpers), 500);
           return;
         }
 

@@ -7,10 +7,6 @@
    */
 
   const MAX_VISIBLE_ENTRIES = 500;
-  const SCRIPTS = [
-    'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
-    'https://cdn.jsdelivr.net/npm/plist@3.1.0/dist/plist.min.js'
-  ];
 
   function formatSize(bytes) {
     if (bytes === 0) return '0 B';
@@ -30,32 +26,24 @@
       .replace(/'/g, '&#039;');
   }
 
-  async function waitForGlobals(globals, timeout = 10000) {
-    const start = Date.now();
-    while (Date.now() - start < timeout) {
-      if (globals.every(g => typeof window[g] !== 'undefined')) return true;
-      await new Promise(r => setTimeout(r, 100));
-    }
-    return false;
-  }
-
   window.initTool = function(toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       accept: '.ipa',
       dropLabel: 'Drop an iOS IPA file to inspect',
       binary: true,
       onInit: function(helpers) {
-        SCRIPTS.forEach(src => helpers.loadScript(src));
+        helpers.loadScripts([
+          'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+          'https://cdn.jsdelivr.net/npm/plist@3.0.1/dist/plist.min.js'
+        ], function() {
+          // JSZip and plist will be in window global
+        });
       },
       onFile: async function(file, content, helpers) {
-        helpers.showLoading('Preparing environment...');
-        
-        const loaded = await waitForGlobals(['JSZip', 'plist']);
-        if (!loaded) {
-          helpers.showError('Dependency Error', 'Failed to load required libraries. Please check your connection and try again.');
+        if (!window.JSZip || !window.plist) {
+          helpers.showError('Loading dependencies...', 'Please wait a moment and try again.');
           return;
         }
-
         helpers.showLoading('Extracting package metadata...');
 
         try {

@@ -13,7 +13,7 @@
       dropLabel: 'Drop an Adobe Illustrator (.ai) file here',
       binary: true,
       onInit: function(helpers) {
-        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js', function() {
+        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdfjs-dist@4.0.379/build/pdf.min.mjs', function() {
           pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
         });
       },

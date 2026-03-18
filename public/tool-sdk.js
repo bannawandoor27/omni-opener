@@ -138,14 +138,27 @@
             (detail ? '<p class="text-sm text-surface-400 mt-1">' + esc(detail) + '</p>' : '') +
           '</div>';
       },
+      /** Hide loading spinner / clear render area */
+      hideLoading: function () {
+        renderArea.innerHTML = '';
+        renderArea.classList.add('hidden');
+        dropZone.classList.remove('hidden');
+        actionBar.classList.add('hidden');
+      },
       /** Get current file */
       getFile: function () { return state.file; },
       /** Get current file content */
       getContent: function () { return state.content; },
       /** Get current state */
       getState: function () { return state; },
-      /** Set arbitrary state key */
-      setState: function (key, val) { state[key] = val; },
+      /** Set arbitrary state key or merge object */
+      setState: function (key, val) {
+        if (typeof key === 'object' && key !== null) {
+          for (var k in key) { state[k] = key[k]; }
+        } else {
+          state[key] = val;
+        }
+      },
       /** Dynamically load a script from CDN */
       loadScript: function (src, cb) {
         if (document.querySelector('script[src="' + src + '"]')) {
@@ -154,9 +167,28 @@
         }
         var s = document.createElement('script');
         s.src = src;
+        // Support ESM modules if URL contains /esm/ or ends with .mjs or .module.js or from certain providers
+        if (src.indexOf('/esm/') !== -1 || src.indexOf('.mjs') !== -1 || src.indexOf('.module.js') !== -1 || src.indexOf('pdf.min.mjs') !== -1) {
+          s.type = 'module';
+        }
+        s.crossOrigin = 'anonymous'; // Essential for ESM and better error reports
         s.onload = function () { if (cb) cb(); };
         s.onerror = function () { helpers.showError('Failed to load dependency', src); };
         document.head.appendChild(s);
+      },
+      /** Dynamically load multiple scripts in order */
+      loadScripts: function (scripts, cb) {
+        var self = this;
+        function loadNext(index) {
+          if (index >= scripts.length) {
+            if (cb) cb();
+            return;
+          }
+          self.loadScript(scripts[index], function () {
+            loadNext(index + 1);
+          });
+        }
+        loadNext(0);
       },
       /** Dynamically load a CSS file */
       loadCSS: function (href) {
@@ -275,7 +307,14 @@
     }
 
     // ── Lifecycle ────────────────────────────────────────
-    if (opts.onInit) opts.onInit(helpers);
+    if (opts.onInit) {
+      var res = opts.onInit(helpers);
+      if (res && res.then) {
+        res.catch(function (err) {
+          helpers.showError('Initialization Error', err.message);
+        });
+      }
+    }
 
     return helpers;
   };

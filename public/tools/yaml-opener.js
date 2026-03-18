@@ -67,10 +67,10 @@
         helpers.loadScript('https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js');
       },
 
-      onFile: function (file, content, helpers) {
+      onFile: function _onFile(file, content, helpers) {
         if (typeof jsyaml === 'undefined') {
           helpers.showLoading('Loading YAML engine...');
-          setTimeout(() => helpers.onFile(file, content, helpers), 500);
+          setTimeout(() => _onFile(file, content, helpers), 500);
           return;
         }
 

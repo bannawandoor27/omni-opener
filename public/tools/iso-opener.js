@@ -46,7 +46,7 @@
       binary: true,
       onInit: function (helpers) {
         // Load libarchive.js from CDN
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/libarchive.js@1.3.0/dist/libarchive.min.js');
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/libarchive.js@1.3.0/main.min.js');
       },
       onFile: async function (file, content, helpers) {
         // B1: Race condition check for CDN scripts

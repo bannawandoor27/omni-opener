@@ -54,7 +54,7 @@
       accept: '.flatpak,.flatpakref,.flatpakrepo',
       binary: true,
       onInit: function (h) {
-        h.loadScript('https://cdn.jsdelivr.net/npm/libarchive.js@1.3.0/dist/libarchive.min.js');
+        h.loadScript('https://cdn.jsdelivr.net/npm/libarchive.js@1.3.0/main.min.js');
       },
       onFile: async function (file, content, h) {
         const ext = file.name.split('.').pop().toLowerCase();

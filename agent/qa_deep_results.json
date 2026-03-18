@@ -1,0 +1,736 @@
+[
+  {
+    "slug": "drawio-viewer",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "csv-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/favicon.ico - HTTP 404"
+    ]
+  },
+  {
+    "slug": "md-to-pdf",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "json-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/favicon.ico - HTTP 404"
+    ]
+  },
+  {
+    "slug": "xml-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/favicon.ico - HTTP 404",
+      "https://cdn.jsdelivr.net/npm/vkbeautify@0.99.1/vkbeautify.min.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "docx-opener",
+    "success": false,
+    "errors": [
+      "Render status: error-displayed"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "yaml-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "xlsx-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "pdf-opener",
+    "success": false,
+    "errors": [
+      "Access to script at 'https://cdnjs.cloudflare.com/ajax/libs/pdfjs-dist@4.0.379/build/pdf.min.mjs' from origin 'http://localhost:3000' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "Failed to load resource: net::ERR_FAILED"
+    ],
+    "networkFailures": [
+      "https://cdnjs.cloudflare.com/ajax/libs/pdfjs-dist@4.0.379/build/pdf.min.mjs - net::ERR_FAILED"
+    ]
+  },
+  {
+    "slug": "svg-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "pptx-opener",
+    "success": false,
+    "errors": [
+      "Render status: error-displayed"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "txt-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "log-opener",
+    "success": false,
+    "errors": [
+      "Render status: error-displayed"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "html-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "rtf-opener",
+    "success": false,
+    "errors": [
+      "Render status: error-displayed"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "sql-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "ods-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "ini-opener",
+    "success": false,
+    "errors": [
+      "Render status: empty"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "odt-opener",
+    "success": false,
+    "errors": [],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/odt.js/odt.min.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "avro-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "geojson-opener",
+    "success": false,
+    "errors": [
+      "Render status: error-displayed"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "proto-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "kml-opener",
+    "success": false,
+    "errors": [
+      "Render status: empty"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "gpx-opener",
+    "success": false,
+    "errors": [
+      "Render status: empty"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "parquet-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "graphql-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "ics-opener",
+    "success": false,
+    "errors": [
+      "Render status: error-displayed"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "eml-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "mbox-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "vcf-opener",
+    "success": false,
+    "errors": [
+      "Uncaught ReferenceError: require is not defined",
+      "TypeError: vCard.parse is not a function"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "pem-opener",
+    "success": false,
+    "errors": [
+      "Error: Invalid PEM formatted message."
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "key-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "crt-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "glb-opener",
+    "success": false,
+    "errors": [
+      "SyntaxError: Unexpected token '\u0000', \"\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\"... is not valid JSON",
+      "Render status: error-displayed"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "wasm-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "obj-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "gltf-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "stl-opener",
+    "success": false,
+    "errors": [
+      "Uncaught SyntaxError: Cannot use import statement outside a module"
+    ],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/controls/OrbitControls.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "step-opener",
+    "success": false,
+    "errors": [],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/controls/OrbitControls.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "iges-opener",
+    "success": false,
+    "errors": [],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/controls/OrbitControls.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "eps-opener",
+    "success": false,
+    "errors": [],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-postscript.min.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "dxf-opener",
+    "success": false,
+    "errors": [
+      "Error: Empty file"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "psd-opener",
+    "success": false,
+    "errors": [],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/psd@3.2.0/dist/psd.min.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "ai-opener",
+    "success": false,
+    "errors": [
+      "Access to script at 'https://cdnjs.cloudflare.com/ajax/libs/pdfjs-dist@4.0.379/build/pdf.min.mjs' from origin 'http://localhost:3000' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "Failed to load resource: net::ERR_FAILED"
+    ],
+    "networkFailures": [
+      "https://cdnjs.cloudflare.com/ajax/libs/pdfjs-dist@4.0.379/build/pdf.min.mjs - net::ERR_FAILED"
+    ]
+  },
+  {
+    "slug": "dwg-opener",
+    "success": false,
+    "errors": [],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/@mlightcad/libredwg-web@0.1.7/dist/index.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "sketch-opener",
+    "success": false,
+    "errors": [
+      "[Sketch Opener Error] Error: Can't find end of central directory : is this a zip file ? If it is, see https://stuk.github.io/jszip/documentation/howto/read_zip.html"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "xd-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "fig-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "webp-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "avif-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "ico-opener",
+    "success": false,
+    "errors": [],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/icojs@0.19.1/dist/icojs.browser.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "heic-opener",
+    "success": false,
+    "errors": [
+      "[object Object]"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "gif-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "tiff-opener",
+    "success": false,
+    "errors": [
+      "TypeError: Failed to execute 'createImageData' on 'CanvasRenderingContext2D': Value is not of type 'long'."
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "bmp-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "apng-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "wav-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "flac-opener",
+    "success": false,
+    "errors": [
+      "Audio decode error: EncodingError: Unable to decode audio data"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "ogg-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "mp3-opener",
+    "success": false,
+    "errors": [
+      "Render status: error-displayed"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "avi-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "aac-opener",
+    "success": false,
+    "errors": [
+      "Render status: error-displayed"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "webm-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "midi-opener",
+    "success": false,
+    "errors": [
+      "[MidiOpener] Parse error: Bad MIDI file.  Expected 'MHdr', got: '\u0000\u0000\u0000\u0000'"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "mp4-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "m3u8-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "mkv-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "vtt-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "srt-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "mov-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "gz-opener",
+    "success": false,
+    "errors": [
+      "incorrect header check",
+      "Render status: error-displayed"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "zip-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "tar-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "ass-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "lrc-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "rar-opener",
+    "success": false,
+    "errors": [
+      "Uncaught SyntaxError: Unexpected token 'export'"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "7z-opener",
+    "success": false,
+    "errors": [
+      "Uncaught SyntaxError: Unexpected token 'export'"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "iso-opener",
+    "success": false,
+    "errors": [
+      "Uncaught SyntaxError: Unexpected token 'export'"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "bz2-opener",
+    "success": false,
+    "errors": [
+      "[BZ2] Error: No magic number found"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "xz-opener",
+    "success": false,
+    "errors": [],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/xz-decompress@0.1.3/dist/xz-decompress.min.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "rpm-opener",
+    "success": false,
+    "errors": [
+      "Error: Not a valid RPM file (lead magic mismatch)",
+      "Render status: error-displayed"
+    ],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/xz-decompress@0.1.3/dist/xz-decompress.min.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "flatpak-opener",
+    "success": false,
+    "errors": [
+      "Uncaught SyntaxError: Unexpected token 'export'"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "deb-opener",
+    "success": false,
+    "errors": [],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/xz-decompress@0.1.3/dist/xz-decompress.min.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "dmg-opener",
+    "success": false,
+    "errors": [],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/libarchive.js@1.3.0/dist/libarchive.min.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "appimage-opener",
+    "success": false,
+    "errors": [],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/libarchive.js@1.3.0/dist/libarchive.min.js - net::ERR_BLOCKED_BY_ORB"
+    ]
+  },
+  {
+    "slug": "aab-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "ear-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "ipa-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "apk-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "war-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "msi-opener",
+    "success": false,
+    "errors": [
+      "[MSI Opener Error] Error: CFB file size 4 < 512"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "dylib-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "exe-opener",
+    "success": false,
+    "errors": [
+      "Error: Invalid DOS header (missing MZ signature)."
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "so-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "dll-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "whl-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "gem-opener",
+    "success": false,
+    "errors": [
+      "Error: Missing metadata.gz",
+      "Render status: error-displayed"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "crate-opener",
+    "success": false,
+    "errors": [
+      "Error: Decompression failed. Is this a valid .crate (tar.gz) file?"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "egg-opener",
+    "success": false,
+    "errors": [
+      "Error: Can't find end of central directory : is this a zip file ? If it is, see https://stuk.github.io/jszip/documentation/howto/read_zip.html"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "nupkg-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "snap-opener",
+    "success": false,
+    "errors": [
+      "Uncaught SyntaxError: Unexpected token 'export'"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "jar-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  }
+]

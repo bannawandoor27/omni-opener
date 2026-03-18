@@ -15,14 +15,13 @@
       infoHtml: '<strong>PPTX Viewer:</strong> Renders a preview of .pptx files. Powered by pptx2html.',
       
       onInit: function(helpers) {
-        // Main library
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/pptx2html@0.1.3/dist/pptx2html.min.js', function() {
+        helpers.loadScripts([
+          'https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js',
+          'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js',
+          'https://cdn.jsdelivr.net/npm/pptx2html@0.3.4/dist/pptx2html.min.js'
+        ], function() {
           isPptx2HtmlReady = true;
         });
-        // Dependencies for pptx2html
-        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js');
-        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js');
-
       },
 
       onFile: function (file, content, helpers) {

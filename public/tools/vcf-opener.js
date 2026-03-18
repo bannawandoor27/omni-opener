@@ -48,7 +48,7 @@
       ],
 
       onInit: function(helpers) {
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/vcf@2.1.0/dist/vcf.min.js');
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/vcf@2.1.0/lib/vcard.min.js');
       },
 
       onFile: function (file, content, helpers) {

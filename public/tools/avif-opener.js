@@ -85,7 +85,6 @@
             ctx.drawImage(img, 0, 0);
             
             canvas.toBlob(function(blob) {
-              helpers.hideLoading();
               if (blob) {
                 const name = (helpers.getFile().name || 'image').replace(/\.avif$/i, '') + '.png';
                 helpers.download(name, blob, 'image/png');
@@ -149,7 +148,6 @@
       helpers.setState('currentImg', img);
       helpers.setState('objectUrl', url);
       renderView(file, img, url, helpers);
-      helpers.hideLoading();
     };
 
     img.onerror = function() {

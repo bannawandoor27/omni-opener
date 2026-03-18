@@ -36,7 +36,7 @@
       onInit: function(h) {
         h.loadScript('https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js');
       },
-      onFile: async function(file, content, h) {
+      onFile: async function _onFile(file, content, h) {
         cleanup();
         
         if (!content || content.byteLength === 0) {
@@ -51,7 +51,7 @@
           h.loadScript('https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js', () => {
             // Re-trigger file processing once script is loaded
             if (h.getFile() === file) {
-               this.onFile(file, content, h);
+               _onFile(file, content, h);
             }
           });
           return;

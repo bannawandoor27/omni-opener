@@ -57,10 +57,10 @@
         helpers.loadScript('https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js');
       },
 
-      onFile: function (file, content, helpers) {
+      onFile: function _onFile(file, content, helpers) {
         if (typeof Papa === 'undefined') {
           helpers.showLoading('Loading CSV engine...');
-          setTimeout(() => helpers.onFile(file, content, helpers), 500);
+          setTimeout(() => _onFile(file, content, helpers), 500);
           return;
         }
 

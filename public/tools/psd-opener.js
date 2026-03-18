@@ -6,7 +6,7 @@
    * A high-performance, client-side Photoshop file viewer and inspector.
    */
 
-  const PSD_LIB_URL = 'https://cdn.jsdelivr.net/npm/psd@3.4.0/dist/psd.min.js';
+  const PSD_LIB_URL = 'https://cdn.jsdelivr.net/npm/psd@3.2.0/dist/psd.min.js';
 
   function formatSize(bytes) {
     if (!bytes) return '0 B';
@@ -38,12 +38,15 @@
 
         // B1, B4: Ensure library is loaded
         if (typeof window.PSD === 'undefined') {
-          try {
-            await helpers.loadScript(PSD_LIB_URL);
-          } catch (e) {
-            helpers.showError('Engine Load Failed', 'Could not load PSD.js from CDN. Please check your connection.');
-            return;
-          }
+          await new Promise((resolve) => {
+            helpers.loadScript(PSD_LIB_URL, resolve);
+          });
+        }
+
+        // Final check
+        if (typeof window.PSD === 'undefined') {
+          helpers.showError('Engine Load Failed', 'Could not initialize PSD.js. Please try again.');
+          return;
         }
 
         // B2: Handle binary content safely

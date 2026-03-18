@@ -72,8 +72,8 @@
 
       onInit: function (h) {
         h.loadScript('https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js', function () {
-          h.loadScript('https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/loaders/STLLoader.js', function () {
-            h.loadScript('https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/controls/OrbitControls.js', function () {
+          h.loadScript('https://cdn.jsdelivr.net/npm/three@0.149.0/examples/jsm/loaders/STLLoader.js', function () {
+            h.loadScript('https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/controls/OrbitControls.js', function () {
               h.loadScript('https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/exporters/OBJExporter.js');
             });
           });

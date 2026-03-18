@@ -1211,6 +1211,32 @@
       "category": "packages",
       "icon": "📦",
       "script_url": "/tools/crate-opener.js"
+    },
+    {
+      "slug": "jar-opener",
+      "title": "JAR Opener",
+      "h1": "Open & View .jar Files Online — Free & Private",
+      "meta_description": "Open, view, and extract .jar files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".jar",
+        ".war",
+        ".ear"
+      ],
+      "category": "packages",
+      "icon": "📦",
+      "script_url": "/tools/jar-opener.js"
+    },
+    {
+      "slug": "snap-opener",
+      "title": "SNAP Opener",
+      "h1": "Open & View .snap Packages Online — Free & Private",
+      "meta_description": "Open, view, and extract .snap packages in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".snap"
+      ],
+      "category": "packages",
+      "icon": "📦",
+      "script_url": "/tools/snap-opener.js"
     }
   ]
 }

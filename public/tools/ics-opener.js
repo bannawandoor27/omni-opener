@@ -45,7 +45,7 @@
       ],
 
       onInit: function (helpers) {
-        helpers.loadScript('https://unpkg.com/ical.js/dist/ical.min.js');
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/ical.js@1.5.0/build/ical.min.js');
       },
 
       onFile: function (file, content, helpers) {

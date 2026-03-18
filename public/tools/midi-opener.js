@@ -30,9 +30,14 @@
         }
       ],
 
-      onInit: function (h) {
-        if (typeof Midi === 'undefined') {
-          h.loadScript('https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/dist/Midi.min.js');
+      onInit: async function (h) {
+        if (typeof window.Midi === 'undefined') {
+          try {
+            const mod = await import('https://esm.sh/@tonejs/midi@2.0.28');
+            window.Midi = mod.Midi || mod.default || mod;
+          } catch (e) {
+            h.showError('Midi engine Load Failed', e.message);
+          }
         }
       },
 
@@ -41,20 +46,12 @@
         h.setState('fileSize', file.size);
         h.showLoading('Analyzing MIDI structure and sequences...');
 
-        const ensureLibrary = (callback) => {
-          if (typeof Midi !== 'undefined') {
-            callback();
-          } else {
-            h.loadScript('https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/dist/Midi.min.js', callback);
-          }
-        };
-
-        ensureLibrary(() => {
+        const process = () => {
           try {
             if (!(content instanceof ArrayBuffer)) {
               throw new Error('Invalid file data format');
             }
-            const midi = new Midi(content);
+            const midi = new window.Midi(content);
             h.setState('midiData', midi);
             renderMidi(midi, h);
           } catch (err) {
@@ -64,7 +61,23 @@
               'The file may be corrupted or in an unsupported format. Ensure it is a valid Standard MIDI File (SMF).'
             );
           }
-        });
+        };
+
+        if (typeof window.Midi !== 'undefined') {
+          process();
+        } else {
+          // If not yet loaded, wait a bit
+          let attempts = 0;
+          const check = setInterval(() => {
+            if (typeof window.Midi !== 'undefined') {
+              clearInterval(check);
+              process();
+            } else if (++attempts > 50) {
+              clearInterval(check);
+              h.showError('Dependency timeout', 'Midi engine library failed to load.');
+            }
+          }, 100);
+        }
       }
     });
   };
