@@ -1,47 +1,49 @@
-/**
- * OmniOpener — KML Viewer Tool
- * Uses OmniTool SDK and highlight.js. Renders .kml files with syntax highlighting.
- */
 (function () {
   'use strict';
 
-  let isHighlightJsReady = false;
-
   window.initTool = function (toolConfig, mountEl) {
+    let map = null;
+
     OmniTool.create(mountEl, toolConfig, {
       accept: '.kml',
-      dropLabel: 'Drop a .kml file here',
       binary: false,
-      infoHtml: '<strong>KML Viewer:</strong> Displays .kml files with syntax highlighting.',
-      
-      onInit: function(helpers) {
-        helpers.loadCSS('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css');
-        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js', function() {
-            isHighlightJsReady = true;
+      onInit: function (h) {
+        h.loadCSS('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
+        h.loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', () => {
+          h.loadScript('https://unpkg.com/@tmcw/togeojson@0.15.0/dist/togeojson.umd.js');
         });
-        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js');
       },
-
-      onFile: function (file, content, helpers) {
-        if (!isHighlightJsReady) {
-          helpers.showError('Dependency not loaded', 'The highlight.js library is still loading. Please try again in a moment.');
+      onFile: function (file, content, h) {
+        if (typeof L === 'undefined' || typeof toGeoJSON === 'undefined') {
+          h.showLoading('Loading map...');
+          setTimeout(() => this.onFile(file, content, h), 1000);
           return;
         }
 
-        helpers.showLoading('Highlighting KML...');
-
         try {
-          const highlightedCode = hljs.highlight(content, {language: 'xml'}).value;
-          const renderHtml = `
-            <div class="p-4 bg-surface-100 rounded-lg shadow-inner overflow-auto h-full">
-              <pre class="flex-grow bg-surface-200 p-3 rounded-md text-sm text-surface-900 overflow-auto"><code class="language-xml">${highlightedCode}</code></pre>
+          const dom = new DOMParser().parseFromString(content, 'text/xml');
+          const geojson = toGeoJSON.kml(dom);
+          
+          h.render(`
+            <div class="p-4">
+              <div class="mb-4 font-bold">${esc(file.name)}</div>
+              <div id="map" class="w-full h-[60vh] rounded shadow-lg bg-surface-100"></div>
             </div>
-          `;
-          helpers.render(renderHtml);
-        } catch (e) {
-          helpers.showError('Error highlighting .kml file', e.message);
+          `);
+
+          if (map) map.remove();
+          map = L.map('map').setView([0, 0], 2);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+          const geojsonLayer = L.geoJSON(geojson).addTo(map);
+          map.fitBounds(geojsonLayer.getBounds());
+        } catch (err) {
+          h.showError('KML Error', err.message);
         }
       }
     });
   };
+
+  function esc(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
 })();
