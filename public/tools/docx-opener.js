@@ -1,45 +1,26 @@
-/**
- * OmniOpener — DOCX Viewer Tool
- * Uses OmniTool SDK and Mammoth.js. Renders .docx files as HTML.
- */
 (function () {
   'use strict';
-
-  let isMammothReady = false;
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       accept: '.docx',
-      dropLabel: 'Drop a .docx file here',
       binary: true,
-      infoHtml: '<strong>DOCX Viewer:</strong> Renders a preview of .docx files. Powered by Mammoth.js.',
-      
-      onInit: function(helpers) {
-        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.17/mammoth.browser.min.js', function() {
-          isMammothReady = true;
-        });
+      onInit: function (h) {
+        h.loadScript('https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js');
       },
-
-      onFile: function (file, content, helpers) {
-        if (!isMammothReady) {
-          helpers.showError('Dependency not loaded', 'The Mammoth.js library is still loading. Please try again in a moment.');
+      onFile: function (file, content, h) {
+        if (typeof mammoth === 'undefined') {
+          h.showLoading('Loading engine...');
+          h.loadScript('https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js', () => this.onFile(file, content, h));
           return;
         }
 
-        helpers.showLoading('Converting .docx to HTML...');
-
+        h.showLoading('Converting...');
         mammoth.convertToHtml({ arrayBuffer: content })
-          .then(function(result){
-              const renderHtml = `
-                <div class="p-4 bg-white rounded-lg shadow-inner overflow-auto h-full">
-                  <div class="prose max-w-none">${result.value}</div>
-                </div>
-              `;
-              helpers.render(renderHtml);
+          .then(result => {
+            h.render(`<div class="p-4 bg-white rounded shadow-inner overflow-auto max-h-[70vh]"><div class="prose max-w-none">${result.value}</div></div>`);
           })
-          .catch(function(err){
-              helpers.showError('Error rendering .docx', err.message);
-          });
+          .catch(err => h.showError('Error', err.message));
       }
     });
   };
