@@ -1,84 +1,34 @@
-/**
- * OmniOpener — ODS Viewer Tool
- * Uses OmniTool SDK and SheetJS. Renders .ods files as HTML tables.
- */
 (function () {
   'use strict';
-
-  let isSheetJSReady = false;
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       accept: '.ods',
-      dropLabel: 'Drop an .ods file here',
       binary: true,
-      infoHtml: '<strong>ODS Viewer:</strong> Renders .ods spreadsheets. Powered by SheetJS.',
-      
-      onInit: function(helpers) {
-        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.5/xlsx.full.min.js', function() {
-          isSheetJSReady = true;
-        });
+      onInit: function (h) {
+        h.loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
       },
-
-      onFile: function (file, content, helpers) {
-        if (!isSheetJSReady) {
-          helpers.showError('Dependency not loaded', 'The SheetJS library is still loading. Please try again in a moment.');
+      onFile: function (file, content, h) {
+        if (typeof XLSX === 'undefined') {
+          h.showLoading('Loading engine...');
+          h.loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js', () => this.onFile(file, content, h));
           return;
         }
 
-        helpers.showLoading('Parsing spreadsheet...');
-
         try {
-          const workbook = XLSX.read(content, { type: 'array' });
-          let html = '<div class="flex flex-col space-y-4">';
-
-          workbook.SheetNames.forEach((sheetName, index) => {
-            const worksheet = workbook.Sheets[sheetName];
-            const jsonSheet = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-            
-            html += `<details ${index === 0 ? 'open' : ''}>`;
-            html += `<summary class="font-semibold text-lg cursor-pointer">${escapeHtml(sheetName)}</summary>`;
-            html += '<div class="overflow-x-auto mt-2"><table class="w-full text-sm text-left text-surface-500">';
-            
-            if (jsonSheet.length > 0) {
-              // Header
-              html += '<thead class="text-xs text-surface-700 uppercase bg-surface-50">';
-              html += '<tr>';
-              jsonSheet[0].forEach(cell => {
-                html += '<th scope="col" class="px-6 py-3">' + escapeHtml(cell) + '</th>';
-              });
-              html += '</tr></thead>';
-
-              // Body
-              html += '<tbody>';
-              jsonSheet.slice(1).forEach(row => {
-                html += '<tr class="bg-white border-b hover:bg-surface-50">';
-                row.forEach(cell => {
-                  html += '<td class="px-6 py-4">' + escapeHtml(cell) + '</td>';
-                });
-                html += '</tr>';
-              });
-              html += '</tbody>';
-            }
-            
-            html += '</table></div></details>';
-          });
-
-          html += '</div>';
-          helpers.render(html);
-
+          const wb = XLSX.read(content, { type: 'array' });
+          const sheetName = wb.SheetNames[0];
+          const ws = wb.Sheets[sheetName];
+          const html = XLSX.utils.sheet_to_html(ws);
+          h.render(`<div class="p-4"><div class="font-bold mb-4">${esc(file.name)} - ${esc(sheetName)}</div><div class="bg-white p-4 border rounded shadow-sm overflow-auto max-h-[70vh]">${html}</div></div>`);
         } catch (err) {
-          helpers.showError('Error parsing .ods file', err.message);
+          h.showError('ODS Error', err.message);
         }
       }
     });
   };
 
-  function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(String(str)));
-    return div.innerHTML;
+  function esc(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
-
 })();
