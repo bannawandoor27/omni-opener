@@ -6,7 +6,7 @@
    * A production-grade iOS App Package (.ipa) inspector.
    */
 
-  const MAX_VISIBLE_ENTRIES = 1000;
+  const MAX_VISIBLE_ENTRIES = 500;
   const SCRIPTS = [
     'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
     'https://cdn.jsdelivr.net/npm/plist@3.1.0/dist/plist.min.js'
@@ -62,20 +62,17 @@
           const zip = await JSZip.loadAsync(content);
           const entries = [];
           let infoPlistEntry = null;
-          let appPath = '';
 
           zip.forEach((path, entry) => {
             entries.push({
               path,
               size: entry._data.uncompressedSize || 0,
               isDirectory: entry.dir,
-              entry: entry,
-              date: entry.date
+              entry: entry
             });
 
             if (!infoPlistEntry && path.toLowerCase().endsWith('.app/info.plist')) {
               infoPlistEntry = entry;
-              appPath = path.substring(0, path.lastIndexOf('/') + 1);
             }
           });
 
@@ -91,7 +88,6 @@
 
           const ipaData = {
             entries,
-            totalSize: entries.reduce((acc, e) => acc + e.size, 0),
             metadata: {
               name: 'Unknown App',
               bundleId: 'Unknown',
@@ -100,7 +96,8 @@
               sdk: 'Unknown',
               platform: 'iOS'
             },
-            searchQuery: ''
+            searchQuery: '',
+            fullPlist: null
           };
 
           if (infoPlistEntry) {
@@ -117,11 +114,18 @@
                 ipaData.metadata.sdk = parsed.DTSDKName || ipaData.metadata.sdk;
                 ipaData.fullPlist = parsed;
               } else {
-                // Heuristic for binary plist if needed, but usually we just show what we can
+                // Heuristic for binary plist strings
                 const latinText = new TextDecoder('latin1').decode(buffer);
-                ipaData.metadata.bundleId = extractStringHeuristic(latinText, 'CFBundleIdentifier') || ipaData.metadata.bundleId;
-                ipaData.metadata.version = extractStringHeuristic(latinText, 'CFBundleShortVersionString') || extractStringHeuristic(latinText, 'CFBundleVersion') || ipaData.metadata.version;
-                ipaData.metadata.name = extractStringHeuristic(latinText, 'CFBundleDisplayName') || extractStringHeuristic(latinText, 'CFBundleName') || ipaData.metadata.name;
+                const extract = (key) => {
+                  const idx = latinText.indexOf(key);
+                  if (idx === -1) return null;
+                  const sub = latinText.substring(idx + key.length, idx + key.length + 100);
+                  const match = sub.match(/[a-zA-Z0-9._-]{3,}/);
+                  return match ? match[0] : null;
+                };
+                ipaData.metadata.bundleId = extract('CFBundleIdentifier') || ipaData.metadata.bundleId;
+                ipaData.metadata.version = extract('CFBundleShortVersionString') || extract('CFBundleVersion') || ipaData.metadata.version;
+                ipaData.metadata.name = extract('CFBundleDisplayName') || extract('CFBundleName') || ipaData.metadata.name;
               }
             } catch (e) {
               console.warn('Plist parsing failed', e);
@@ -129,7 +133,7 @@
           }
 
           helpers.setState('ipaData', ipaData);
-          render(helpers, file, ipaData);
+          render(helpers);
 
         } catch (err) {
           console.error(err);
@@ -148,7 +152,7 @@
           }
         },
         {
-          label: '📥 Download Metadata',
+          label: '📥 Download JSON Metadata',
           id: 'dl-meta',
           onClick: function(helpers) {
             const data = helpers.getState().ipaData;
@@ -161,15 +165,11 @@
     });
   };
 
-  function extractStringHeuristic(text, key) {
-    const idx = text.indexOf(key);
-    if (idx === -1) return null;
-    const sub = text.substring(idx + key.length, idx + key.length + 120);
-    const match = sub.match(/[a-zA-Z0-9._-]{3,}/);
-    return match ? match[0] : null;
-  }
+  function render(helpers) {
+    const file = helpers.getFile();
+    const data = helpers.getState().ipaData;
+    if (!data) return;
 
-  function render(helpers, file, data) {
     const query = (data.searchQuery || '').toLowerCase();
     const filtered = data.entries.filter(e => e.path.toLowerCase().includes(query));
     const visible = filtered.slice(0, MAX_VISIBLE_ENTRIES);
@@ -215,7 +215,7 @@
           id="ipa-filter"
           placeholder="Search files by path or name..." 
           value="${escapeHtml(data.searchQuery)}"
-          class="block w-full pl-10 pr-3 py-2 border border-surface-200 rounded-xl leading-5 bg-white placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 sm:text-sm transition-all"
+          class="block w-full pl-10 pr-3 py-2.5 border border-surface-200 rounded-xl leading-5 bg-white placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 sm:text-sm transition-all shadow-sm"
         />
         ${data.searchQuery ? `
           <button id="clear-search" class="absolute inset-y-0 right-0 pr-3 flex items-center text-surface-400 hover:text-surface-600">
@@ -225,34 +225,31 @@
       </div>
     `;
 
-    const tableHeader = `
+    const tableSection = `
       <div class="flex items-center justify-between mb-3">
         <h3 class="font-semibold text-surface-800">Package Contents</h3>
-        <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${filtered.length} entries</span>
+        <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${filtered.length} items</span>
       </div>
-    `;
-
-    const table = `
-      <div class="overflow-x-auto rounded-xl border border-surface-200">
+      <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white">
         <table class="min-w-full text-sm">
           <thead>
-            <tr>
+            <tr class="bg-surface-50/50">
               <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200">File Path</th>
               <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 w-24">Size</th>
-              <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 w-24">Actions</th>
+              <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 w-24">Action</th>
             </tr>
           </thead>
-          <tbody class="bg-white">
-            ${visible.length > 0 ? visible.map((e, idx) => `
+          <tbody>
+            ${visible.length > 0 ? visible.map((e) => `
               <tr class="even:bg-surface-50 hover:bg-brand-50 transition-colors">
-                <td class="px-4 py-2 text-surface-700 border-b border-surface-100 font-mono text-xs truncate max-w-md" title="${escapeHtml(e.path)}">
+                <td class="px-4 py-2.5 text-surface-700 border-b border-surface-100 font-mono text-xs truncate max-w-md" title="${escapeHtml(e.path)}">
                   <span class="inline-block w-5 text-center mr-1">${e.isDirectory ? '📁' : '📄'}</span>
                   ${escapeHtml(e.path)}
                 </td>
-                <td class="px-4 py-2 text-surface-700 border-b border-surface-100 text-right tabular-nums">
+                <td class="px-4 py-2.5 text-surface-700 border-b border-surface-100 text-right tabular-nums">
                   ${e.isDirectory ? '-' : formatSize(e.size)}
                 </td>
-                <td class="px-4 py-2 text-surface-700 border-b border-surface-100 text-right">
+                <td class="px-4 py-2.5 text-surface-700 border-b border-surface-100 text-right">
                   ${!e.isDirectory ? `
                     <button 
                       class="extract-btn text-brand-600 hover:text-brand-700 font-medium text-xs transition-colors" 
@@ -265,7 +262,7 @@
               </tr>
             `).join('') : `
               <tr>
-                <td colspan="3" class="px-4 py-8 text-center text-surface-500 bg-surface-50">
+                <td colspan="3" class="px-4 py-12 text-center text-surface-500 bg-surface-50">
                   ${data.entries.length === 0 ? 'This package is empty.' : 'No files match your search filter.'}
                 </td>
               </tr>
@@ -274,19 +271,31 @@
         </table>
       </div>
       ${filtered.length > MAX_VISIBLE_ENTRIES ? `
-        <div class="mt-4 p-3 bg-surface-50 rounded-lg text-center text-xs text-surface-500 border border-dashed border-surface-200">
-          Showing first ${MAX_VISIBLE_ENTRIES} of ${filtered.length} entries. Use search to find specific files.
+        <div class="mt-4 p-4 bg-surface-50 rounded-xl text-center text-xs text-surface-500 border border-dashed border-surface-200">
+          Showing first ${MAX_VISIBLE_ENTRIES} of ${filtered.length} entries. Use search to narrow down results.
         </div>
       ` : ''}
     `;
 
     helpers.render(`
-      <div class="max-w-6xl mx-auto p-4 md:p-6">
+      <div class="max-w-6xl mx-auto p-4 md:p-6 animate-in fade-in duration-500">
         ${infoBar}
         ${summaryCards}
+        
+        ${data.fullPlist ? `
+          <div class="mb-6">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-semibold text-surface-800">Application Info (Info.plist)</h3>
+              <button id="toggle-plist" class="text-xs text-brand-600 hover:text-brand-700 font-medium">Toggle View</button>
+            </div>
+            <div id="plist-content" class="hidden rounded-xl overflow-hidden border border-surface-200">
+              <pre class="p-4 text-xs font-mono bg-gray-950 text-gray-100 overflow-x-auto leading-relaxed max-h-96">${escapeHtml(JSON.stringify(data.fullPlist, null, 2))}</pre>
+            </div>
+          </div>
+        ` : ''}
+
         ${searchBox}
-        ${tableHeader}
-        ${table}
+        ${tableSection}
       </div>
     `);
 
@@ -295,11 +304,13 @@
     if (input) {
       input.addEventListener('input', (e) => {
         data.searchQuery = e.target.value;
-        render(helpers, file, data);
-        // Maintain focus
+        render(helpers);
+        // Maintain focus and cursor position
         const newInput = document.getElementById('ipa-filter');
-        newInput.focus();
-        newInput.setSelectionRange(newInput.value.length, newInput.value.length);
+        if (newInput) {
+          newInput.focus();
+          newInput.setSelectionRange(newInput.value.length, newInput.value.length);
+        }
       });
     }
 
@@ -307,7 +318,15 @@
     if (clearBtn) {
       clearBtn.addEventListener('click', () => {
         data.searchQuery = '';
-        render(helpers, file, data);
+        render(helpers);
+      });
+    }
+
+    const togglePlist = document.getElementById('toggle-plist');
+    if (togglePlist) {
+      togglePlist.addEventListener('click', () => {
+        const content = document.getElementById('plist-content');
+        content.classList.toggle('hidden');
       });
     }
 
@@ -327,7 +346,7 @@
           helpers.download(fileName, blob);
         } catch (err) {
           console.error('Extraction failed', err);
-          alert('Failed to extract file.');
+          helpers.showError('Extraction Failed', 'Could not extract the file from the package.');
         } finally {
           btn.disabled = false;
           btn.textContent = originalText;
