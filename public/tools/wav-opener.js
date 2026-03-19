@@ -119,7 +119,7 @@
     });
 
     wavesurfer.on('error', function (err) {
-      h.showError('WaveSurfer Error', err);
+      h.showError('WaveSurfer Issue', err);
     });
   }
 

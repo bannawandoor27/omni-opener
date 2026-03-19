@@ -38,7 +38,7 @@
             <pre class="hljs p-4 overflow-auto max-h-[70vh] rounded-b-lg"><code>${highlighted}</code></pre>
           `);
         } catch (err) {
-          helpers.showError('Error', err.message);
+          helpers.showError('Issue', err.message);
         }
       }
     });

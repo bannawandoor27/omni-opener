@@ -29,7 +29,7 @@
           slideMode: false,
           keyBoardShortCut: false,
           callback: (result) => {
-            if (!result.success) h.showError('Error', result.msg);
+            if (!result.success) h.showError('Issue', result.msg);
             else h.hideLoading();
           }
         });

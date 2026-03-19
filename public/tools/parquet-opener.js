@@ -21,7 +21,7 @@
             window.parquet_wasm = mod;
             isParquetWasmReady = true;
           } catch (e) {
-            helpers.showError('WASM Load Failed', 'Failed to initialize Parquet engine: ' + e.message);
+            helpers.showError('WASM Load Issue', 'Failed to initialize Parquet engine: ' + e.message);
           }
       },
 

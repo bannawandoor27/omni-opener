@@ -20,7 +20,7 @@
             window.avsc = mod.default || mod;
             isAvscReady = true;
           } catch (e) {
-            helpers.showError('Avro engine Load Failed', 'Failed to initialize Avro engine: ' + e.message);
+            helpers.showError('Avro engine Load Issue', 'Failed to initialize Avro engine: ' + e.message);
           }
       },
 

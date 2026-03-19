@@ -113,7 +113,7 @@
         }
 
         if (typeof JSZip === 'undefined') {
-          h.showError('Library Load Failed', 'JSZip could not be loaded from the CDN. Please check your internet connection.');
+          h.showError('Library Load Issue', 'JSZip could not be loaded from the CDN. Please check your internet connection.');
           return;
         }
 

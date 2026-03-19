@@ -69,7 +69,7 @@
           };
 
         } catch (err) {
-          h.showError('Error', err.message);
+          h.showError('Issue', err.message);
         }
       }
     });

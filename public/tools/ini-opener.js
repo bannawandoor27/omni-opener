@@ -82,7 +82,7 @@
             helpers.render(html);
           }
         } catch (e) {
-          helpers.showError('Parsing Error', e.message);
+          helpers.showError('Parsing Issue', e.message);
         }
       }
     });

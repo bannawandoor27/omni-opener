@@ -23,7 +23,7 @@
       },
 
       onFile: function (file, content, helpers) {
-        if (!isHighlightJsReady) {
+        if (!isHighlightJsReady || typeof hljs === "undefined") {
           helpers.showError('Dependency not loaded', 'The highlight.js library is still loading. Please try again in a moment.');
           return;
         }

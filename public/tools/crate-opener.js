@@ -20,7 +20,7 @@
           const entries = await archive.getFilesArray();
           h.render(`<div class="p-4"><h3>${esc(file.name)}</h3><ul>${entries.map(e => `<li>${esc(e.path)}</li>`).join('')}</ul></div>`);
         } catch (err) {
-          h.showError('Crate Error', err.message);
+          h.showError('Crate Issue', err.message);
         }
       }
     });

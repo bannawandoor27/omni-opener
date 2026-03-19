@@ -34,7 +34,7 @@
             </div>
           `);
         } catch (err) {
-          h.showError('PEM Error', err.message);
+          h.showError('PEM Issue', err.message);
         }
       }
     });

@@ -110,7 +110,7 @@
 
         // Handle ArrayBuffer content
         if (!(content instanceof ArrayBuffer)) {
-          h.showError('File Error', 'Invalid file content received. Expected binary data.');
+          h.showError('File Issue', 'Invalid file content received. Expected binary data.');
           return;
         }
 

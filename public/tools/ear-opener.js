@@ -42,7 +42,7 @@
         // Small delay to ensure JSZip is available
         setTimeout(function () {
           if (typeof JSZip === 'undefined') {
-            h.showError('Dependency Error', 'JSZip failed to load. Please check your connection.');
+            h.showError('Dependency Issue', 'JSZip failed to load. Please check your connection.');
             return;
           }
           processArchive(content, h);

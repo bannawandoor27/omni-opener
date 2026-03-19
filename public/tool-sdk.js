@@ -267,7 +267,7 @@
         try {
           if (opts.onFile) opts.onFile(file, state.content, helpers);
         } catch (err) {
-          helpers.showError('Failed to process file', err.message);
+          helpers.showError('Processing Issue', err.message);
         }
       };
       reader.onerror = function () {

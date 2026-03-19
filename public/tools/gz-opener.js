@@ -27,7 +27,7 @@
             </div>
           `);
         } catch (err) {
-          h.showError('GZ Error', err.message);
+          h.showError('GZ Issue', err.message);
         }
       }
     });

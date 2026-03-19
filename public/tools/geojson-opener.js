@@ -33,7 +33,7 @@
           const geojsonLayer = L.geoJSON(data).addTo(map);
           map.fitBounds(geojsonLayer.getBounds());
         } catch (err) {
-          h.showError('GeoJSON Error', err.message);
+          h.showError('GeoJSON Issue', err.message);
         }
       }
     });

@@ -45,7 +45,7 @@
           const highlighted = hljs.highlight(beautified, { language: 'xml' }).value;
           helpers.render(`<div class="p-4"><pre class="hljs language-xml rounded-lg p-4 overflow-auto max-h-[70vh]">${highlighted}</pre></div>`);
         } catch (e) {
-          helpers.showError('XML Error', e.message);
+          helpers.showError('XML Issue', e.message);
         }
       }
     });

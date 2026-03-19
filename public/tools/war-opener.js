@@ -49,7 +49,7 @@
               await processWar(file, content, helpers);
             } else if (retries > 50) {
               clearInterval(checkJSZip);
-              helpers.showError('Library Load Failed', 'JSZip could not be loaded from CDN. Please check your connection.');
+              helpers.showError('Library Load Issue', 'JSZip could not be loaded from CDN. Please check your connection.');
             }
           }, 100);
           return;

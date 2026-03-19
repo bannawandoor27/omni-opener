@@ -34,7 +34,7 @@
           
           document.getElementById('psd-mount').appendChild(canvas);
         } catch (err) {
-          helpers.showError('Error', err.message);
+          helpers.showError('Issue', err.message);
         }
       }
     });

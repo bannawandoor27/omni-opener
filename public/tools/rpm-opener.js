@@ -17,7 +17,7 @@
           const archive = await Archive.open(file);
           const entries = await archive.getFilesArray();
           helpers.render('<div class="p-4"><h3>' + file.name + '</h3><ul>' + entries.map(e => '<li>' + e.path + '</li>').join('') + '</ul></div>');
-        } catch (err) { helpers.showError('Error', err.message); }
+        } catch (err) { helpers.showError('Issue', err.message); }
       }
     });
   };

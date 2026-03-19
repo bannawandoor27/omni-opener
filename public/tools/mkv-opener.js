@@ -345,7 +345,7 @@
                 helpers.download(name, blob, 'image/png');
               }, 'image/png');
             } catch (e) {
-              helpers.showError('Capture Error', 'Security restrictions may prevent capturing this video.');
+              helpers.showError('Capture Issue', 'Security restrictions may prevent capturing this video.');
             }
           }
         },

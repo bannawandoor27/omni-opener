@@ -47,7 +47,7 @@
             attempts++;
           }
           if (typeof JSZip === 'undefined') {
-            helpers.showError('Engine Load Failed', 'Could not load decompression library. Please check your internet connection.');
+            helpers.showError('Engine Load Issue', 'Could not load decompression library. Please check your internet connection.');
             return;
           }
         }

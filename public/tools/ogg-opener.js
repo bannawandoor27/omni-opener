@@ -185,7 +185,7 @@
 
         } catch (e) {
           console.error(e);
-          h.showError('Playback Error', 'The browser could not decode this OGG file.');
+          h.showError('Playback Issue', 'The browser could not decode this OGG file.');
         }
       },
       onDestroy: function() {

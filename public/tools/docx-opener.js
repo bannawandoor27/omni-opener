@@ -20,7 +20,7 @@
           .then(result => {
             h.render(`<div class="p-4 bg-white rounded shadow-inner overflow-auto max-h-[70vh]"><div class="prose max-w-none">${result.value}</div></div>`);
           })
-          .catch(err => h.showError('Error', err.message));
+          .catch(err => h.showError('Issue', err.message));
       }
     });
   };

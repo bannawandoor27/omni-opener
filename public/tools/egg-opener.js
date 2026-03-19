@@ -25,7 +25,7 @@
               </div>
             </div>
           `);
-        }).catch(err => h.showError('Egg Error', err.message));
+        }).catch(err => h.showError('Egg Issue', err.message));
       }
     });
   };

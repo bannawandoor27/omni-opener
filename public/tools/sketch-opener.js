@@ -24,7 +24,7 @@
               </div>
             </div>
           `);
-        }).catch(err => h.showError('Sketch Error', err.message));
+        }).catch(err => h.showError('Sketch Issue', err.message));
       }
     });
   };

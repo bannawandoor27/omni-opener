@@ -57,7 +57,7 @@
         document.getElementById('next-page').addEventListener('click', () => onNextPage(helpers));
 
       }).catch(err => {
-        helpers.showError('Render Error', err.message);
+        helpers.showError('Render Issue', err.message);
       });
     }
 
@@ -118,7 +118,7 @@
           pdfDoc = pdf;
           renderPage(1, helpers);
         }, function (reason) {
-          helpers.showError('Error loading PDF', reason.message);
+          helpers.showError('Issue loading PDF', reason.message);
         });
       },
       onDestroy: function() {

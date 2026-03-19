@@ -10,7 +10,7 @@
       onInit: function (h) {
         h.loadCSS('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
         h.loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', () => {
-          h.loadScript('https://unpkg.com/@tmcw/togeojson@0.15.0/dist/togeojson.umd.js');
+          h.loadScript('https://cdn.jsdelivr.net/npm/togeojson@0.16.0/togeojson.js');
         });
       },
       onFile: function (file, content, h) {
@@ -37,7 +37,7 @@
           const geojsonLayer = L.geoJSON(geojson).addTo(map);
           map.fitBounds(geojsonLayer.getBounds());
         } catch (err) {
-          h.showError('GPX Error', err.message);
+          h.showError('GPX Issue', err.message);
         }
       }
     });

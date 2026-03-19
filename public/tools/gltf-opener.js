@@ -82,7 +82,7 @@
             loader.parse(content, '', (gltf) => {
               renderViewer(gltf, file, h);
             }, (error) => {
-              console.error('GLTF Parse Error:', error);
+              console.error('GLTF Parse Issue:', error);
               // U3: Friendly error message
               h.showError('Unable to open 3D model', 'The file might be corrupted, using an unsupported GLTF version, or missing external textures. Try a standalone .glb file.');
             });

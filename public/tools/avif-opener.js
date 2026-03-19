@@ -114,7 +114,7 @@
                   btn.innerHTML = '✓ Copied!';
                   setTimeout(() => { btn.innerHTML = originalText; }, 2000);
                 }).catch(err => {
-                  helpers.showError('Clipboard Error', 'Failed to copy image: ' + err.message);
+                  helpers.showError('Clipboard Issue', 'Failed to copy image: ' + err.message);
                 });
               } catch (err) {
                 helpers.showError('Not Supported', 'Your browser does not support direct image copying.');
