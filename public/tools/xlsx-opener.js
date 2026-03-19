@@ -18,7 +18,53 @@
         helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.5/xlsx.full.min.js', function() {
           isSheetJSReady = true;
         });
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js');
       },
+
+      actions: [
+        {
+          label: '📥 Export JSON',
+          id: 'export-json',
+          onClick: function (helpers) {
+            const workbook = helpers.getState().workbook;
+            if (workbook) {
+              const result = {};
+              workbook.SheetNames.forEach(name => {
+                result[name] = XLSX.utils.sheet_to_json(workbook.Sheets[name]);
+              });
+              helpers.download(helpers.getFile().name.replace(/\.xlsx$/i, '.json'), JSON.stringify(result, null, 2), 'application/json');
+            }
+          }
+        },
+        {
+          label: '📥 Export CSV',
+          id: 'export-csv',
+          onClick: function (helpers) {
+            const workbook = helpers.getState().workbook;
+            if (workbook) {
+              // Export the first sheet as CSV
+              const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+              const csv = XLSX.utils.sheet_to_csv(firstSheet);
+              helpers.download(helpers.getFile().name.replace(/\.xlsx$/i, '.csv'), csv, 'text/csv');
+            }
+          }
+        },
+        {
+          label: '📥 Export YAML',
+          id: 'export-yaml',
+          onClick: function (helpers) {
+            const workbook = helpers.getState().workbook;
+            if (workbook && typeof jsyaml !== 'undefined') {
+              const result = {};
+              workbook.SheetNames.forEach(name => {
+                result[name] = XLSX.utils.sheet_to_json(workbook.Sheets[name]);
+              });
+              const yaml = jsyaml.dump(result);
+              helpers.download(helpers.getFile().name.replace(/\.xlsx$/i, '.yaml'), yaml, 'text/yaml');
+            }
+          }
+        }
+      ],
 
       onFile: function (file, content, helpers) {
         if (!isSheetJSReady) {
@@ -30,6 +76,7 @@
 
         try {
           const workbook = XLSX.read(content, { type: 'array' });
+          helpers.setState('workbook', workbook);
           let html = '<div class="flex flex-col space-y-4">';
 
           workbook.SheetNames.forEach((sheetName, index) => {
