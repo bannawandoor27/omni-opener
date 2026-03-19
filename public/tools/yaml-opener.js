@@ -40,6 +40,16 @@
           }
         },
         {
+          label: '📋 Copy YAML',
+          id: 'copy-yaml',
+          onClick: function (helpers, btn) {
+            const content = helpers.getContent();
+            if (content) {
+              helpers.copyToClipboard(content, btn);
+            }
+          }
+        },
+        {
           label: '📥 Download JSON',
           id: 'dl-json',
           onClick: function (helpers) {

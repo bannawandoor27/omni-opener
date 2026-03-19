@@ -50,11 +50,25 @@
               helpers.download(helpers.getFile().name.replace(/\.(csv|tsv|txt)$/i, '.json'), json, 'application/json');
             }
           }
+        },
+        {
+          label: '📥 Export YAML',
+          id: 'export-yaml',
+          onClick: function (helpers) {
+            const data = helpers.getState().parsedData;
+            if (data && typeof jsyaml !== 'undefined') {
+              const yaml = jsyaml.dump(data);
+              helpers.download(helpers.getFile().name.replace(/\.(csv|tsv|txt)$/i, '.yaml'), yaml, 'text/yaml');
+            } else {
+              helpers.showError('YAML engine not loaded');
+            }
+          }
         }
       ],
 
       onInit: function(helpers) {
         helpers.loadScript('https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js');
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js');
       },
 
       onFile: function _onFile(file, content, helpers) {

@@ -30,9 +30,44 @@
     OmniTool.create(mountEl, toolConfig, {
       accept: '.xml,.rss,.atom,.svg,.kml,.gpx,.wsdl,.xsd',
       binary: false,
+      actions: [
+        {
+          label: '📋 Copy XML',
+          id: 'copy-xml',
+          onClick: function (helpers, btn) {
+            const content = helpers.getContent();
+            if (content) {
+              helpers.copyToClipboard(content, btn);
+            }
+          }
+        },
+        {
+          label: '📥 Export JSON',
+          id: 'export-json',
+          onClick: function (helpers) {
+            const content = helpers.getContent();
+            if (content && typeof XMLParser !== 'undefined') {
+              try {
+                const parser = new XMLParser({
+                  ignoreAttributes: false,
+                  attributeNamePrefix: "@_"
+                });
+                const jsonObj = parser.parse(content);
+                const json = JSON.stringify(jsonObj, null, 2);
+                helpers.download(helpers.getFile().name.replace(/\.[^.]+$/, '.json'), json, 'application/json');
+              } catch (e) {
+                helpers.showError('Conversion failed', e.message);
+              }
+            } else if (typeof XMLParser === 'undefined') {
+              helpers.showError('XML engine not loaded');
+            }
+          }
+        }
+      ],
       onInit: function (helpers) {
         helpers.loadCSS('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css');
         helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js');
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/fast-xml-parser@4.3.2/src/parser.min.js');
       },
       onFile: function _onFile(file, content, helpers) {
         if (typeof hljs === 'undefined') {
@@ -45,7 +80,7 @@
           const highlighted = hljs.highlight(beautified, { language: 'xml' }).value;
           helpers.render(`<div class="p-4"><pre class="hljs language-xml rounded-lg p-4 overflow-auto max-h-[70vh]">${highlighted}</pre></div>`);
         } catch (e) {
-          helpers.showError('XML Issue', e.message);
+          helpers.showError('XML Error', e.message);
         }
       }
     });
