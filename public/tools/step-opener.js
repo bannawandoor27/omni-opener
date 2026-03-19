@@ -44,7 +44,7 @@
             if (!result || !result.success) throw new Error('Parse failed');
             render3D(result, file, helpers);
           } catch (e) {
-            helpers.showError('Issue', e.message);
+            helpers.showError('Error', e.message);
           }
         }
       }

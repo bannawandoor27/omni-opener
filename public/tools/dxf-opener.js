@@ -20,7 +20,7 @@
           const parsed = parser.parseSync(content);
           h.render(`<div class="p-4"><div class="font-bold mb-2">${esc(file.name)}</div><div class="bg-white p-4 border rounded shadow-sm text-sm">Parsed ${parsed.entities.length} entities.</div></div>`);
         } catch (err) {
-          h.showError('DXF Issue', err.message);
+          h.showError('DXF Error', err.message);
         }
       }
     });

@@ -22,7 +22,7 @@
           const html = XLSX.utils.sheet_to_html(ws);
           h.render(`<div class="p-4"><div class="font-bold mb-4">${esc(file.name)} - ${esc(sheetName)}</div><div class="bg-white p-4 border rounded shadow-sm overflow-auto max-h-[70vh]">${html}</div></div>`);
         } catch (err) {
-          h.showError('ODS Issue', err.message);
+          h.showError('ODS Error', err.message);
         }
       }
     });

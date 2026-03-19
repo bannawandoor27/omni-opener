@@ -21,7 +21,7 @@
           const resultBlob = Array.isArray(result) ? result[0] : result;
           const url = URL.createObjectURL(resultBlob);
           h.render(`<div class="p-4"><div class="font-bold mb-4">${esc(file.name)}</div><img src="${url}" class="max-w-full h-auto shadow-lg rounded-lg" /></div>`);
-        }).catch(err => h.showError('HEIC Issue', String(err)));
+        }).catch(err => h.showError('HEIC Error', String(err)));
       }
     });
   };

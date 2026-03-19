@@ -84,7 +84,7 @@
           document.getElementById('next').onclick = () => { if (pageNum < pdfDoc.numPages) { pageNum++; renderPage(pageNum, helpers); } };
           renderPage(1, helpers);
         }).catch(err => {
-          helpers.showError('AI Format Issue', 'This AI file might not have PDF compatibility enabled. Only PDF-compatible AI files can be previewed.');
+          helpers.showError('AI Format Error', 'This AI file might not have PDF compatibility enabled. Only PDF-compatible AI files can be previewed.');
         });
       }
     });

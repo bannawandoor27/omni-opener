@@ -22,9 +22,9 @@
               h.render(`<div class="p-4"><div class="font-bold mb-4">${esc(file.name)}</div><div class="bg-white p-4 border rounded shadow-sm text-sm overflow-auto max-h-[70vh]">${esc(xml.substring(0, 10000))}...</div></div>`);
             });
           } else {
-            h.showError('ODT Issue', 'content.xml not found');
+            h.showError('ODT Error', 'content.xml not found');
           }
-        }).catch(err => h.showError('ODT Issue', err.message));
+        }).catch(err => h.showError('ODT Error', err.message));
       }
     });
   };

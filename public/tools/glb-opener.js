@@ -57,7 +57,7 @@
             renderer.render(scene, camera);
           }
           animate();
-        }, (err) => h.showError('Issue', err.message));
+        }, (err) => h.showError('Error', err.message));
       }
     });
   };

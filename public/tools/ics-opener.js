@@ -39,7 +39,7 @@
             </div>
           `);
         } catch (err) {
-          h.showError('ICS Issue', err.message);
+          h.showError('ICS Error', err.message);
         }
       }
     });

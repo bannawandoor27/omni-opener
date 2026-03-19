@@ -23,9 +23,9 @@
             div.className = 'p-4 bg-white rounded shadow-inner overflow-auto max-h-[70vh] prose max-w-none';
             elements.forEach(el => div.appendChild(el));
             h.render(div);
-          }).catch(err => h.showError('Render Issue', err.message));
+          }).catch(err => h.showError('Render Error', err.message));
         } catch (err) {
-          h.showError('Parse Issue', err.message);
+          h.showError('Parse Error', err.message);
         }
       }
     });

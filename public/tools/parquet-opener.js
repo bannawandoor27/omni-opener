@@ -1,52 +1,110 @@
 /**
  * OmniOpener — Parquet Viewer Tool
- * Uses OmniTool SDK and parquet-wasm. Renders .parquet files as JSON.
+ * Uses OmniTool SDK, hyparquet, js-yaml, fast-xml-parser, and PapaParse.
+ * Renders .parquet files with cross-format export.
  */
 (function () {
   'use strict';
 
-  let isParquetWasmReady = false;
+  let isParquetReady = false;
+  let records = [];
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       accept: '.parquet',
       dropLabel: 'Drop a .parquet file here',
       binary: true,
-      infoHtml: '<strong>Parquet Viewer:</strong> Displays the content of .parquet files as JSON.',
+      infoHtml: '<strong>Parquet Viewer:</strong> Displays .parquet files with cross-format export (JSON, YAML, XML, CSV).',
       
       onInit: async function(helpers) {
           try {
-            const mod = await import('https://cdn.jsdelivr.net/npm/parquet-wasm@0.4.0/esm/arrow1.js');
-            await mod.default(); // Initialize WASM
-            window.parquet_wasm = mod;
-            isParquetWasmReady = true;
+            const [parquetMod, yamlMod, xmlMod, csvMod] = await Promise.all([
+              import('https://esm.sh/hyparquet@0.3.1'),
+              import('https://esm.sh/js-yaml@4.1.0'),
+              import('https://esm.sh/fast-xml-parser@4.3.2'),
+              import('https://esm.sh/papaparse@5.4.1')
+            ]);
+            window.parquet = parquetMod;
+            window.jsyaml = yamlMod.default || yamlMod;
+            window.XMLBuilder = xmlMod.XMLBuilder;
+            window.Papa = csvMod.default || csvMod;
+            isParquetReady = true;
           } catch (e) {
-            helpers.showError('WASM Load Issue', 'Failed to initialize Parquet engine: ' + e.message);
+            helpers.showError('Dependency Load Issue', 'Failed to initialize required libraries: ' + e.message);
           }
       },
 
+      actions: [
+        {
+          label: '📋 Copy JSON',
+          id: 'copy',
+          onClick: function (helpers, btn) {
+            helpers.copyToClipboard(JSON.stringify(records, null, 2), btn);
+          }
+        },
+        {
+          label: '📄 Export YAML',
+          id: 'export-yaml',
+          onClick: function (helpers) {
+            const yaml = window.jsyaml.dump(records);
+            helpers.download(helpers.getFile().name.replace('.parquet', '.yaml'), yaml);
+          }
+        },
+        {
+          label: '📦 Export XML',
+          id: 'export-xml',
+          onClick: function (helpers) {
+            const builder = new window.XMLBuilder({ format: true });
+            const xml = builder.build({ records: { record: records } });
+            helpers.download(helpers.getFile().name.replace('.parquet', '.xml'), xml);
+          }
+        },
+        {
+          label: '📊 Export CSV',
+          id: 'export-csv',
+          onClick: function (helpers) {
+            const csv = window.Papa.unparse(records);
+            helpers.download(helpers.getFile().name.replace('.parquet', '.csv'), csv);
+          }
+        }
+      ],
+
       onFile: async function (file, content, helpers) {
-        if (!isParquetWasmReady) {
-          helpers.showError('Dependency not loaded', 'The parquet-wasm library is still loading. Please try again in a moment.');
+        if (!isParquetReady) {
+          helpers.showError('Dependency not loaded', 'The libraries are still loading. Please try again in a moment.');
           return;
         }
 
         helpers.showLoading('Parsing Parquet file...');
+        records = [];
         
         try {
-          const arr = new Uint8Array(content);
-          const table = window.parquet_wasm.readParquet(arr);
-          const json = table.toArray().map(row => row.toJSON());
+          const buffer = content; // content is ArrayBuffer because binary: true
           
-          const prettyJson = JSON.stringify(json, null, 2);
-          
-          const renderHtml = `
-            <div class="p-4 bg-surface-50 text-surface-800 rounded-lg shadow-inner">
-              <div class="text-xs font-semibold text-surface-500 mb-2 uppercase">Preview (converted to JSON)</div>
-              <pre class="whitespace-pre-wrap font-mono text-sm">${escapeHtml(prettyJson)}</pre>
-            </div>
-          `;
-          helpers.render(renderHtml);
+          window.parquet.readParquet({
+            file: buffer,
+            onComplete: (data) => {
+              records = data;
+              const prettyJson = JSON.stringify(records, null, 2);
+              const renderHtml = `
+                <div class="flex flex-col h-[70vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                  <div class="shrink-0 bg-surface-50 border-b border-surface-200 px-4 py-2 flex justify-between items-center text-xs text-surface-500 font-medium">
+                    <div class="flex items-center gap-2 truncate">
+                      <span class="text-lg">📊</span>
+                      <span class="truncate">${escapeHtml(file.name)}</span>
+                    </div>
+                    <div class="shrink-0">
+                      <span>${records.length.toLocaleString()} rows</span>
+                    </div>
+                  </div>
+                  <div class="flex-1 overflow-auto bg-[#282c34] p-4">
+                    <pre class="font-mono text-[13px] leading-relaxed text-surface-100 whitespace-pre"><code class="hljs language-json">${escapeHtml(prettyJson)}</code></pre>
+                  </div>
+                </div>
+              `;
+              helpers.render(renderHtml);
+            }
+          });
 
         } catch (err) {
           helpers.showError('Failed to parse Parquet', 'The file may not be valid Parquet. ' + err.message);

@@ -22,7 +22,7 @@
             </div>
           `);
         } catch (err) {
-          h.showError('EXE Issue', err.message);
+          h.showError('EXE Error', err.message);
         }
       }
     });

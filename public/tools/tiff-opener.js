@@ -34,7 +34,7 @@
           h.render('<div class="p-4 flex flex-col items-center gap-4" id="tiff-mount"></div>');
           document.getElementById('tiff-mount').appendChild(canvas);
         } catch (err) {
-          h.showError('TIFF Issue', err.message);
+          h.showError('TIFF Error', err.message);
         }
       }
     });

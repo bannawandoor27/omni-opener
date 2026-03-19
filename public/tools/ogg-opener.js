@@ -36,7 +36,7 @@
       onInit: function(h) {
         h.loadScript('https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js');
       },
-      onFile: async function _onFile(file, content, h) {
+      onFile: async function(file, content, h) {
         cleanup();
         
         if (!content || content.byteLength === 0) {
@@ -51,7 +51,7 @@
           h.loadScript('https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js', () => {
             // Re-trigger file processing once script is loaded
             if (h.getFile() === file) {
-               _onFile(file, content, h);
+               this.onFile(file, content, h);
             }
           });
           return;
@@ -185,7 +185,7 @@
 
         } catch (e) {
           console.error(e);
-          h.showError('Playback Issue', 'The browser could not decode this OGG file.');
+          h.showError('Playback Error', 'The browser could not decode this OGG file.');
         }
       },
       onDestroy: function() {

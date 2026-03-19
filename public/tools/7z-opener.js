@@ -53,7 +53,7 @@
             };
           });
         } catch (err) {
-          helpers.showError('Issue', err.message);
+          helpers.showError('Error', err.message);
         }
       }
     });

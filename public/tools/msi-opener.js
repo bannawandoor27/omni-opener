@@ -26,7 +26,7 @@
             </div>
           `);
         } catch (err) {
-          h.showError('MSI Issue', err.message);
+          h.showError('MSI Error', err.message);
         }
       }
     });

@@ -6,12 +6,12 @@
       accept: '.mid,.midi',
       binary: true,
       onInit: function (h) {
-        h.loadScript('https://unpkg.com/@tonejs/midi@2.0.28/build/Midi.js');
+        h.loadScript('https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/dist/Midi.js');
       },
       onFile: function (file, content, h) {
         if (typeof Midi === 'undefined') {
           h.showLoading('Loading engine...');
-          h.loadScript('https://unpkg.com/@tonejs/midi@2.0.28/build/Midi.js', () => this.onFile(file, content, h));
+          h.loadScript('https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/dist/Midi.js', () => this.onFile(file, content, h));
           return;
         }
 
@@ -27,7 +27,7 @@
             </div>
           `);
         } catch (err) {
-          h.showError('MIDI Issue', err.message);
+          h.showError('MIDI Error', err.message);
         }
       }
     });

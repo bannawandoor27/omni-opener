@@ -90,7 +90,7 @@
           }
           renderVcf(allCards, helpers);
         } catch (err) {
-          helpers.showError('Parsing Issue', err.message);
+          helpers.showError('Parsing Error', err.message);
         }
       },
       actions: [
