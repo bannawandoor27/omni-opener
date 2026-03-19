@@ -109,6 +109,43 @@
       },
       actions: [
         {
+          label: '📋 Copy Source',
+          id: 'copy-source',
+          onClick: function (h, btn) {
+            const content = h.getContent();
+            if (typeof content === 'string') h.copyToClipboard(content, btn);
+            else h.copyToClipboard(h.getFile().name, btn);
+          }
+        },
+
+        {
+          label: '🖼️ Export as PNG',
+          id: 'export-png',
+          onClick: function (h, btn) {
+            const svg = h.getRenderEl().querySelector('svg');
+            if (svg) {
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d');
+              const svgData = new XMLSerializer().serializeToString(svg);
+              const img = new Image();
+              const svgBlob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
+              const url = URL.createObjectURL(svgBlob);
+              img.onload = function() {
+                canvas.width = img.width * 2;
+                canvas.height = img.height * 2;
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                const pngUrl = canvas.toDataURL('image/png');
+                h.download('export.png', pngUrl, 'image/png');
+                URL.revokeObjectURL(url);
+              };
+              img.src = url;
+            }
+          }
+        },
+
+        {
           label: '📋 Copy Artboards',
           id: 'copy-artboards',
           onClick: function(helpers, btn) {

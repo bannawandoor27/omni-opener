@@ -116,7 +116,17 @@
       },
       actions: [
         {
-          label: '🖼️ Save Thumbnail',
+          label: '📋 Copy Source',
+          id: 'copy-source',
+          onClick: function (h, btn) {
+            const content = h.getContent();
+            if (typeof content === 'string') h.copyToClipboard(content, btn);
+            else h.copyToClipboard(h.getFile().name, btn);
+          }
+        },
+
+        {
+          label: '🖼️ Export as PNG',
           id: 'dl-thumb',
           onClick: function (helpers) {
             var state = helpers.getState().figData;
