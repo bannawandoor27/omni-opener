@@ -154,7 +154,7 @@
           } 
         },
         { 
-          label: '📥 Download Original', 
+          label: '📥 Download', 
           id: 'dl', 
           onClick: function(helpers, btn) { 
             const file = helpers.getFile();

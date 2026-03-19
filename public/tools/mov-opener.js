@@ -185,7 +185,7 @@
           }
         },
         {
-          label: '📥 Download Original',
+          label: '📥 Download',
           id: 'dl',
           onClick: function(helpers) {
             const state = helpers.getState();

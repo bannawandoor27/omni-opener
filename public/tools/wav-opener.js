@@ -40,7 +40,7 @@
           }
         },
         {
-          label: '📥 Download WAV',
+          label: '📥 Download',
           id: 'download',
           onClick: function (h) {
             var file = h.getFile();
