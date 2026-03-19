@@ -1,6 +1,6 @@
 [
   {
-    "slug": "drawio-viewer",
+    "slug": "md-to-pdf",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -18,7 +18,7 @@
     "networkFailures": []
   },
   {
-    "slug": "md-to-pdf",
+    "slug": "drawio-viewer",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -30,7 +30,7 @@
     "networkFailures": []
   },
   {
-    "slug": "xlsx-opener",
+    "slug": "yaml-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -48,7 +48,7 @@
     "networkFailures": []
   },
   {
-    "slug": "yaml-opener",
+    "slug": "xlsx-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -66,6 +66,12 @@
     "networkFailures": []
   },
   {
+    "slug": "rtf-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
     "slug": "log-opener",
     "success": true,
     "errors": [],
@@ -78,13 +84,13 @@
     "networkFailures": []
   },
   {
-    "slug": "rtf-opener",
+    "slug": "txt-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "txt-opener",
+    "slug": "odt-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -102,12 +108,6 @@
     "networkFailures": []
   },
   {
-    "slug": "odt-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
     "slug": "ini-opener",
     "success": true,
     "errors": [],
@@ -120,7 +120,7 @@
     "networkFailures": []
   },
   {
-    "slug": "geojson-opener",
+    "slug": "gpx-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -132,7 +132,7 @@
     "networkFailures": []
   },
   {
-    "slug": "gpx-opener",
+    "slug": "geojson-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -150,7 +150,7 @@
     "networkFailures": []
   },
   {
-    "slug": "mbox-opener",
+    "slug": "ics-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -162,7 +162,7 @@
     "networkFailures": []
   },
   {
-    "slug": "ics-opener",
+    "slug": "mbox-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -180,19 +180,13 @@
     "networkFailures": []
   },
   {
-    "slug": "key-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
     "slug": "pem-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "crt-opener",
+    "slug": "key-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -204,7 +198,19 @@
     "networkFailures": []
   },
   {
+    "slug": "crt-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
     "slug": "wasm-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "obj-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -222,19 +228,21 @@
     "networkFailures": []
   },
   {
-    "slug": "gltf-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
     "slug": "iges-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "obj-opener",
+    "slug": "gltf-opener",
+    "success": true,
+    "errors": [
+      "GLTF Sync Parse Error: SyntaxError: Unexpected token '\u0000', \"\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\"... is not valid JSON"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "eps-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -246,19 +254,13 @@
     "networkFailures": []
   },
   {
-    "slug": "psd-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
     "slug": "ai-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "eps-opener",
+    "slug": "psd-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -270,7 +272,7 @@
     "networkFailures": []
   },
   {
-    "slug": "webp-opener",
+    "slug": "sketch-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -282,13 +284,13 @@
     "networkFailures": []
   },
   {
-    "slug": "fig-opener",
+    "slug": "webp-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "sketch-opener",
+    "slug": "fig-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -306,25 +308,25 @@
     "networkFailures": []
   },
   {
-    "slug": "heic-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
     "slug": "tiff-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "bmp-opener",
+    "slug": "heic-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
     "slug": "ico-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "bmp-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -360,7 +362,7 @@
     "networkFailures": []
   },
   {
-    "slug": "midi-opener",
+    "slug": "avi-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -372,7 +374,7 @@
     "networkFailures": []
   },
   {
-    "slug": "avi-opener",
+    "slug": "midi-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -390,13 +392,13 @@
     "networkFailures": []
   },
   {
-    "slug": "m3u8-opener",
+    "slug": "mkv-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "mkv-opener",
+    "slug": "m3u8-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -408,25 +410,25 @@
     "networkFailures": []
   },
   {
-    "slug": "srt-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
     "slug": "mov-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "gz-opener",
+    "slug": "srt-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
     "slug": "zip-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "gz-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -456,7 +458,7 @@
     "networkFailures": []
   },
   {
-    "slug": "rar-opener",
+    "slug": "iso-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -468,13 +470,13 @@
     "networkFailures": []
   },
   {
-    "slug": "7z-opener",
+    "slug": "rar-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "iso-opener",
+    "slug": "7z-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -498,25 +500,19 @@
     "networkFailures": []
   },
   {
-    "slug": "appimage-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
     "slug": "rpm-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "apk-opener",
+    "slug": "appimage-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "aab-opener",
+    "slug": "ear-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -528,13 +524,19 @@
     "networkFailures": []
   },
   {
+    "slug": "apk-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
     "slug": "ipa-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "ear-opener",
+    "slug": "aab-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -552,13 +554,13 @@
     "networkFailures": []
   },
   {
-    "slug": "dll-opener",
+    "slug": "dylib-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "dylib-opener",
+    "slug": "dll-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -570,25 +572,25 @@
     "networkFailures": []
   },
   {
-    "slug": "gem-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
     "slug": "whl-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "nupkg-opener",
+    "slug": "egg-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "egg-opener",
+    "slug": "gem-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "nupkg-opener",
     "success": true,
     "errors": [],
     "networkFailures": []

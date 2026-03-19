@@ -78,14 +78,19 @@
           
           // Use requestAnimationFrame to ensure UI shows loading message before heavy parsing
           requestAnimationFrame(() => {
-            // B2: content is ArrayBuffer (binary:true)
-            loader.parse(content, '', (gltf) => {
-              renderViewer(gltf, file, h);
-            }, (error) => {
-              console.error('GLTF Parse Issue:', error);
-              // U3: Friendly error message
-              h.showError('Unable to open 3D model', 'The file might be corrupted, using an unsupported GLTF version, or missing external textures. Try a standalone .glb file.');
-            });
+            try {
+              // B2: content is ArrayBuffer (binary:true)
+              loader.parse(content, '', (gltf) => {
+                renderViewer(gltf, file, h);
+              }, (error) => {
+                console.error('GLTF Parse Issue:', error);
+                // U3: Friendly error message
+                h.showError('Unable to open 3D model', 'The file might be corrupted, using an unsupported GLTF version, or missing external textures. Try a standalone .glb file.');
+              });
+            } catch (err) {
+              console.error('GLTF Sync Parse Error:', err);
+              h.showError('Parsing Error', 'The file content is not a valid GLTF/GLB structure.');
+            }
           });
         };
 
