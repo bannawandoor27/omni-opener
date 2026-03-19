@@ -104,6 +104,18 @@
 
           helpers.setState(state);
           render(helpers, file, state);
+    mountEl.querySelectorAll('.dl-btn').forEach(btn => {
+      btn.onclick = async () => {
+        const path = btn.dataset.path;
+        const zip = await JSZip.loadAsync(helpers.getContent());
+        const entry = zip.file(path);
+        if (entry) {
+          const blob = await entry.async('blob');
+          helpers.download(path.split('/').pop(), blob);
+        }
+      };
+    });
+
 
         } catch (err) {
           // U3: Friendly error
@@ -273,6 +285,10 @@
                   Size ${sortIcon('size')}
                 </th>
                 <th class="px-4 py-3 text-right font-semibold text-surface-700 cursor-pointer hover:bg-surface-100 transition-colors w-32" data-sort="date">
+                  Modified
+                </th>
+                <th class="px-4 py-3 text-right font-semibold text-surface-700 w-24">
+                  Action
                   Modified ${sortIcon('date')}
                 </th>
               </tr>
@@ -289,6 +305,9 @@
                   </td>
                   <td class="px-4 py-2.5 text-right text-surface-400 text-xs whitespace-nowrap tabular-nums">
                     ${e.date.toLocaleDateString()}
+                  </td>
+                  <td class="px-4 py-2.5 text-right">
+                    <button class="dl-btn text-brand-600 hover:text-brand-700 font-medium text-xs" data-path="${escapeHtml(e.path)}">Download</button>
                   </td>
                 </tr>
               `).join('')}
@@ -318,6 +337,18 @@
       filterInput.addEventListener('input', (e) => {
         state.filter = e.target.value;
         render(helpers, file, state);
+    mountEl.querySelectorAll('.dl-btn').forEach(btn => {
+      btn.onclick = async () => {
+        const path = btn.dataset.path;
+        const zip = await JSZip.loadAsync(helpers.getContent());
+        const entry = zip.file(path);
+        if (entry) {
+          const blob = await entry.async('blob');
+          helpers.download(path.split('/').pop(), blob);
+        }
+      };
+    });
+
         // Maintain focus after re-render
         const newInput = document.getElementById('apk-filter');
         newInput.focus();
@@ -335,6 +366,18 @@
           state.sortOrder = 'asc';
         }
         render(helpers, file, state);
+    mountEl.querySelectorAll('.dl-btn').forEach(btn => {
+      btn.onclick = async () => {
+        const path = btn.dataset.path;
+        const zip = await JSZip.loadAsync(helpers.getContent());
+        const entry = zip.file(path);
+        if (entry) {
+          const blob = await entry.async('blob');
+          helpers.download(path.split('/').pop(), blob);
+        }
+      };
+    });
+
       });
     });
   }

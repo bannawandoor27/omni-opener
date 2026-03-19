@@ -39,6 +39,14 @@
       },
       actions: [
         {
+          label: '📋 Copy File List',
+          id: 'copy-list',
+          onClick: function(helpers, btn) {
+            helpers.copyToClipboard(helpers.getFile().name, btn);
+          }
+        },
+
+        {
           label: '📋 Copy Metadata',
           id: 'copy-meta',
           onClick: function(helpers, btn) {

@@ -130,6 +130,22 @@
       },
       actions: [
         {
+          label: '📋 Copy File List',
+          id: 'copy-list',
+          onClick: function(helpers, btn) {
+            const state = helpers.getState();
+            const files = state.zipFiles || state.tarFiles || state.entries || [];
+            if (!files || files.length === 0) {
+                 helpers.copyToClipboard(helpers.getFile().name, btn);
+                 return;
+            }
+            const list = files.map(f => (f.name || f.path || f.name)).join('
+');
+            helpers.copyToClipboard(list, btn);
+          }
+        },
+
+        {
           label: '📋 Copy Bundle ID',
           id: 'copy-bundle-id',
           onClick: function(helpers, btn) {

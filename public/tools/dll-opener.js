@@ -157,6 +157,14 @@
       },
       actions: [
         {
+          label: '📋 Copy File List',
+          id: 'copy-list',
+          onClick: function(helpers, btn) {
+            helpers.copyToClipboard(helpers.getFile().name, btn);
+          }
+        },
+
+        {
           label: '📋 Copy Hex',
           id: 'copy-hex',
           onClick: function(helpers, btn) {
