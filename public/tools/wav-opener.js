@@ -16,6 +16,23 @@
 
       actions: [
         {
+          label: '📋 Copy Metadata',
+          id: 'copy-metadata',
+          onClick: function (helpers, btn) {
+            const file = helpers.getFile();
+            const state = helpers.getState();
+            const metadata = {
+              filename: file.name,
+              size: file.size,
+              type: file.type,
+              lastModified: new Date(file.lastModified).toISOString(),
+              ...(state.meta || {}),
+              ...(state.manifest ? { version: state.manifest.version } : {})
+            };
+            helpers.copyToClipboard(JSON.stringify(metadata, null, 2), btn);
+          }
+        },
+        {
           label: '▶ Play / Pause',
           id: 'play-pause',
           onClick: function () {
@@ -70,7 +87,24 @@
     // Create UI structure
     h.render(
       '<div class="p-6 space-y-6">' +
-        '<div id="waveform" class="bg-surface-50 rounded-lg overflow-hidden border border-surface-200"></div>' +
+        '
+              <div class="mt-4 flex flex-wrap items-center justify-between gap-4 p-4 bg-surface-50 rounded-xl border border-surface-200 shadow-sm">
+                <div class="flex items-center gap-3">
+                  <span class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">Speed</span>
+                  <div class="flex bg-surface-200 p-1 rounded-lg">
+                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="0.5">0.5x</button>
+                    <button class="speed-btn px-2 py-1 text-xs font-medium bg-white shadow-sm rounded transition-colors" data-speed="1">1x</button>
+                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="1.5">1.5x</button>
+                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="2">2x</button>
+                  </div>
+                </div>
+                <div class="flex items-center gap-3 flex-1 max-w-xs">
+                  <span class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">Volume</span>
+                  <input type="range" class="volume-slider flex-1 accent-brand-500 h-1.5 bg-surface-300 rounded-lg appearance-none cursor-pointer" min="0" max="2" step="0.1" value="1">
+                  <span class="volume-value text-xs font-mono text-surface-600 min-w-[4ch]">100%</span>
+                </div>
+              </div>
+<div id="waveform" class="bg-surface-50 rounded-lg overflow-hidden border border-surface-200"></div>' +
         '<div class="grid grid-cols-2 md:grid-cols-4 gap-4">' +
           '<div class="bg-surface-50 p-3 rounded-lg border border-surface-100">' +
             '<p class="text-xs text-surface-400 uppercase font-bold tracking-wider">Sample Rate</p>' +
@@ -111,6 +145,31 @@
       hideScrollbar: true,
       url: url
     });
+
+    
+    // Audio Controls Logic
+    setTimeout(() => {
+      const speedBtns = document.querySelectorAll('.speed-btn');
+      const volumeSlider = document.querySelector('.volume-slider');
+      const volumeValue = document.querySelector('.volume-value');
+      
+      speedBtns.forEach(btn => {
+        btn.onclick = () => {
+          const speed = parseFloat(btn.dataset.speed);
+          if (wavesurfer) wavesurfer.setPlaybackRate(speed);
+          speedBtns.forEach(b => b.classList.remove('bg-white', 'shadow-sm'));
+          btn.classList.add('bg-white', 'shadow-sm');
+        };
+      });
+
+      if (volumeSlider) {
+        volumeSlider.oninput = () => {
+          const vol = parseFloat(volumeSlider.value);
+          volumeValue.textContent = Math.round(vol * 100) + '%';
+          if (wavesurfer) wavesurfer.setVolume(vol);
+        };
+      }
+    }, 500);
 
     wavesurfer.on('ready', function (d) {
       var mins = Math.floor(d / 60);

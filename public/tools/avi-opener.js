@@ -81,6 +81,23 @@
                     <video id="main-player" controls class="w-full h-full hidden">
                       Your browser does not support the video tag.
                     </video>
+              <div class="mt-4 flex flex-wrap items-center justify-between gap-4 p-4 bg-surface-50 rounded-xl border border-surface-200 shadow-sm">
+                <div class="flex items-center gap-3">
+                  <span class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">Speed</span>
+                  <div class="flex bg-surface-200 p-1 rounded-lg">
+                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="0.5">0.5x</button>
+                    <button class="speed-btn px-2 py-1 text-xs font-medium bg-white shadow-sm rounded transition-colors" data-speed="1">1x</button>
+                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="1.5">1.5x</button>
+                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="2">2x</button>
+                  </div>
+                </div>
+                <div class="flex items-center gap-3 flex-1 max-w-xs">
+                  <span class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">Volume</span>
+                  <input type="range" class="volume-slider flex-1 accent-brand-500 h-1.5 bg-surface-300 rounded-lg appearance-none cursor-pointer" min="0" max="2" step="0.1" value="1">
+                  <span class="volume-value text-xs font-mono text-surface-600 min-w-[4ch]">100%</span>
+                </div>
+              </div>
+
                     <div id="playback-notice" class="p-8 text-center">
                       <div class="w-16 h-16 bg-surface-100 rounded-full flex items-center justify-center mx-auto mb-4">
                         <svg class="w-8 h-8 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -159,6 +176,50 @@
             </div>
           `;
           helpers.render(html);
+    // Media Controls Logic
+    setTimeout(() => {
+      const video = document.querySelector('video') || document.getElementById('main-player') || document.getElementById('omni-video-player') || document.getElementById('webm-player');
+      const speedBtns = document.querySelectorAll('.speed-btn');
+      const volumeSlider = document.querySelector('.volume-slider');
+      const volumeValue = document.querySelector('.volume-value');
+      
+      if (!video) return;
+
+      speedBtns.forEach(btn => {
+        btn.onclick = () => {
+          const speed = parseFloat(btn.dataset.speed);
+          video.playbackRate = speed;
+          speedBtns.forEach(b => b.classList.remove('bg-white', 'shadow-sm'));
+          btn.classList.add('bg-white', 'shadow-sm');
+        };
+      });
+
+      if (volumeSlider) {
+        let audioCtx, source, gainNode;
+        volumeSlider.oninput = () => {
+          const vol = parseFloat(volumeSlider.value);
+          volumeValue.textContent = Math.round(vol * 100) + '%';
+          
+          if (vol > 1.0) {
+            if (!audioCtx) {
+              try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                source = audioCtx.createMediaElementSource(video);
+                gainNode = audioCtx.createGain();
+                source.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+              } catch (e) { console.warn("Web Audio API not supported or already initialized", e); }
+            }
+            if (gainNode) gainNode.gain.value = vol;
+            video.volume = 1.0;
+          } else {
+            if (gainNode) gainNode.gain.value = 1.0;
+            video.volume = vol;
+          }
+        };
+      }
+    }, 1000);
+
         };
 
         renderBase();
@@ -213,6 +274,23 @@
       },
 
       actions: [
+        {
+          label: '📋 Copy Metadata',
+          id: 'copy-metadata',
+          onClick: function (helpers, btn) {
+            const file = helpers.getFile();
+            const state = helpers.getState();
+            const metadata = {
+              filename: file.name,
+              size: file.size,
+              type: file.type,
+              lastModified: new Date(file.lastModified).toISOString(),
+              ...(state.meta || {}),
+              ...(state.manifest ? { version: state.manifest.version } : {})
+            };
+            helpers.copyToClipboard(JSON.stringify(metadata, null, 2), btn);
+          }
+        },
         {
           label: '⚡ Convert to MP4',
           id: 'convert',

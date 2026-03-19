@@ -85,6 +85,23 @@
                       <source src="${s.videoUrl}" type="video/x-matroska">
                       <source src="${s.videoUrl}" type="video/webm">
                     </video>
+              <div class="mt-4 flex flex-wrap items-center justify-between gap-4 p-4 bg-surface-50 rounded-xl border border-surface-200 shadow-sm">
+                <div class="flex items-center gap-3">
+                  <span class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">Speed</span>
+                  <div class="flex bg-surface-200 p-1 rounded-lg">
+                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="0.5">0.5x</button>
+                    <button class="speed-btn px-2 py-1 text-xs font-medium bg-white shadow-sm rounded transition-colors" data-speed="1">1x</button>
+                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="1.5">1.5x</button>
+                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="2">2x</button>
+                  </div>
+                </div>
+                <div class="flex items-center gap-3 flex-1 max-w-xs">
+                  <span class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">Volume</span>
+                  <input type="range" class="volume-slider flex-1 accent-brand-500 h-1.5 bg-surface-300 rounded-lg appearance-none cursor-pointer" min="0" max="2" step="0.1" value="1">
+                  <span class="volume-value text-xs font-mono text-surface-600 min-w-[4ch]">100%</span>
+                </div>
+              </div>
+
                     
                     <div id="playback-overlay" class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-surface-900/80 backdrop-blur-sm transition-opacity duration-300 hidden">
                       <div class="w-20 h-20 bg-amber-500/10 rounded-full flex items-center justify-center mb-4 ring-1 ring-amber-500/20">
@@ -189,6 +206,50 @@
             </div>
           `;
           helpers.render(html);
+    // Media Controls Logic
+    setTimeout(() => {
+      const video = document.querySelector('video') || document.getElementById('main-player') || document.getElementById('omni-video-player') || document.getElementById('webm-player');
+      const speedBtns = document.querySelectorAll('.speed-btn');
+      const volumeSlider = document.querySelector('.volume-slider');
+      const volumeValue = document.querySelector('.volume-value');
+      
+      if (!video) return;
+
+      speedBtns.forEach(btn => {
+        btn.onclick = () => {
+          const speed = parseFloat(btn.dataset.speed);
+          video.playbackRate = speed;
+          speedBtns.forEach(b => b.classList.remove('bg-white', 'shadow-sm'));
+          btn.classList.add('bg-white', 'shadow-sm');
+        };
+      });
+
+      if (volumeSlider) {
+        let audioCtx, source, gainNode;
+        volumeSlider.oninput = () => {
+          const vol = parseFloat(volumeSlider.value);
+          volumeValue.textContent = Math.round(vol * 100) + '%';
+          
+          if (vol > 1.0) {
+            if (!audioCtx) {
+              try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                source = audioCtx.createMediaElementSource(video);
+                gainNode = audioCtx.createGain();
+                source.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+              } catch (e) { console.warn("Web Audio API not supported or already initialized", e); }
+            }
+            if (gainNode) gainNode.gain.value = vol;
+            video.volume = 1.0;
+          } else {
+            if (gainNode) gainNode.gain.value = 1.0;
+            video.volume = vol;
+          }
+        };
+      }
+    }, 1000);
+
 
           // Setup video events
           const video = document.getElementById('omni-video-player');
@@ -228,6 +289,23 @@
       },
 
       actions: [
+        {
+          label: '📋 Copy Metadata',
+          id: 'copy-metadata',
+          onClick: function (helpers, btn) {
+            const file = helpers.getFile();
+            const state = helpers.getState();
+            const metadata = {
+              filename: file.name,
+              size: file.size,
+              type: file.type,
+              lastModified: new Date(file.lastModified).toISOString(),
+              ...(state.meta || {}),
+              ...(state.manifest ? { version: state.manifest.version } : {})
+            };
+            helpers.copyToClipboard(JSON.stringify(metadata, null, 2), btn);
+          }
+        },
         {
           label: '⚡ Convert to MP4',
           id: 'convert',

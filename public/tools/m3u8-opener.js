@@ -13,12 +13,29 @@
 
       actions: [
         {
+          label: '📋 Copy Metadata',
+          id: 'copy-metadata',
+          onClick: function (helpers, btn) {
+            const file = helpers.getFile();
+            const state = helpers.getState();
+            const metadata = {
+              filename: file.name,
+              size: file.size,
+              type: 'M3U8 Playlist',
+              streams: state.manifest?.playlists?.length || 0,
+              segments: state.manifest?.segments?.length || 0,
+              version: state.manifest?.version || 3
+            };
+            helpers.copyToClipboard(JSON.stringify(metadata, null, 2), btn);
+          }
+        },
+        {
           label: '📋 Copy Raw',
           id: 'copy-raw',
           onClick: (h, btn) => h.copyToClipboard(h.getState().content, btn)
         },
         {
-          label: '📥 Download M3U8',
+          label: "📥 Download", id: "download",
           id: 'download-m3u8',
           onClick: (h) => h.download(h.getFile().name, h.getState().content, 'application/vnd.apple.mpegurl')
         },
@@ -38,6 +55,7 @@
       onInit: function (h) {
         if (typeof window.m3u8Parser === 'undefined') {
           h.loadScript('https://cdn.jsdelivr.net/npm/m3u8-parser@7.1.0/dist/m3u8-parser.min.js');
+        h.loadScript('https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js');
         }
       },
 
@@ -174,6 +192,61 @@
 
     html += `</div>`;
     h.render(html);
+    // HLS Player Init
+    setTimeout(() => {
+      const video = document.getElementById('hls-player');
+      if (!video || !window.Hls) return;
+
+      const blob = new Blob([content], { type: 'application/vnd.apple.mpegurl' });
+      const url = URL.createObjectURL(blob);
+
+      if (Hls.isSupported()) {
+        const hls = new Hls();
+        hls.loadSource(url);
+        hls.attachMedia(video);
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = url;
+      }
+
+      // Media Controls Logic
+      const speedBtns = document.querySelectorAll('.speed-btn');
+      const volumeSlider = document.querySelector('.volume-slider');
+      const volumeValue = document.querySelector('.volume-value');
+      
+      speedBtns.forEach(btn => {
+        btn.onclick = () => {
+          const speed = parseFloat(btn.dataset.speed);
+          video.playbackRate = speed;
+          speedBtns.forEach(b => b.classList.remove('bg-white', 'shadow-sm'));
+          btn.classList.add('bg-white', 'shadow-sm');
+        };
+      });
+
+      if (volumeSlider) {
+        let audioCtx, source, gainNode;
+        volumeSlider.oninput = () => {
+          const vol = parseFloat(volumeSlider.value);
+          volumeValue.textContent = Math.round(vol * 100) + '%';
+          if (vol > 1.0) {
+            if (!audioCtx) {
+              try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                source = audioCtx.createMediaElementSource(video);
+                gainNode = audioCtx.createGain();
+                source.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+              } catch (e) {}
+            }
+            if (gainNode) gainNode.gain.value = vol;
+            video.volume = 1.0;
+          } else {
+            if (gainNode) gainNode.gain.value = 1.0;
+            video.volume = vol;
+          }
+        };
+      }
+    }, 1000);
+
 
     // Attach Search
     const search = document.getElementById('tool-search');

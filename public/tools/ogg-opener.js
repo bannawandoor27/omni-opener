@@ -193,6 +193,23 @@
       },
       actions: [
         {
+          label: '📋 Copy Metadata',
+          id: 'copy-metadata',
+          onClick: function (helpers, btn) {
+            const file = helpers.getFile();
+            const state = helpers.getState();
+            const metadata = {
+              filename: file.name,
+              size: file.size,
+              type: file.type,
+              lastModified: new Date(file.lastModified).toISOString(),
+              ...(state.meta || {}),
+              ...(state.manifest ? { version: state.manifest.version } : {})
+            };
+            helpers.copyToClipboard(JSON.stringify(metadata, null, 2), btn);
+          }
+        },
+        {
           label: '📥 Download',
           id: 'download',
           onClick: function(h) {
