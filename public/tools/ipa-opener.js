@@ -139,8 +139,7 @@
                  helpers.copyToClipboard(helpers.getFile().name, btn);
                  return;
             }
-            const list = files.map(f => (f.name || f.path || f.name)).join('
-');
+            const list = files.map(f => (f.name || f.path || f.name)).join('\n');
             helpers.copyToClipboard(list, btn);
           }
         },

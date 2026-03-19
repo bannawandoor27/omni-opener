@@ -87,24 +87,23 @@
     // Cleanup previous scene if any
     cleanup();
 
-    var html = 
-      '<div class="flex items-center gap-3 p-3 bg-surface-50 rounded-lg text-sm text-surface-600 mb-4">' +
-        '<span class="font-medium">' + esc(file.name) + '</span>' +
-        '<span class="text-surface-400">·</span>' +
-        '<span>' + formatSize(file.size) + '</span>' +
-        '<span class="text-surface-400">·</span>' +
-        '<span id="obj-stats">Calculating...</span>' +
-      '</div>' +
-      '<div class="relative w-full h-[600px] bg-slate-900 rounded-xl overflow-hidden shadow-inner border border-surface-200">' +
-        '<div id="three-container" class="w-full h-full"></div>' +
-        '<div class="absolute bottom-4 left-4 flex gap-2">' +
-          '
-        <button id="toggle-wireframe" class="px-4 py-2 text-xs font-semibold rounded-lg bg-surface-100 hover:bg-surface-200 transition-colors">Toggle Wireframe</button>
-        <button id="toggle-bbox" class="px-4 py-2 text-xs font-semibold rounded-lg bg-surface-100 hover:bg-surface-200 transition-colors">Toggle Bounding Box</button>
-    <button id="toggle-rotate" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg backdrop-blur-md transition-all border border-white/10">Pause Rotation</button>' +
-          '<button id="reset-view" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg backdrop-blur-md transition-all border border-white/10">Reset View</button>' +
-        '</div>' +
-      '</div>';
+        var html = `
+      <div class="flex items-center gap-3 p-3 bg-surface-50 rounded-lg text-sm text-surface-600 mb-4">
+        <span class="font-medium">${esc(file.name)}</span>
+        <span class="text-surface-400">·</span>
+        <span>${formatSize(file.size)}</span>
+        <span class="text-surface-400">·</span>
+        <span id="obj-stats">Calculating...</span>
+      </div>
+      <div class="relative w-full h-[600px] bg-slate-900 rounded-xl overflow-hidden shadow-inner border border-surface-200">
+        <div id="three-container" class="w-full h-full"></div>
+        <div class="absolute bottom-4 left-4 flex gap-2">
+          <button id="toggle-wireframe" class="px-4 py-2 text-xs font-semibold rounded-lg bg-surface-100 hover:bg-surface-200 transition-colors">Toggle Wireframe</button>
+          <button id="toggle-bbox" class="px-4 py-2 text-xs font-semibold rounded-lg bg-surface-100 hover:bg-surface-200 transition-colors">Toggle Bounding Box</button>
+          <button id="toggle-rotate" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg backdrop-blur-md transition-all border border-white/10">Pause Rotation</button>
+          <button id="reset-view" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg backdrop-blur-md transition-all border border-white/10">Reset View</button>
+        </div>
+      </div>`;
 
     h.render(html);
 
@@ -197,7 +196,7 @@
     // 7. UI Hooks
     document.getElementById('toggle-rotate').addEventListener('click', function (e) {
       controls.autoRotate = !controls.autoRotate;
-      e.target.textContent = controls.autoRotate ? 'Pause Rotation' : 'Resume Rotation';
+      e.target.textContent = controls.autoRotate ? `Pause Rotation` : `Resume Rotation`;
     });
     document.getElementById('reset-view').addEventListener('click', function () {
       controls.reset();

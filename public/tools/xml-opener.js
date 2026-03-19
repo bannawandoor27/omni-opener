@@ -67,7 +67,7 @@
       onInit: function (helpers) {
         helpers.loadCSS('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css');
         helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js');
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/fast-xml-parser@4.3.2/src/parser.min.js');
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/fast-xml-parser@4.3.4/lib/fxp.min.js');
       },
       onFile: function _onFile(file, content, helpers) {
         if (typeof hljs === 'undefined') {

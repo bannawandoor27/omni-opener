@@ -85,9 +85,8 @@
     var duration = 'Calculating...';
 
     // Create UI structure
-    h.render(
-      '<div class="p-6 space-y-6">' +
-        '
+        h.render(`
+      <div class="p-6 space-y-6">
               <div class="mt-4 flex flex-wrap items-center justify-between gap-4 p-4 bg-surface-50 rounded-xl border border-surface-200 shadow-sm">
                 <div class="flex items-center gap-3">
                   <span class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">Speed</span>
@@ -104,27 +103,26 @@
                   <span class="volume-value text-xs font-mono text-surface-600 min-w-[4ch]">100%</span>
                 </div>
               </div>
-<div id="waveform" class="bg-surface-50 rounded-lg overflow-hidden border border-surface-200"></div>' +
-        '<div class="grid grid-cols-2 md:grid-cols-4 gap-4">' +
-          '<div class="bg-surface-50 p-3 rounded-lg border border-surface-100">' +
-            '<p class="text-xs text-surface-400 uppercase font-bold tracking-wider">Sample Rate</p>' +
-            '<p class="text-lg font-semibold text-surface-700">' + metadata.sampleRate + ' Hz</p>' +
-          '</div>' +
-          '<div class="bg-surface-50 p-3 rounded-lg border border-surface-100">' +
-            '<p class="text-xs text-surface-400 uppercase font-bold tracking-wider">Channels</p>' +
-            '<p class="text-lg font-semibold text-surface-700">' + (metadata.channels === 1 ? 'Mono' : 'Stereo (' + metadata.channels + ')') + '</p>' +
-          '</div>' +
-          '<div class="bg-surface-50 p-3 rounded-lg border border-surface-100">' +
-            '<p class="text-xs text-surface-400 uppercase font-bold tracking-wider">Bit Depth</p>' +
-            '<p class="text-lg font-semibold text-surface-700">' + metadata.bitDepth + '-bit</p>' +
-          '</div>' +
-          '<div class="bg-surface-50 p-3 rounded-lg border border-surface-100">' +
-            '<p class="text-xs text-surface-400 uppercase font-bold tracking-wider">Duration</p>' +
-            '<p id="wav-duration" class="text-lg font-semibold text-surface-700">' + duration + '</p>' +
-          '</div>' +
-        '</div>' +
-      '</div>'
-    );
+        <div id="waveform" class="bg-surface-50 rounded-lg overflow-hidden border border-surface-200"></div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="bg-surface-50 p-3 rounded-lg border border-surface-100">
+            <p class="text-xs text-surface-400 uppercase font-bold tracking-wider">Sample Rate</p>
+            <p class="text-lg font-semibold text-surface-700">${metadata.sampleRate} Hz</p>
+          </div>
+          <div class="bg-surface-50 p-3 rounded-lg border border-surface-100">
+            <p class="text-xs text-surface-400 uppercase font-bold tracking-wider">Channels</p>
+            <p class="text-lg font-semibold text-surface-700">${metadata.channels === 1 ? 'Mono' : 'Stereo (' + metadata.channels + ')'}</p>
+          </div>
+          <div class="bg-surface-50 p-3 rounded-lg border border-surface-100">
+            <p class="text-xs text-surface-400 uppercase font-bold tracking-wider">Bit Depth</p>
+            <p class="text-lg font-semibold text-surface-700">${metadata.bitDepth}-bit</p>
+          </div>
+          <div class="bg-surface-50 p-3 rounded-lg border border-surface-100">
+            <p class="text-xs text-surface-400 uppercase font-bold tracking-wider">Duration</p>
+            <p id="wav-duration" class="text-lg font-semibold text-surface-700">${duration}</p>
+          </div>
+        </div>
+      </div>`);
 
     if (wavesurfer) {
       wavesurfer.destroy();

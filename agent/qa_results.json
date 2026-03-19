@@ -4,7 +4,6 @@
     "md-to-pdf",
     "csv-opener",
     "json-opener",
-    "xml-opener",
     "yaml-opener",
     "svg-opener",
     "pdf-opener",
@@ -23,8 +22,6 @@
     "parquet-opener",
     "proto-opener",
     "geojson-opener",
-    "kml-opener",
-    "gpx-opener",
     "graphql-opener",
     "ics-opener",
     "vcf-opener",
@@ -36,7 +33,6 @@
     "wasm-opener",
     "glb-opener",
     "gltf-opener",
-    "obj-opener",
     "stl-opener",
     "step-opener",
     "iges-opener",
@@ -53,15 +49,12 @@
     "heic-opener",
     "tiff-opener",
     "bmp-opener",
-    "ico-opener",
     "gif-opener",
     "apng-opener",
     "mp3-opener",
-    "wav-opener",
     "ogg-opener",
     "flac-opener",
     "aac-opener",
-    "midi-opener",
     "mp4-opener",
     "webm-opener",
     "avi-opener",
@@ -89,7 +82,6 @@
     "ear-opener",
     "apk-opener",
     "aab-opener",
-    "ipa-opener",
     "exe-opener",
     "msi-opener",
     "dll-opener",
@@ -98,10 +90,73 @@
     "whl-opener",
     "egg-opener",
     "gem-opener",
-    "nupkg-opener",
     "crate-opener",
     "jar-opener",
     "snap-opener"
   ],
-  "failed": []
+  "failed": [
+    {
+      "slug": "xml-opener",
+      "script_url": "/tools/xml-opener.js",
+      "errors": [
+        "ConsoleError: Refused to execute script from 'https://cdn.jsdelivr.net/npm/fast-xml-parser@4.3.2/src/parser.min.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled."
+      ]
+    },
+    {
+      "slug": "kml-opener",
+      "script_url": "/tools/kml-opener.js",
+      "errors": [
+        "ConsoleError: Access to script at 'https://unpkg.com/@tmcw/togeojson@0.15.0/dist/togeojson.umd.js' from origin 'http://localhost:3001' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+      ]
+    },
+    {
+      "slug": "gpx-opener",
+      "script_url": "/tools/gpx-opener.js",
+      "errors": [
+        "ConsoleError: Access to script at 'https://unpkg.com/@tmcw/togeojson@0.15.0/dist/togeojson.umd.js' from origin 'http://localhost:3001' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+      ]
+    },
+    {
+      "slug": "obj-opener",
+      "script_url": "/tools/obj-opener.js",
+      "errors": [
+        "PageError: Invalid or unexpected token"
+      ]
+    },
+    {
+      "slug": "ico-opener",
+      "script_url": "/tools/ico-opener.js",
+      "errors": [
+        "ConsoleError: Access to script at 'https://unpkg.com/icojs@0.20.1/dist/icojs.js' from origin 'http://localhost:3001' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+      ]
+    },
+    {
+      "slug": "wav-opener",
+      "script_url": "/tools/wav-opener.js",
+      "errors": [
+        "PageError: Invalid or unexpected token"
+      ]
+    },
+    {
+      "slug": "midi-opener",
+      "script_url": "/tools/midi-opener.js",
+      "errors": [
+        "PageError: exports is not defined"
+      ]
+    },
+    {
+      "slug": "ipa-opener",
+      "script_url": "/tools/ipa-opener.js",
+      "errors": [
+        "PageError: Invalid or unexpected token"
+      ]
+    },
+    {
+      "slug": "nupkg-opener",
+      "script_url": "/tools/nupkg-opener.js",
+      "errors": [
+        "PageError: Invalid or unexpected token"
+      ]
+    }
+  ]
 }
