@@ -2,8 +2,9 @@
   'use strict';
 
   function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
     const div = document.createElement('div');
-    div.textContent = str || '';
+    div.appendChild(document.createTextNode(str));
     return div.innerHTML;
   }
 
@@ -35,10 +36,37 @@
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       accept: '.ini',
+      dropLabel: 'Drop an .ini file here',
       binary: false,
+      infoHtml: '<strong>INI Viewer:</strong> Visual INI explorer with easy copy and export.',
+      
+      actions: [
+        {
+          label: '📋 Copy JSON',
+          id: 'copy-json',
+          onClick: function (helpers, btn) {
+            const data = helpers.getState().parsedData;
+            if (data) {
+              helpers.copyToClipboard(JSON.stringify(data, null, 2), btn);
+            }
+          }
+        },
+        {
+          label: '📥 Download JSON',
+          id: 'dl-json',
+          onClick: function (helpers) {
+            const data = helpers.getState().parsedData;
+            if (data) {
+              helpers.download(helpers.getFile().name.replace(/\.ini$/i, '.json'), JSON.stringify(data, null, 2), 'application/json');
+            }
+          }
+        }
+      ],
+
       onFile: function (file, content, helpers) {
         try {
           const parsed = parseIni(content);
+          helpers.setState('parsedData', parsed);
           let html = '<div class="p-4 space-y-6">';
           let hasContent = false;
 
@@ -49,8 +77,9 @@
 
             html += `
               <div class="bg-white rounded-xl border border-surface-200 shadow-sm overflow-hidden">
-                <div class="bg-surface-50 px-4 py-2 border-b border-surface-100">
+                <div class="bg-surface-50 px-4 py-2 border-b border-surface-100 flex items-center justify-between">
                   <h3 class="text-sm font-bold text-surface-700 uppercase tracking-wider">${escapeHtml(section)}</h3>
+                  <span class="text-[10px] font-mono text-surface-400">${keys.length} keys</span>
                 </div>
                 <div class="p-0">
                   <table class="w-full text-sm text-left">
@@ -60,8 +89,13 @@
             for (const key of keys) {
               html += `
                 <tr class="hover:bg-surface-50/50 transition-colors">
-                  <td class="px-4 py-2.5 font-medium text-surface-500 w-1/3 border-r border-surface-50">${escapeHtml(key)}</td>
-                  <td class="px-4 py-2.5 font-mono text-brand-600 break-all">${escapeHtml(parsed[section][key])}</td>
+                  <td class="px-4 py-2.5 font-medium text-surface-500 w-1/3 border-r border-surface-50">
+                    <div class="flex items-center gap-2">
+                      <span class="w-1.5 h-1.5 rounded-full bg-brand-400"></span>
+                      ${escapeHtml(key)}
+                    </div>
+                  </td>
+                  <td class="px-4 py-2.5 font-mono text-brand-600 break-all select-all">${escapeHtml(parsed[section][key])}</td>
                 </tr>
               `;
             }
@@ -82,7 +116,7 @@
             helpers.render(html);
           }
         } catch (e) {
-          helpers.showError('Parsing Issue', e.message);
+          helpers.showError('Parsing Error', e.message);
         }
       }
     });
