@@ -16,6 +16,18 @@
 
       actions: [
         {
+          label: '📸 Capture Screenshot',
+          id: 'screenshot',
+          onClick: function (helpers) {
+            if (renderer && scene && camera) {
+              renderer.render(scene, camera);
+              var dataUrl = renderer.domElement.toDataURL('image/png');
+              helpers.download(helpers.getFile().name.replace('.obj', '.png'), dataUrl, 'image/png');
+            }
+          }
+        },
+
+        {
           label: '📋 Copy Stats',
           id: 'copy-stats',
           onClick: function (h, btn) {
@@ -86,7 +98,10 @@
       '<div class="relative w-full h-[600px] bg-slate-900 rounded-xl overflow-hidden shadow-inner border border-surface-200">' +
         '<div id="three-container" class="w-full h-full"></div>' +
         '<div class="absolute bottom-4 left-4 flex gap-2">' +
-          '<button id="toggle-rotate" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg backdrop-blur-md transition-all border border-white/10">Pause Rotation</button>' +
+          '
+        <button id="toggle-wireframe" class="px-4 py-2 text-xs font-semibold rounded-lg bg-surface-100 hover:bg-surface-200 transition-colors">Toggle Wireframe</button>
+        <button id="toggle-bbox" class="px-4 py-2 text-xs font-semibold rounded-lg bg-surface-100 hover:bg-surface-200 transition-colors">Toggle Bounding Box</button>
+    <button id="toggle-rotate" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg backdrop-blur-md transition-all border border-white/10">Pause Rotation</button>' +
           '<button id="reset-view" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg backdrop-blur-md transition-all border border-white/10">Reset View</button>' +
         '</div>' +
       '</div>';
@@ -138,6 +153,22 @@
     model.scale.setScalar(scale);
     
     scene.add(model);
+    // Bounding Box Helper
+    var bboxHelper = new THREE.BoxHelper(model, 0xffff00);
+    bboxHelper.visible = false;
+    scene.add(bboxHelper);
+
+    document.getElementById('toggle-wireframe').addEventListener('click', function () {
+      model.traverse(function (node) {
+        if (node.isMesh) {
+          node.material.wireframe = !node.material.wireframe;
+        }
+      });
+    });
+    document.getElementById('toggle-bbox').addEventListener('click', function () {
+      bboxHelper.visible = !bboxHelper.visible;
+    });
+
 
     // 5. Calculate Stats
     var vertices = 0, faces = 0;
