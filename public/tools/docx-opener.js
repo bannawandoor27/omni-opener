@@ -1,6 +1,6 @@
 /**
  * OmniOpener — Word (DOCX) Toolkit
- * Uses OmniTool SDK and Mammoth.js.
+ * Uses OmniTool SDK, Mammoth.js, and Turndown for Markdown conversion.
  */
 (function () {
   'use strict';
@@ -16,10 +16,11 @@
     OmniTool.create(mountEl, toolConfig, {
       accept: '.docx',
       binary: true,
-      infoHtml: '<strong>DOCX Toolkit:</strong> Professional-grade Word document viewer with word counts and PDF export.',
+      infoHtml: '<strong>DOCX Toolkit:</strong> Professional-grade Word document viewer with Table of Contents, Markdown export, and word counts.',
       
       onInit: function (h) {
         h.loadScript('https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js');
+        h.loadScript('https://unpkg.com/turndown/dist/turndown.js');
       },
 
       actions: [
@@ -32,32 +33,20 @@
           }
         },
         {
-          label: '🖨️ Print to PDF',
-          id: 'print-pdf',
+          label: '📝 Export Markdown',
+          id: 'export-md',
           onClick: function (h) {
-             const content = document.getElementById('docx-render-area').innerHTML;
-             const win = window.open('', '_blank');
-             win.document.write(`
-               <html>
-                 <head>
-                   <title>${h.getFile().name}</title>
-                   <style>
-                     body { font-family: sans-serif; padding: 2rem; max-width: 800px; margin: 0 auto; line-height: 1.6; }
-                     img { max-width: 100%; height: auto; }
-                   </style>
-                 </head>
-                 <body>${content}</body>
-               </html>
-             `);
-             win.document.close();
-             win.print();
+             const html = document.getElementById('docx-render-area').innerHTML;
+             const turndownService = new TurndownService();
+             const markdown = turndownService.turndown(html);
+             h.download(h.getFile().name.replace(/\.docx$/i, '.md'), markdown, 'text/markdown');
           }
         }
       ],
 
       onFile: function (file, content, h) {
-        if (typeof mammoth === 'undefined') {
-          h.showLoading('Loading Word engine...');
+        if (typeof mammoth === 'undefined' || typeof TurndownService === 'undefined') {
+          h.showLoading('Loading Word engines...');
           setTimeout(() => this.onFile(file, content, h), 500);
           return;
         }
@@ -87,14 +76,46 @@
                       </div>
                     </div>
 
-                    <!-- Render Area -->
-                    <div class="flex-1 overflow-auto bg-surface-100 p-8 flex justify-center">
-                      <div id="docx-render-area" class="bg-white shadow-xl rounded-sm p-12 max-w-[800px] w-full min-h-full prose prose-sm prose-slate">
-                        ${result.value || '<p class="text-surface-400 italic">Empty document</p>'}
-                      </div>
+                    <!-- Main Content -->
+                    <div class="flex-1 flex overflow-hidden">
+                       <!-- Sidebar (ToC) -->
+                       <div id="docx-toc" class="w-64 shrink-0 bg-white border-r border-surface-100 overflow-y-auto p-6 hidden">
+                          <h3 class="text-[10px] font-bold uppercase text-surface-400 tracking-wider mb-4">Table of Contents</h3>
+                          <div id="toc-list" class="space-y-3"></div>
+                       </div>
+
+                       <!-- Render Area -->
+                       <div class="flex-1 overflow-auto bg-surface-100 p-8 flex justify-center scroll-smooth">
+                         <div id="docx-render-area" class="bg-white shadow-xl rounded-sm p-12 max-w-[800px] w-full min-h-full prose prose-sm prose-slate">
+                           ${result.value || '<p class="text-surface-400 italic">Empty document</p>'}
+                         </div>
+                       </div>
                     </div>
                   </div>
                 `);
+
+                // Generate ToC
+                const renderArea = document.getElementById('docx-render-area');
+                const headings = renderArea.querySelectorAll('h1, h2, h3');
+                const tocContainer = document.getElementById('docx-toc');
+                const tocList = document.getElementById('toc-list');
+                
+                if (headings.length > 0) {
+                   tocContainer.classList.remove('hidden');
+                   headings.forEach((h, i) => {
+                      const id = `heading-${i}`;
+                      h.id = id;
+                      const link = document.createElement('a');
+                      link.href = `#${id}`;
+                      link.className = `block text-xs font-medium text-surface-600 hover:text-brand-600 transition-colors ${h.tagName === 'H1' ? 'pl-0' : h.tagName === 'H2' ? 'pl-2' : 'pl-4'}`;
+                      link.textContent = h.textContent;
+                      link.onclick = (e) => {
+                         e.preventDefault();
+                         h.scrollIntoView({ behavior: 'smooth' });
+                      };
+                      tocList.appendChild(link);
+                   });
+                }
              });
           })
           .catch(err => {
@@ -107,3 +128,4 @@
     });
   };
 })();
+

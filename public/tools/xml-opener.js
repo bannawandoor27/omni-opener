@@ -1,6 +1,6 @@
 /**
  * OmniOpener — XML/Feed Toolkit
- * Uses OmniTool SDK and highlight.js. Native DOMParser for Tree View.
+ * Uses OmniTool SDK, highlight.js, and native DOMParser.
  */
 (function () {
   'use strict';
@@ -10,6 +10,25 @@
     const div = document.createElement('div');
     div.appendChild(document.createTextNode(String(str)));
     return div.innerHTML;
+  }
+
+  function prettifyXml(xml) {
+    let formatted = '';
+    let reg = /(>)(<)(\/*)/g;
+    xml = xml.replace(reg, '$1\r\n$2$3');
+    let pad = 0;
+    xml.split('\r\n').forEach(function(node) {
+      let indent = 0;
+      if (node.match(/.+<\/\w[^>]*>$/)) indent = 0;
+      else if (node.match(/^<\/\w/)) { if (pad != 0) pad -= 1; }
+      else if (node.match(/^<\w[^>]*[^\/]>.*$/)) indent = 1;
+      else indent = 0;
+      let padding = '';
+      for (let i = 0; i < pad; i++) padding += '  ';
+      formatted += padding + node + '\r\n';
+      pad += indent;
+    });
+    return formatted.trim();
   }
 
   function xmlToJson(xml) {
@@ -49,7 +68,7 @@
       accept: '.xml,.rss,.atom,.svg,.kml,.gpx,.wsdl,.xsd',
       dropLabel: 'Drop an XML or Feed file here',
       binary: false,
-      infoHtml: '<strong>XML Toolkit:</strong> Professional XML viewer with Tree View and Feed previews. No external dependencies for parsing.',
+      infoHtml: '<strong>XML Toolkit:</strong> Professional XML viewer with XPath search, auto-formatting, and Tree View.',
       
       onInit: function(helpers) {
         helpers.loadCSS('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css');
@@ -58,10 +77,11 @@
 
       actions: [
         {
-          label: '📋 Copy Source',
-          id: 'copy-xml',
-          onClick: function (helpers, btn) {
-            helpers.copyToClipboard(helpers.getContent(), btn);
+          label: '✨ Prettify',
+          id: 'prettify-xml',
+          onClick: function (helpers) {
+            const formatted = prettifyXml(helpers.getContent());
+            helpers.getMountEl()._onFileUpdate(helpers.getFile(), formatted);
           }
         },
         {
@@ -77,6 +97,8 @@
       ],
 
       onFile: function _onFile(file, content, helpers) {
+        helpers.getMountEl()._onFileUpdate = (f, c) => _onFile(f, c, helpers);
+
         if (typeof hljs === 'undefined') {
           helpers.showLoading('Loading engines...');
           setTimeout(() => _onFile(file, content, helpers), 500);
@@ -88,20 +110,37 @@
           const xmlDoc = parser.parseFromString(content, "text/xml");
           const parsed = xmlToJson(xmlDoc);
           helpers.setState('parsedData', parsed);
+          helpers.setState('xmlDoc', xmlDoc);
 
           const isFeed = content.includes('<rss') || content.includes('<feed');
           
           const renderHtml = `
             <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm">
-              <div class="shrink-0 bg-surface-50 border-b border-surface-200 p-2 flex items-center justify-between">
-                <div class="flex px-2">
-                  <button id="tab-tree" class="px-4 py-1.5 text-[10px] font-bold uppercase border-b-2 border-brand-500 text-brand-600">Tree View</button>
-                  ${isFeed ? `<button id="tab-preview" class="px-4 py-1.5 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400 hover:text-surface-600">Feed Preview</button>` : ''}
-                  <button id="tab-source" class="px-4 py-1.5 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400 hover:text-surface-600">Source</button>
+              <div class="shrink-0 bg-surface-50 border-b border-surface-200">
+                <div class="p-2 flex items-center justify-between">
+                  <div class="flex px-2">
+                    <button id="tab-tree" class="px-4 py-1.5 text-[10px] font-bold uppercase border-b-2 border-brand-500 text-brand-600">Tree View</button>
+                    ${isFeed ? `<button id="tab-preview" class="px-4 py-1.5 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400 hover:text-surface-600">Feed Preview</button>` : ''}
+                    <button id="tab-source" class="px-4 py-1.5 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400 hover:text-surface-600">Source</button>
+                  </div>
+                  <div class="px-4 text-[10px] font-mono text-surface-400">${(content.length/1024).toFixed(1)} KB</div>
                 </div>
-                <div class="px-4 text-[10px] font-mono text-surface-400">${(content.length/1024).toFixed(1)} KB</div>
+
+                <!-- XPath Bar -->
+                <div class="px-3 pb-3 pt-1 flex gap-2 border-t border-surface-100">
+                   <div class="relative flex-1">
+                      <span class="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-brand-500 font-mono">/</span>
+                      <input type="text" id="xpath-query" placeholder="XPath Query (e.g. //item/title)" class="w-full pl-7 pr-4 py-1.5 text-xs font-mono border border-surface-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 bg-white">
+                   </div>
+                   <button id="btn-run-xpath" class="px-3 py-1.5 bg-brand-600 text-white text-[10px] font-bold rounded-lg hover:bg-brand-700">Run</button>
+                </div>
               </div>
+
               <div id="xml-viewport" class="flex-1 overflow-auto p-4 bg-white font-mono text-[12px]">
+                <div id="view-xpath" class="hidden mb-6 p-4 bg-surface-50 rounded-xl border border-surface-200">
+                   <h3 class="text-[10px] font-bold uppercase text-surface-400 mb-2">Query Results</h3>
+                   <div id="xpath-results" class="space-y-2 max-h-48 overflow-auto"></div>
+                </div>
                 <div id="view-tree" class="space-y-1"></div>
                 <div id="view-preview" class="hidden prose prose-sm max-w-none"></div>
                 <pre id="view-source" class="hidden hljs language-xml p-4 rounded-lg overflow-auto"></pre>
@@ -142,6 +181,32 @@
 
           sourceContainer.innerHTML = hljs.highlight(content.slice(0, 50000), { language: 'xml' }).value;
 
+          // XPath Logic
+          document.getElementById('btn-run-xpath').onclick = () => {
+             const query = document.getElementById('xpath-query').value.trim();
+             if (!query) return;
+             const resultsContainer = document.getElementById('view-xpath');
+             const resultsList = document.getElementById('xpath-results');
+             resultsContainer.classList.remove('hidden');
+             resultsList.innerHTML = '';
+             try {
+                const nodes = xmlDoc.evaluate(query, xmlDoc, null, XPathResult.ANY_TYPE, null);
+                let node = nodes.iterateNext();
+                let count = 0;
+                while (node) {
+                   const item = document.createElement('div');
+                   item.className = 'p-2 bg-white border border-surface-100 rounded text-[11px] truncate';
+                   item.textContent = node.textContent || node.outerHTML || String(node);
+                   resultsList.appendChild(item);
+                   node = nodes.iterateNext();
+                   count++;
+                }
+                if (count === 0) resultsList.innerHTML = '<p class="text-[10px] text-surface-400 italic">No results found.</p>';
+             } catch (e) {
+                helpers.showError('XPath Error', e.message);
+             }
+          };
+
           const tabs = { tree: document.getElementById('tab-tree'), preview: document.getElementById('tab-preview'), source: document.getElementById('tab-source') };
           const views = { tree: treeContainer, preview: previewContainer, source: sourceContainer };
           Object.keys(tabs).forEach(k => {
@@ -162,3 +227,4 @@
     });
   };
 })();
+

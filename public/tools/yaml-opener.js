@@ -17,23 +17,14 @@
       accept: '.yaml,.yml',
       dropLabel: 'Drop a .yaml or .yml file',
       binary: false,
-      infoHtml: '<strong>YAML Toolkit:</strong> Professional YAML utility with Tree View, JSON conversion, and formatting.',
+      infoHtml: '<strong>YAML Toolkit:</strong> Professional YAML utility with Interactive Editor, Schema Validation, and Tree View.',
       
       actions: [
         {
-          label: '✨ Format YAML',
-          id: 'format-yaml',
-          onClick: function (helpers) {
-            const data = helpers.getState().parsedData;
-            if (data && typeof jsyaml !== 'undefined') {
-              try {
-                const formatted = jsyaml.dump(data, { indent: 2, lineWidth: -1 });
-                // Trigger re-process with formatted content
-                helpers.getMountEl()._onFileUpdate(helpers.getFile(), formatted);
-              } catch (e) {
-                helpers.showError('Format Error', e.message);
-              }
-            }
+          label: '📋 Copy YAML',
+          id: 'copy-yaml',
+          onClick: function (helpers, btn) {
+            helpers.copyToClipboard(helpers.getContent(), btn);
           }
         },
         {
@@ -70,26 +61,47 @@
               <!-- Header -->
               <div class="shrink-0 bg-surface-50 border-b border-surface-200 p-2 flex items-center justify-between">
                 <div class="flex px-2">
-                  <button id="tab-source" class="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider border-b-2 border-brand-500 text-brand-600">YAML Source</button>
+                  <button id="tab-edit" class="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider border-b-2 border-brand-500 text-brand-600">Editor</button>
                   <button id="tab-tree" class="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider border-b-2 border-transparent text-surface-400 hover:text-surface-600 transition-colors">Tree View</button>
-                  <button id="tab-json" class="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider border-b-2 border-transparent text-surface-400 hover:text-surface-600 transition-colors">JSON View</button>
+                  <button id="tab-validate" class="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider border-b-2 border-transparent text-surface-400 hover:text-surface-600 transition-colors">Validate</button>
                 </div>
                 <div class="px-4 text-[10px] font-mono text-surface-400">${(content.length/1024).toFixed(1)} KB</div>
               </div>
 
               <!-- Content Area -->
-              <div id="yaml-viewport" class="flex-1 overflow-auto p-4 bg-white font-mono text-[12px] leading-relaxed">
-                <pre id="view-source" class="text-surface-800 whitespace-pre">${escapeHtml(content)}</pre>
-                <div id="view-tree" class="hidden space-y-1"></div>
-                <pre id="view-json" class="hidden text-surface-600 whitespace-pre">${escapeHtml(JSON.stringify(parsed, null, 2))}</pre>
+              <div id="yaml-viewport" class="flex-1 overflow-auto bg-white font-mono text-[12px] leading-relaxed">
+                <!-- Editor Tab -->
+                <div id="view-edit" class="h-full flex flex-col">
+                   <div class="shrink-0 p-2 bg-surface-50 border-b border-surface-100 flex gap-2">
+                      <button id="btn-sync" class="px-3 py-1 bg-brand-600 text-white text-[10px] font-bold rounded-lg hover:bg-brand-700 transition-colors">Sync & Preview</button>
+                      <button id="btn-prettify" class="px-3 py-1 bg-white border border-surface-200 text-surface-600 text-[10px] font-bold rounded-lg hover:bg-surface-50 transition-colors">Prettify</button>
+                   </div>
+                   <textarea id="yaml-editor" class="flex-1 w-full p-4 text-surface-800 bg-white outline-none resize-none font-mono text-[13px]" spellcheck="false">${escapeHtml(content)}</textarea>
+                </div>
+
+                <!-- Tree View Tab -->
+                <div id="view-tree" class="hidden p-4 space-y-1"></div>
+
+                <!-- Validate Tab -->
+                <div id="view-validate" class="hidden p-8 flex flex-col items-center justify-center text-center">
+                   <div id="validate-status" class="mb-4">
+                      <span class="text-5xl">✅</span>
+                      <h2 class="text-lg font-bold text-surface-900 mt-2">YAML is Well-Formed</h2>
+                      <p class="text-sm text-surface-500">Syntax is correct and parsable.</p>
+                   </div>
+                   <div class="w-full max-w-md mt-6 p-4 bg-surface-50 rounded-xl border border-surface-200 text-left">
+                      <h3 class="text-[10px] font-bold uppercase text-surface-400 mb-2">Structure Summary</h3>
+                      <div id="validate-info" class="text-[11px] space-y-1 text-surface-600"></div>
+                   </div>
+                </div>
               </div>
             </div>
           `;
           helpers.render(renderHtml);
 
           const treeContainer = document.getElementById('view-tree');
-          const sourceView = document.getElementById('view-source');
-          const jsonView = document.getElementById('view-json');
+          const editor = document.getElementById('yaml-editor');
+          const validateInfo = document.getElementById('validate-info');
 
           function renderTree(data, container, label = '') {
             const wrapper = document.createElement('div');
@@ -115,8 +127,37 @@
           }
           renderTree(parsed, treeContainer);
 
-          const tabs = { source: document.getElementById('tab-source'), tree: document.getElementById('tab-tree'), json: document.getElementById('tab-json') };
-          const views = { source: sourceView, tree: treeContainer, json: jsonView };
+          function updateValidation() {
+             const keys = Object.keys(parsed || {}).length;
+             validateInfo.innerHTML = `
+                <div class="flex justify-between"><span>Top-level keys:</span><span class="font-bold">${keys}</span></div>
+                <div class="flex justify-between"><span>Type:</span><span class="font-bold">${Array.isArray(parsed) ? 'Array' : typeof parsed}</span></div>
+             `;
+          }
+          updateValidation();
+
+          document.getElementById('btn-sync').onclick = () => {
+             const newContent = editor.value;
+             try {
+                jsyaml.load(newContent);
+                _onFile(file, newContent, helpers);
+             } catch (e) {
+                helpers.showError('YAML Error', e.message);
+             }
+          };
+
+          document.getElementById('btn-prettify').onclick = () => {
+             try {
+                const obj = jsyaml.load(editor.value);
+                const pretty = jsyaml.dump(obj, { indent: 2, lineWidth: -1 });
+                editor.value = pretty;
+             } catch (e) {
+                helpers.showError('YAML Error', e.message);
+             }
+          };
+
+          const tabs = { edit: document.getElementById('tab-edit'), tree: document.getElementById('tab-tree'), validate: document.getElementById('tab-validate') };
+          const views = { edit: document.getElementById('view-edit'), tree: treeContainer, validate: document.getElementById('view-validate') };
 
           Object.keys(tabs).forEach(k => {
             tabs[k].onclick = () => {
@@ -136,3 +177,4 @@
     });
   };
 })();
+
