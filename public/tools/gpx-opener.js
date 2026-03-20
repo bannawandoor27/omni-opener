@@ -32,7 +32,7 @@
       onFile: function _onFile(file, content, h) {
         if (typeof L === 'undefined' || typeof toGeoJSON === 'undefined' || typeof Chart === 'undefined') {
           h.showLoading('Loading map engines...');
-          setTimeout(() => _onFile(file, content, h), 500);
+          setTimeout(() => this.onFile(file, content, h), 500);
           return;
         }
 
@@ -44,20 +44,22 @@
           let distance = 0;
           const elevations = [];
           const coords = [];
-          geojson.features.forEach(f => {
-             if (f.geometry.type === 'LineString') {
-                const c = f.geometry.coordinates;
-                for (let i = 0; i < c.length - 1; i++) {
-                   const p1 = L.latLng(c[i][1], c[i][0]);
-                   const p2 = L.latLng(c[i+1][1], c[i+1][0]);
-                   distance += p1.distanceTo(p2);
-                   if (c[i][2] !== undefined) { elevations.push(c[i][2]); coords.push(c[i]); }
+          if (geojson.features) {
+             geojson.features.forEach(f => {
+                if (f.geometry && f.geometry.type === 'LineString') {
+                   const c = f.geometry.coordinates;
+                   for (let i = 0; i < c.length - 1; i++) {
+                      const p1 = L.latLng(c[i][1], c[i][0]);
+                      const p2 = L.latLng(c[i+1][1], c[i+1][0]);
+                      distance += p1.distanceTo(p2);
+                      if (c[i][2] !== undefined) { elevations.push(c[i][2]); coords.push(c[i]); }
+                   }
                 }
-             }
-          });
+             });
+          }
 
           h.render(`
-            <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm">
+            <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm font-sans">
               <div class="shrink-0 bg-surface-50 border-b border-surface-200 px-4 py-2 flex items-center justify-between">
                  <span class="text-xs font-bold text-surface-900 truncate">${escapeHtml(file.name)}</span>
                  <div class="flex items-center gap-4">
@@ -84,8 +86,16 @@
           L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
           const trackLayer = L.geoJSON(geojson, { style: { color: '#ef4444', weight: 4, opacity: 0.8 } }).addTo(map);
-          map.fitBounds(trackLayer.getBounds());
-          document.getElementById('btn-fit').onclick = () => map.fitBounds(trackLayer.getBounds());
+          
+          try {
+             const bounds = trackLayer.getBounds();
+             if (bounds.isValid()) map.fitBounds(bounds);
+          } catch(e) {}
+
+          document.getElementById('btn-fit').onclick = () => {
+             const b = trackLayer.getBounds();
+             if (b.isValid()) map.fitBounds(b);
+          };
 
           if (elevations.length > 0) {
              const ctx = document.getElementById('elev-chart').getContext('2d');
@@ -106,7 +116,7 @@
                       if (elements.length > 0) {
                          const idx = elements[0].index;
                          const coord = coords[idx];
-                         elevationMarker.setLatLng([coord[1], coord[0]]);
+                         if (coord) elevationMarker.setLatLng([coord[1], coord[0]]);
                       }
                    }
                 }
@@ -118,4 +128,3 @@
     });
   };
 })();
-

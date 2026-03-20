@@ -1,5 +1,11 @@
 [
   {
+    "slug": "xml-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
     "slug": "json-opener",
     "success": true,
     "errors": [],
@@ -7,12 +13,6 @@
   },
   {
     "slug": "csv-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "xml-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -42,7 +42,7 @@
     "networkFailures": []
   },
   {
-    "slug": "xlsx-opener",
+    "slug": "yaml-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -54,19 +54,19 @@
     "networkFailures": []
   },
   {
-    "slug": "yaml-opener",
+    "slug": "xlsx-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "log-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
     "slug": "pptx-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "rtf-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -84,7 +84,7 @@
     "networkFailures": []
   },
   {
-    "slug": "log-opener",
+    "slug": "rtf-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -96,13 +96,13 @@
     "networkFailures": []
   },
   {
-    "slug": "odt-opener",
+    "slug": "sql-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "sql-opener",
+    "slug": "odt-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -120,37 +120,37 @@
     "networkFailures": []
   },
   {
+    "slug": "kml-opener",
+    "success": false,
+    "errors": [
+      "Render status: error-displayed"
+    ],
+    "networkFailures": []
+  },
+  {
+    "slug": "gpx-opener",
+    "success": false,
+    "errors": [
+      "Render status: error-displayed"
+    ],
+    "networkFailures": []
+  },
+  {
     "slug": "proto-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "parquet-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "gpx-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
     "slug": "geojson-opener",
-    "success": true,
-    "errors": [],
+    "success": false,
+    "errors": [
+      "Render status: error-displayed"
+    ],
     "networkFailures": []
   },
   {
-    "slug": "kml-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "graphql-opener",
+    "slug": "parquet-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -163,6 +163,12 @@
   },
   {
     "slug": "vcf-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "graphql-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -186,13 +192,13 @@
     "networkFailures": []
   },
   {
-    "slug": "key-opener",
+    "slug": "crt-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "crt-opener",
+    "slug": "key-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -210,13 +216,19 @@
     "networkFailures": []
   },
   {
-    "slug": "stl-opener",
+    "slug": "gltf-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "gltf-opener",
+    "slug": "obj-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "stl-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -234,25 +246,7 @@
     "networkFailures": []
   },
   {
-    "slug": "obj-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "eps-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
     "slug": "dxf-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "psd-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -264,19 +258,31 @@
     "networkFailures": []
   },
   {
+    "slug": "eps-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
+    "slug": "psd-opener",
+    "success": true,
+    "errors": [],
+    "networkFailures": []
+  },
+  {
     "slug": "dwg-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "sketch-opener",
+    "slug": "avif-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "fig-opener",
+    "slug": "sketch-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -294,31 +300,55 @@
     "networkFailures": []
   },
   {
-    "slug": "avif-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "heic-opener",
+    "slug": "fig-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
     "slug": "gif-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "tiff-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load tool-sdk.js",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/tool-sdk.js - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/tools/gif-opener.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "ico-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load config.json TypeError: Failed to fetch",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/config.json - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "tiff-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES"
+    ],
+    "networkFailures": [
+      "https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.min.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "heic-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
@@ -330,154 +360,359 @@
     "networkFailures": []
   },
   {
+    "slug": "apng-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/tools/apng-opener.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "ogg-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load tool-sdk.js",
+      "OmniTool is not defined",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/tool-sdk.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "wav-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load config.json TypeError: Failed to fetch",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/config.json - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
     "slug": "mp3-opener",
     "success": true,
     "errors": [],
     "networkFailures": []
   },
   {
-    "slug": "ogg-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
     "slug": "flac-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "wav-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "apng-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load config.json TypeError: Failed to fetch",
+      "Navigation/Execution error: Navigation timeout of 30000 ms exceeded"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/config.json - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "aac-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "avi-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "midi-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/tools/aac-opener.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "webm-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load config.json TypeError: Failed to fetch",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/config.json - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "mp4-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load tool-sdk.js",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/tool-sdk.js - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/tools/mp4-opener.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "midi-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES"
+    ],
+    "networkFailures": [
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "avi-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load config.json TypeError: Failed to fetch",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Navigation/Execution error: Navigation timeout of 30000 ms exceeded"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/config.json - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "mkv-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load tool-sdk.js",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/tool-sdk.js - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/tools/mkv-opener.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "srt-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "vtt-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "m3u8-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/tools/srt-opener.js - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "mov-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load tool-sdk.js",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/tool-sdk.js - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/tools/mov-opener.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
-    "slug": "lrc-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "slug": "m3u8-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined"
+    ],
+    "networkFailures": [
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
-    "slug": "zip-opener",
-    "success": true,
-    "errors": [],
+    "slug": "vtt-opener",
+    "success": false,
+    "errors": [
+      "Navigation/Execution error: Navigation timeout of 30000 ms exceeded"
+    ],
     "networkFailures": []
   },
   {
     "slug": "gz-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/app.js - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "zip-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load tool-sdk.js",
+      "OmniTool is not defined",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/tool-sdk.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "ass-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/tools/ass-opener.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "lrc-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load config.json TypeError: Failed to fetch",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/config.json - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "tar-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "7z-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "xz-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "bz2-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "rar-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/tools/tar-opener.js - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "iso-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/app.js - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "7z-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/app.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "xz-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/app.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "bz2-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/app.js - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "rar-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load config.json TypeError: Failed to fetch",
+      "Navigation/Execution error: Navigation timeout of 30000 ms exceeded"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/config.json - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "deb-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load config.json TypeError: Failed to fetch",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/config.json - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "rpm-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load tool-sdk.js",
+      "OmniTool is not defined",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/tool-sdk.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "dmg-opener",
@@ -486,70 +721,111 @@
     "networkFailures": []
   },
   {
-    "slug": "deb-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "slug": "flatpak-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES"
+    ],
+    "networkFailures": [
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "appimage-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "rpm-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "flatpak-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "ear-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "war-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "ipa-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "aab-opener",
-    "success": true,
-    "errors": [],
+    "success": false,
+    "errors": [
+      "Navigation/Execution error: Navigation timeout of 30000 ms exceeded"
+    ],
     "networkFailures": []
   },
   {
     "slug": "apk-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "[OmniOpener] Failed to load tool-sdk.js",
+      "OmniTool is not defined",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/tool-sdk.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
-    "slug": "dll-opener",
-    "success": true,
-    "errors": [],
+    "slug": "aab-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/app.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "war-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined"
+    ],
+    "networkFailures": [
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "ear-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined"
+    ],
+    "networkFailures": [
+      "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "ipa-opener",
+    "success": false,
+    "errors": [
+      "Navigation/Execution error: Navigation timeout of 30000 ms exceeded"
+    ],
     "networkFailures": []
   },
   {
     "slug": "exe-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/app.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "dll-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/app.js - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "msi-opener",
@@ -559,56 +835,116 @@
   },
   {
     "slug": "so-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined"
+    ],
+    "networkFailures": [
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "dylib-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "gem-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Navigation/Execution error: Navigation timeout of 30000 ms exceeded"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/app.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "whl-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/tools/whl-opener.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
-    "slug": "nupkg-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
-  },
-  {
-    "slug": "crate-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "slug": "gem-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/app.js - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "egg-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "tailwind is not defined",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/app.js - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://cdn.tailwindcss.com/3.4.17 - net::ERR_INSUFFICIENT_RESOURCES",
+      "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
-    "slug": "snap-opener",
-    "success": true,
-    "errors": [],
-    "networkFailures": []
+    "slug": "nupkg-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/app.js - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "crate-opener",
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Navigation/Execution error: Navigation timeout of 30000 ms exceeded"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/app.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
   },
   {
     "slug": "jar-opener",
-    "success": true,
-    "errors": [],
+    "success": false,
+    "errors": [
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Failed to load resource: net::ERR_INSUFFICIENT_RESOURCES",
+      "Could not find file input"
+    ],
+    "networkFailures": [
+      "http://localhost:3000/favicon.ico - net::ERR_INSUFFICIENT_RESOURCES",
+      "http://localhost:3000/tools/jar-opener.js - net::ERR_INSUFFICIENT_RESOURCES"
+    ]
+  },
+  {
+    "slug": "snap-opener",
+    "success": false,
+    "errors": [
+      "Navigation/Execution error: Navigation timeout of 30000 ms exceeded"
+    ],
     "networkFailures": []
   }
 ]

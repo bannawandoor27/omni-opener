@@ -47,8 +47,8 @@
              const e = new ICAL.Event(v);
              return {
                 summary: e.summary,
-                start: e.startDate.toString(),
-                end: e.endDate.toString(),
+                start: e.startDate.toJSDate(),
+                end: e.endDate.toJSDate(),
                 location: e.location,
                 description: e.description
              };
@@ -62,25 +62,59 @@
           }
 
           h.render(`
-            <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm">
-              <div class="shrink-0 bg-surface-50 border-b border-surface-200 px-4 py-3 flex items-center justify-between">
-                 <span class="text-xs font-bold text-surface-900 truncate">${escapeHtml(file.name)}</span>
-                 <span class="text-[10px] font-bold text-brand-600 uppercase tracking-widest">${events.length} Events Found</span>
+            <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm font-sans">
+              <div class="shrink-0 bg-surface-50 border-b border-surface-200 px-4 py-2 flex items-center justify-between">
+                 <div class="flex px-1 bg-white border border-surface-200 rounded-lg">
+                    <button id="tab-list" class="px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-brand-500 text-brand-600">List</button>
+                    <button id="tab-grid" class="px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400">Grid</button>
+                 </div>
+                 <span class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">${events.length} Events</span>
               </div>
-              <div class="flex-1 overflow-auto bg-surface-100/50 p-6 space-y-4">
-                 ${events.map(e => `
-                   <div class="bg-white p-5 rounded-xl border border-surface-200 shadow-sm hover:shadow-md transition-shadow">
-                      <h3 class="text-lg font-bold text-surface-900 mb-2">${escapeHtml(e.summary || 'No Title')}</h3>
-                      <div class="flex flex-wrap gap-4 text-xs text-surface-500 mb-4">
-                         <div class="flex items-center gap-1">📅 ${escapeHtml(e.start)}</div>
-                         <div class="flex items-center gap-1">📍 ${escapeHtml(e.location || 'No Location')}</div>
+              <div class="flex-1 overflow-hidden relative">
+                 <div id="view-list" class="absolute inset-0 overflow-auto p-6 space-y-4 bg-surface-50">
+                    ${events.map(e => `
+                      <div class="bg-white p-5 rounded-xl border border-surface-200 shadow-sm">
+                         <div class="flex justify-between items-start mb-2">
+                            <h3 class="text-lg font-bold text-surface-900">${escapeHtml(e.summary || 'No Title')}</h3>
+                            <a href="https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(e.summary)}&dates=${e.start.toISOString().replace(/[-:]/g, '').split('.')[0]}Z/${e.end.toISOString().replace(/[-:]/g, '').split('.')[0]}Z&details=${encodeURIComponent(e.description || '')}&location=${encodeURIComponent(e.location || '')}" target="_blank" class="px-2 py-1 bg-white border border-surface-200 rounded text-[10px] font-bold text-surface-600 hover:bg-surface-50 transition-colors">➕ Google Cal</a>
+                         </div>
+                         <div class="flex flex-wrap gap-4 text-xs text-surface-500 mb-4">
+                            <div class="flex items-center gap-1">📅 ${e.start.toLocaleString()}</div>
+                            <div class="flex items-center gap-1">📍 ${escapeHtml(e.location || 'No Location')}</div>
+                         </div>
+                         ${e.description ? `<div class="text-xs text-surface-600 border-t border-surface-50 pt-3 leading-relaxed">${escapeHtml(e.description)}</div>` : ''}
                       </div>
-                      ${e.description ? `<div class="text-xs text-surface-600 border-t border-surface-50 pt-3 leading-relaxed">${escapeHtml(e.description)}</div>` : ''}
-                   </div>
-                 `).join('')}
+                    `).join('')}
+                 </div>
+                 <div id="view-grid" class="absolute inset-0 hidden overflow-auto p-8 bg-white">
+                    <div class="grid grid-cols-7 border-t border-l border-surface-100">
+                       ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => `<div class="p-2 border-r border-b border-surface-100 bg-surface-50 text-[10px] font-bold text-center uppercase text-surface-400">${d}</div>`).join('')}
+                       ${Array.from({ length: 35 }).map((_, i) => `<div class="h-24 p-2 border-r border-b border-surface-100 relative group"><span class="text-[10px] font-bold text-surface-300 group-hover:text-brand-500">${(i%31)+1}</span></div>`).join('')}
+                    </div>
+                 </div>
               </div>
             </div>
           `);
+
+          const tabList = document.getElementById('tab-list');
+          const tabGrid = document.getElementById('tab-grid');
+          const viewList = document.getElementById('view-list');
+          const viewGrid = document.getElementById('view-grid');
+
+          tabList.onclick = () => {
+             tabList.className = "px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-brand-500 text-brand-600";
+             tabGrid.className = "px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400";
+             viewList.classList.remove('hidden');
+             viewGrid.classList.add('hidden');
+          };
+
+          tabGrid.onclick = () => {
+             tabGrid.className = "px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-brand-500 text-brand-600";
+             tabList.className = "px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400";
+             viewGrid.classList.remove('hidden');
+             viewList.classList.add('hidden');
+          };
+
 
         } catch (err) {
            h.render(`<div class="p-12 text-center text-surface-400">This file is not a valid iCalendar (.ics) document.</div>`);

@@ -1,6 +1,6 @@
 /**
  * OmniOpener — vCard (VCF) Toolkit
- * Uses OmniTool SDK and qrcode.js.
+ * Uses OmniTool SDK, qrcode.js, and PapaParse.
  */
 (function () {
   'use strict';
@@ -53,26 +53,55 @@
     OmniTool.create(mountEl, toolConfig, {
       accept: '.vcf',
       binary: false,
-      infoHtml: '<strong>VCF Toolkit:</strong> Professional contact viewer with QR code generation and individual export.',
+      infoHtml: '<strong>VCF Toolkit:</strong> Professional contact viewer with bulk CSV export, duplicate detection, and QR codes.',
       
       onInit: function(h) {
         h.loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js');
+        h.loadScript('https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js');
       },
+
+      actions: [
+        {
+          label: '📥 Export All to CSV',
+          id: 'export-csv',
+          onClick: function (h) {
+             const cards = h.getState().cards;
+             if (cards && typeof Papa !== 'undefined') {
+                const data = cards.map(c => c.data);
+                const csv = Papa.unparse(data);
+                h.download(h.getFile().name.replace(/\.vcf$/i, '.csv'), csv, 'text/csv');
+             }
+          }
+        }
+      ],
 
       onFile: function (file, content, h) {
         const cards = vCardParser.parse(content);
+        h.setState('cards', cards);
+
         if (cards.length === 0) {
            h.render(`<div class="p-12 text-center text-surface-400">No valid contacts found in this file.</div>`);
            return;
         }
+
+        // Find Duplicates
+        const duplicates = [];
+        const seen = new Set();
+        cards.forEach((c, i) => {
+           const name = (c.data.fn || c.data.n || "").toLowerCase().trim();
+           if (name && seen.has(name)) duplicates.push(i);
+           seen.add(name);
+        });
 
         const renderCards = (filtered) => `
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             ${filtered.map((c, i) => {
                const name = c.data.fn || c.data.n || 'Unnamed';
                const initial = String(name).trim().charAt(0).toUpperCase();
+               const isDup = seen.has(name.toLowerCase().trim()) && duplicates.includes(cards.indexOf(c));
                return `
-                 <div class="contact-card bg-white p-4 rounded-xl border border-surface-200 shadow-sm hover:shadow-md transition-all cursor-pointer group" data-index="${i}">
+                 <div class="contact-card bg-white p-4 rounded-xl border border-surface-200 shadow-sm hover:shadow-md transition-all cursor-pointer group relative" data-index="${cards.indexOf(c)}">
+                    ${isDup ? `<span class="absolute top-2 right-2 text-[8px] bg-red-100 text-red-600 px-1 rounded font-bold uppercase">Potential Duplicate</span>` : ''}
                     <div class="flex items-center gap-4">
                        <div class="w-12 h-12 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center font-bold text-lg group-hover:bg-brand-600 group-hover:text-white transition-colors">${escapeHtml(initial)}</div>
                        <div class="overflow-hidden">
@@ -87,10 +116,13 @@
         `;
 
         h.render(`
-          <div class="flex flex-col h-[85vh] space-y-6 max-w-6xl mx-auto">
+          <div class="flex flex-col h-[85vh] space-y-6 max-w-6xl mx-auto font-sans">
             <div class="flex items-center justify-between">
                <h3 class="font-bold text-xl text-surface-900">${escapeHtml(file.name)} <span class="text-surface-400 font-medium ml-2">(${cards.length} contacts)</span></h3>
-               <input type="text" id="vcf-search" placeholder="Search contacts..." class="px-4 py-2 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500 w-64">
+               <div class="flex gap-4 items-center">
+                  ${duplicates.length > 0 ? `<span class="text-[10px] font-bold text-red-500 uppercase">${duplicates.length} Duplicates Found</span>` : ''}
+                  <input type="text" id="vcf-search" placeholder="Search contacts..." class="px-4 py-2 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500 w-64">
+               </div>
             </div>
             <div id="vcf-list" class="flex-1 overflow-auto">
                ${renderCards(cards)}
@@ -160,3 +192,4 @@
     });
   };
 })();
+
