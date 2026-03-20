@@ -16,7 +16,7 @@
     OmniTool.create(mountEl, toolConfig, {
       accept: '.obj',
       binary: false,
-      infoHtml: '<strong>OBJ Toolkit:</strong> Professional 3D viewer with environment maps, wireframe toggle, and mesh inspection.',
+      infoHtml: '<strong>OBJ Toolkit:</strong> Professional 3D viewer with bounding box dimensions, auto-rotation, and environment presets.',
       
       onInit: function (h) {
         h.loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js', () => {
@@ -49,31 +49,40 @@
     let meshCount = 0;
     object.traverse(n => { if (n.isMesh) meshCount++; });
 
+    const box = new THREE.Box3().setFromObject(object);
+    const size = box.getSize(new THREE.Vector3());
+
     h.render(`
-      <div class="flex flex-col h-[85vh]">
+      <div class="flex flex-col h-[85vh] font-sans">
         <div class="flex items-center gap-3 px-4 py-2 bg-surface-50 rounded-xl text-[10px] text-surface-500 mb-2 border border-surface-200">
           <span class="font-bold text-surface-900 uppercase">${escapeHtml(file.name)}</span>
           <span class="text-surface-300">|</span>
           <span>${meshCount} Meshes</span>
+          <span class="text-surface-300">|</span>
+          <span class="text-brand-600 font-bold">${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)} units</span>
         </div>
         <div class="relative flex-1 bg-slate-900 rounded-2xl overflow-hidden border border-surface-200 shadow-xl">
           <div id="three-container" class="w-full h-full cursor-move"></div>
           <div class="absolute top-4 right-4 w-48 bg-white/95 backdrop-blur shadow-xl rounded-xl border border-surface-200 p-4 space-y-4">
              <section>
-                <label class="block text-[10px] font-bold text-surface-400 uppercase mb-2">Lighting</label>
-                <select id="env-preset" class="w-full text-xs p-1.5 bg-surface-50 border border-surface-200 rounded outline-none">
+                <label class="block text-[10px] font-bold text-surface-400 uppercase mb-2">Environment</label>
+                <select id="env-preset" class="w-full text-xs p-1.5 bg-surface-50 border border-surface-200 rounded outline-none font-bold">
                    <option value="studio">Studio</option>
                    <option value="night">Night</option>
                    <option value="sunset">Sunset</option>
                 </select>
              </section>
-             <section>
-                <div class="flex items-center justify-between">
-                   <span class="text-[10px] font-bold text-surface-400 uppercase">Wireframe</span>
+             <section class="space-y-2">
+                <label class="flex items-center justify-between cursor-pointer group">
+                   <span class="text-[10px] font-bold text-surface-400 uppercase group-hover:text-brand-600 transition-colors">Wireframe</span>
                    <input type="checkbox" id="check-wire" class="w-3 h-3 accent-brand-500">
-                </div>
+                </label>
+                <label class="flex items-center justify-between cursor-pointer group">
+                   <span class="text-[10px] font-bold text-surface-400 uppercase group-hover:text-brand-600 transition-colors">Auto-Rotate</span>
+                   <input type="checkbox" id="check-rotate" class="w-3 h-3 accent-brand-500">
+                </label>
              </section>
-             <button id="btn-reset" class="w-full py-1.5 bg-surface-100 text-surface-600 text-[10px] font-bold rounded">Reset View</button>
+             <button id="btn-reset" class="w-full py-1.5 bg-surface-100 text-surface-600 text-[10px] font-bold rounded hover:bg-surface-200 transition-colors">Reset Camera</button>
           </div>
         </div>
       </div>
@@ -98,18 +107,16 @@
     scene.add(mainLight);
 
     scene.add(object);
-    const box = new THREE.Box3().setFromObject(object);
     const center = box.getCenter(new THREE.Vector3());
     object.position.sub(center);
-    const size = box.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z) || 1;
     camera.position.set(maxDim * 2, maxDim * 2, maxDim * 2);
     camera.lookAt(0, 0, 0);
 
     const envs = {
-       studio: { bg: 0x0f172a, light: 1.2, amb: 0.5 },
-       night: { bg: 0x020617, light: 0.4, amb: 0.2 },
-       sunset: { bg: 0x451a03, light: 1.5, amb: 0.4 }
+       studio: { bg: 0x0f172a, light: 1.2 },
+       night: { bg: 0x020617, light: 0.4 },
+       sunset: { bg: 0x451a03, light: 1.5 }
     };
 
     document.getElementById('env-preset').onchange = (e) => {
@@ -120,10 +127,11 @@
     document.getElementById('check-wire').onchange = (e) => {
        object.traverse(n => { if (n.isMesh) n.material.wireframe = e.target.checked; });
     };
+    document.getElementById('check-rotate').onchange = (e) => { controls.autoRotate = e.target.checked; };
     document.getElementById('btn-reset').onclick = () => { camera.position.set(maxDim*2, maxDim*2, maxDim*2); controls.reset(); };
 
     const animate = () => {
-       if (!container.isConnected) return;
+       if (!container.isConnected) { renderer.dispose(); return; }
        requestAnimationFrame(animate);
        controls.update();
        renderer.render(scene, camera);
