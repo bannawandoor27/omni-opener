@@ -1,6 +1,6 @@
 /**
  * OmniOpener — GPX Toolkit
- * Uses OmniTool SDK, Leaflet, and toGeoJSON.
+ * Uses OmniTool SDK, Leaflet, toGeoJSON, and Chart.js.
  */
 (function () {
   'use strict';
@@ -14,22 +14,24 @@
 
   window.initTool = function (toolConfig, mountEl) {
     let map = null;
+    let elevationMarker = null;
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.gpx',
       binary: false,
-      infoHtml: '<strong>GPX Toolkit:</strong> Professional GPS track viewer with elevation data and feature inspection.',
+      infoHtml: '<strong>GPX Toolkit:</strong> Professional GPS track viewer with interactive elevation profiling and activity statistics.',
       
       onInit: function (h) {
         h.loadCSS('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
         h.loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', () => {
           h.loadScript('https://cdnjs.cloudflare.com/ajax/libs/togeojson/0.16.0/togeojson.min.js');
+          h.loadScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js');
         });
       },
 
       onFile: function _onFile(file, content, h) {
-        if (typeof L === 'undefined' || typeof toGeoJSON === 'undefined') {
-          h.showLoading('Loading Map engines...');
+        if (typeof L === 'undefined' || typeof toGeoJSON === 'undefined' || typeof Chart === 'undefined') {
+          h.showLoading('Loading map engines...');
           setTimeout(() => _onFile(file, content, h), 500);
           return;
         }
@@ -38,77 +40,82 @@
           const dom = new DOMParser().parseFromString(content, 'text/xml');
           const geojson = toGeoJSON.gpx(dom);
           
-          if (!geojson.features || geojson.features.length === 0) {
-             h.render(`<div class="p-12 text-center text-surface-400">This GPX file does not contain any map features.</div>`);
-             return;
-          }
+          // Calculate Stats
+          let distance = 0;
+          const elevations = [];
+          const coords = [];
+          geojson.features.forEach(f => {
+             if (f.geometry.type === 'LineString') {
+                const c = f.geometry.coordinates;
+                for (let i = 0; i < c.length - 1; i++) {
+                   const p1 = L.latLng(c[i][1], c[i][0]);
+                   const p2 = L.latLng(c[i+1][1], c[i+1][0]);
+                   distance += p1.distanceTo(p2);
+                   if (c[i][2] !== undefined) { elevations.push(c[i][2]); coords.push(c[i]); }
+                }
+             }
+          });
 
           h.render(`
             <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm">
               <div class="shrink-0 bg-surface-50 border-b border-surface-200 px-4 py-2 flex items-center justify-between">
                  <span class="text-xs font-bold text-surface-900 truncate">${escapeHtml(file.name)}</span>
-                 <div class="flex gap-2">
-                    <select id="map-style" class="text-[10px] border border-surface-200 rounded px-2 py-1 outline-none">
-                       <option value="light">Light Mode</option>
-                       <option value="dark">Dark Mode</option>
-                       <option value="osm">Standard (OSM)</option>
-                    </select>
+                 <div class="flex items-center gap-4">
+                    <div class="flex gap-3 text-[10px] font-bold text-surface-500 uppercase tracking-widest border-r border-surface-200 pr-4">
+                       <span>Dist: ${(distance/1000).toFixed(2)} km</span>
+                       ${elevations.length > 0 ? `<span>Elev: ${Math.max(...elevations).toFixed(0)}m</span>` : ''}
+                    </div>
                     <button id="btn-fit" class="px-2 py-1 bg-white border border-surface-200 rounded text-[10px] font-bold">🎯 Fit</button>
                  </div>
               </div>
-              <div class="flex-1 relative">
-                 <div id="map" class="w-full h-full bg-surface-100"></div>
-                 <div id="prop-inspector" class="absolute top-4 right-4 bottom-4 w-64 bg-white/95 backdrop-blur shadow-2xl rounded-xl border border-surface-200 flex flex-col hidden z-[1000]">
-                    <div class="p-3 border-b border-surface-100 flex items-center justify-between">
-                       <h3 class="font-bold text-[10px] uppercase tracking-widest text-surface-400">Properties</h3>
-                       <button onclick="document.getElementById('prop-inspector').classList.add('hidden')" class="text-surface-400 hover:text-surface-600">✕</button>
-                    </div>
-                    <div id="prop-content" class="flex-1 overflow-auto p-3 text-[11px] font-mono"></div>
-                 </div>
+              <div class="flex-1 flex flex-col relative">
+                 <div id="map" class="flex-1 bg-surface-100"></div>
+                 ${elevations.length > 0 ? `
+                   <div id="elev-panel" class="h-32 bg-white border-t border-surface-200 p-4 relative">
+                      <canvas id="elev-chart"></canvas>
+                   </div>
+                 ` : ''}
               </div>
             </div>
           `);
 
           if (map) map.remove();
           map = L.map('map', { attributionControl: false }).setView([0, 0], 2);
-          
-          const tiles = {
-             light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-             dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-             osm: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-          };
-          let layer = L.tileLayer(tiles.light).addTo(map);
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
-          document.getElementById('map-style').onchange = (e) => {
-             map.removeLayer(layer);
-             layer = L.tileLayer(tiles[e.target.value]).addTo(map);
-          };
+          const trackLayer = L.geoJSON(geojson, { style: { color: '#ef4444', weight: 4, opacity: 0.8 } }).addTo(map);
+          map.fitBounds(trackLayer.getBounds());
+          document.getElementById('btn-fit').onclick = () => map.fitBounds(trackLayer.getBounds());
 
-          const geojsonLayer = L.geoJSON(geojson, {
-             style: { color: '#ef4444', weight: 3, opacity: 0.8 },
-             onEachFeature: (feature, layer) => {
-                layer.on('click', (e) => {
-                   L.DomEvent.stopPropagation(e);
-                   const inspector = document.getElementById('prop-inspector');
-                   const content = document.getElementById('prop-content');
-                   inspector.classList.remove('hidden');
-                   content.innerHTML = Object.entries(feature.properties || {}).map(([k, v]) => `
-                      <div class="mb-2 border-b border-surface-50 pb-1">
-                         <div class="text-brand-600 font-bold mb-0.5">${escapeHtml(k)}</div>
-                         <div class="text-surface-600 break-all text-[10px]">${escapeHtml(String(v))}</div>
-                      </div>
-                   `).join('') || '<div class="italic text-surface-400">No properties</div>';
-                });
-             }
-          }).addTo(map);
+          if (elevations.length > 0) {
+             const ctx = document.getElementById('elev-chart').getContext('2d');
+             elevationMarker = L.circleMarker([0, 0], { radius: 6, color: '#4f46e5', fillOpacity: 1 }).addTo(map);
+             
+             new Chart(ctx, {
+                type: 'line',
+                data: {
+                   labels: elevations.map((_, i) => i),
+                   datasets: [{ label: 'Elevation', data: elevations, borderColor: '#ef4444', borderWidth: 2, fill: true, backgroundColor: 'rgba(239, 68, 68, 0.1)', pointRadius: 0 }]
+                },
+                options: {
+                   responsive: true,
+                   maintainAspectRatio: false,
+                   plugins: { legend: { display: false } },
+                   scales: { x: { display: false }, y: { ticks: { font: { size: 8 } } } },
+                   onHover: (e, elements) => {
+                      if (elements.length > 0) {
+                         const idx = elements[0].index;
+                         const coord = coords[idx];
+                         elevationMarker.setLatLng([coord[1], coord[0]]);
+                      }
+                   }
+                }
+             });
+          }
 
-          map.fitBounds(geojsonLayer.getBounds());
-          document.getElementById('btn-fit').onclick = () => map.fitBounds(geojsonLayer.getBounds());
-
-        } catch (err) {
-           h.render(`<div class="p-12 text-center text-surface-400">This file could not be parsed as a map. It may be invalid GPX.</div>`);
-        }
+        } catch (err) { h.showError('GPX Error', 'Failed to render track'); }
       }
     });
   };
 })();
+
