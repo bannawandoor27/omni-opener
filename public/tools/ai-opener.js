@@ -1,100 +1,95 @@
-(function() {
+/**
+ * OmniOpener — Adobe Illustrator (AI) Toolkit
+ * Uses OmniTool SDK and PDF.js (AI files with PDF compatibility).
+ */
+(function () {
   'use strict';
 
-  window.initTool = function(toolConfig, mountEl) {
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(String(str)));
+    return div.innerHTML;
+  }
+
+  window.initTool = function (toolConfig, mountEl) {
     let pdfDoc = null;
     let pageNum = 1;
-    let pageRendering = false;
-    let pageNumPending = null;
     let scale = 1.5;
 
-    function renderPage(num, helpers) {
+    function renderPage(num, h) {
       if (!pdfDoc) return;
-      pageRendering = true;
-      pageNum = num;
-      
-      pdfDoc.getPage(num).then(function(page) {
-        const viewport = page.getViewport({ scale: scale });
+      h.showLoading('Rendering artwork...');
+      pdfDoc.getPage(num).then(page => {
+        const viewport = page.getViewport({ scale });
         const canvas = document.getElementById('ai-canvas');
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         canvas.height = viewport.height;
         canvas.width = viewport.width;
-
-        const renderContext = { canvasContext: ctx, viewport: viewport };
-        const renderTask = page.render(renderContext);
-        renderTask.promise.then(function() {
-          pageRendering = false;
-          if (pageNumPending !== null) {
-            renderPage(pageNumPending, helpers);
-            pageNumPending = null;
-          }
-          updateControls();
+        
+        page.render({ canvasContext: ctx, viewport: viewport }).promise.then(() => {
+           h.hideLoading();
+           document.getElementById('page-info').textContent = `${num} / ${pdfDoc.numPages}`;
         });
       });
     }
 
-    function updateControls() {
-      const prev = document.getElementById('prev');
-      const next = document.getElementById('next');
-      const cur = document.getElementById('page_num');
-      if (prev) prev.disabled = pageNum <= 1;
-      if (next) next.disabled = pageNum >= pdfDoc.numPages;
-      if (cur) cur.textContent = pageNum;
-    }
-
     OmniTool.create(mountEl, toolConfig, {
-      actions: [
-        { label: "📥 Download Original", id: "dl-orig", onClick: (h) => h.download(h.getFile().name, h.getContent()) },
-        { label: "📋 Copy Filename", id: "copy-name", onClick: (h, b) => h.copyToClipboard(h.getFile().name, b) }
-      ],
       accept: '.ai',
       binary: true,
-      onInit: function(helpers) {
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js', function() {
-          if (typeof pdfjsLib !== 'undefined') {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-          }
+      infoHtml: '<strong>AI Toolkit:</strong> Professional Illustrator viewer. Note: Only PDF-compatible AI files can be previewed.',
+      
+      onInit: function (h) {
+        h.loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js', () => {
+           pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
         });
       },
-      onFile: function(file, content, helpers) {
+
+      onFile: function (file, content, h) {
         if (typeof pdfjsLib === 'undefined') {
-          helpers.showLoading('Loading engine...');
-          helpers.loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js', () => {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-            this.onFile(file, content, helpers);
-          });
+          h.showLoading('Loading AI engine...');
+          setTimeout(() => this.onFile(file, content, h), 500);
           return;
         }
 
-        helpers.showLoading('Parsing AI file...');
+        h.showLoading('Parsing Illustrator file...');
         pdfjsLib.getDocument({ data: content }).promise.then(pdf => {
           pdfDoc = pdf;
-          helpers.render(`
-            <div class="p-4 bg-surface-50 border-b flex justify-between items-center mb-4">
-              <span class="font-bold">${esc(file.name)}</span>
-              <div class="flex items-center gap-2">
-                <button id="prev" class="px-2 py-1 bg-white border rounded text-xs">Prev</button>
-                <span class="text-xs">Page <span id="page_num">1</span> / ${pdf.numPages}</span>
-                <button id="next" class="px-2 py-1 bg-white border rounded text-xs">Next</button>
+          h.render(`
+            <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-surface-100 shadow-sm">
+              <div class="shrink-0 bg-white border-b border-surface-200 px-4 py-2 flex items-center justify-between">
+                 <span class="text-xs font-bold text-surface-900 truncate">${escapeHtml(file.name)}</span>
+                 <div class="flex items-center gap-4">
+                    <div class="flex items-center bg-surface-50 rounded p-1 border border-surface-200">
+                       <button id="prev-pg" class="p-1 hover:bg-white rounded">◀</button>
+                       <span id="page-info" class="text-[10px] font-bold px-3 font-mono">1 / ?</span>
+                       <button id="next-pg" class="p-1 hover:bg-white rounded">▶</button>
+                    </div>
+                    <button id="btn-dl" class="px-3 py-1 bg-brand-600 text-white rounded text-[10px] font-bold">📥 Download</button>
+                 </div>
               </div>
-            </div>
-            <div class="flex justify-center p-4 bg-surface-100 rounded-lg overflow-auto">
-              <canvas id="ai-canvas" class="shadow-lg bg-white"></canvas>
+              <div class="flex-1 overflow-auto p-8 flex justify-center items-start">
+                 <canvas id="ai-canvas" class="shadow-2xl bg-white"></canvas>
+              </div>
             </div>
           `);
 
-          document.getElementById('prev').onclick = () => { if (pageNum > 1) { pageNum--; renderPage(pageNum, helpers); } };
-          document.getElementById('next').onclick = () => { if (pageNum < pdfDoc.numPages) { pageNum++; renderPage(pageNum, helpers); } };
-          renderPage(1, helpers);
+          document.getElementById('prev-pg').onclick = () => { if(pageNum > 1) { pageNum--; renderPage(pageNum, h); } };
+          document.getElementById('next-pg').onclick = () => { if(pageNum < pdfDoc.numPages) { pageNum++; renderPage(pageNum, h); } };
+          document.getElementById('btn-dl').onclick = () => h.download(file.name, content);
+          
+          renderPage(1, h);
         }).catch(err => {
-          helpers.showError('AI Format Error', 'This AI file might not have PDF compatibility enabled. Only PDF-compatible AI files can be previewed.');
+           h.render(`
+             <div class="p-12 text-center text-surface-400">
+                <p class="text-2xl mb-2">🎨</p>
+                <p>This AI file cannot be previewed. It may not have PDF compatibility enabled.</p>
+                <p class="text-xs mt-2 italic">Try saving with "Create PDF Compatible File" checked in Illustrator.</p>
+             </div>
+           `);
         });
       }
     });
   };
-
-  function esc(str) {
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
 })();

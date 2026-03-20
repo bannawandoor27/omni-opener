@@ -1,98 +1,59 @@
-(function() {
-  window.initTool = function(toolConfig, mountEl) {
+/**
+ * OmniOpener — Modern Image Toolkit
+ * Uses OmniTool SDK. Supports WebP, AVIF, BMP with zoom and metadata.
+ */
+(function () {
+  'use strict';
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(String(str)));
+    return div.innerHTML;
+  }
+
+  window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
-      accept: '.bmp',
-      dropLabel: 'Drop a .bmp file here',
+      accept: '.webp,.avif,.bmp',
       binary: true,
-      onInit: function(helpers) {
-        // No external dependencies needed for native BMP support
-      },
-      onFile: function(file, content, helpers) {
-        const formatSize = (b) => b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : b > 1e3 ? (b / 1024).toFixed(0) + ' KB' : b + ' B';
+      infoHtml: '<strong>Image Toolkit:</strong> Professional image viewer with real-time zooming, rotation, and metadata display.',
+      
+      onFile: function (file, content, h) {
+        const blob = new Blob([content], { type: file.type || 'image/bmp' });
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+           h.render(`
+             <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-surface-100 shadow-sm font-sans">
+               <div class="shrink-0 bg-white border-b border-surface-200 px-4 py-2 flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                     <span class="text-xs font-bold text-surface-900 truncate">${escapeHtml(file.name)}</span>
+                     <span class="text-[10px] font-bold text-surface-400 uppercase bg-surface-50 px-2 py-0.5 rounded border border-surface-100">${img.width} × ${img.height}</span>
+                  </div>
+                  <div class="flex gap-2">
+                     <button id="btn-zoom-in" class="p-1.5 hover:bg-surface-50 rounded text-surface-600 transition-colors">➕</button>
+                     <button id="btn-zoom-out" class="p-1.5 hover:bg-surface-50 rounded text-surface-600 transition-colors">➖</button>
+                     <button id="btn-rotate" class="p-1.5 hover:bg-surface-50 rounded text-surface-600 transition-colors">🔄</button>
+                     <button id="btn-dl" class="px-3 py-1 bg-brand-600 text-white rounded text-[10px] font-bold shadow-sm hover:bg-brand-700">📥 Download</button>
+                  </div>
+               </div>
+               <div class="flex-1 overflow-auto p-12 bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAAAAAA6mKC9AAAAGElEQVQYV2N4DwX/oYBhgDE8BOn4S8VfWAMA6as8f9zEAn8AAAAASUVORK5CYII=')] flex justify-center items-center">
+                  <img id="img-preview" src="${url}" class="max-w-full h-auto shadow-2xl rounded bg-white transition-all duration-300 ease-out" style="transform: scale(1) rotate(0deg)" />
+               </div>
+             </div>
+           `);
 
-        if (file.size > 20 * 1024 * 1024) {
-          if (!confirm('This file is larger than 20MB. Processing may be slow. Continue?')) {
-            helpers.reset();
-            return;
-          }
-        }
-
-        helpers.showLoading('Parsing bmp...');
-
-        try {
-          const blob = new Blob([content], { type: 'image/bmp' });
-          const url = URL.createObjectURL(blob);
-          const img = new Image();
-
-          img.onload = function() {
-            const width = img.naturalWidth;
-            const height = img.naturalHeight;
-
-            const html = `
-              <div class="p-4 md:p-6">
-                <!-- File Info Bar -->
-                <div class="flex items-center gap-3 p-3 bg-surface-50 rounded-lg text-sm text-surface-600 mb-4">
-                  <span class="font-medium">${file.name}</span>
-                  <span class="text-surface-400">·</span>
-                  <span>${formatSize(file.size)}</span>
-                  <span class="text-surface-400">·</span>
-                  <span>${width} × ${height} px</span>
-                </div>
-
-                <!-- Image Preview -->
-                <div class="flex items-center justify-center bg-surface-100 rounded-xl overflow-hidden border border-surface-200 shadow-inner" style="min-height: 400px;">
-                  <img src="${url}" alt="${file.name}" class="max-w-full h-auto shadow-lg" style="image-rendering: pixelated;" />
-                </div>
-
-                <div class="mt-4 text-xs text-surface-400 text-center">
-                  Image rendering mode: High Quality / Pixelated
-                </div>
-              </div>
-            `;
-            helpers.render(html);
-            helpers.setState('imageUrl', url);
-            helpers.setState('dimensions', { width, height });
-          };
-
-          img.onerror = function() {
-            helpers.showError('Could not parse bmp file', 'The file may be corrupted or in an unsupported BMP sub-format.');
-          };
-
-          img.src = url;
-
-        } catch(e) {
-          helpers.showError('Could not parse bmp file', e.message);
-        }
-      },
-      actions: [
-        {
-          label: '📥 Download PNG',
-          id: 'dl-png',
-          onClick: function(helpers, btn) {
-            const img = helpers.getRenderEl().querySelector('img');
-            if (!img) return;
-
-            const canvas = document.createElement('canvas');
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
-
-            canvas.toBlob(function(blob) {
-              const name = helpers.getFile().name.replace(/\.bmp$/i, '') + '.png';
-              helpers.download(name, blob, 'image/png');
-            }, 'image/png');
-          }
-        },
-        {
-          label: '📥 Download Original',
-          id: 'dl-orig',
-          onClick: function(helpers, btn) {
-            helpers.download(helpers.getFile().name, helpers.getContent(), 'image/bmp');
-          }
-        }
-      ],
-      infoHtml: '<strong>Privacy:</strong> 100% client-side. Your files never leave your device. BMP images are rendered natively by your browser.'
+           let scale = 1;
+           let rotation = 0;
+           document.getElementById('btn-zoom-in').onclick = () => { scale += 0.2; update(); };
+           document.getElementById('btn-zoom-out').onclick = () => { if(scale > 0.2) scale -= 0.2; update(); };
+           document.getElementById('btn-rotate').onclick = () => { rotation += 90; update(); };
+           document.getElementById('btn-dl').onclick = () => h.download(file.name, content);
+           
+           const update = () => { document.getElementById('img-preview').style.transform = `scale(${scale}) rotate(${rotation}deg)`; };
+        };
+        img.src = url;
+      }
     });
   };
 })();

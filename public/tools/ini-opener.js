@@ -1,3 +1,7 @@
+/**
+ * OmniOpener — INI Toolkit
+ * Uses OmniTool SDK. Visual explorer with section navigation and filtering.
+ */
 (function () {
   'use strict';
 
@@ -13,21 +17,17 @@
     let currentSection = 'General';
     sections[currentSection] = {};
     const lines = data.split(/\r?\n/);
-
     for (const line of lines) {
-      const trimmedLine = line.trim();
-      if (trimmedLine === '' || trimmedLine.startsWith(';') || trimmedLine.startsWith('#')) {
-        continue;
-      }
-
-      if (trimmedLine.startsWith('[') && trimmedLine.includes(']')) {
-        currentSection = trimmedLine.substring(1, trimmedLine.indexOf(']')).trim();
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith(';') || trimmed.startsWith('#')) continue;
+      if (trimmed.startsWith('[') && trimmed.includes(']')) {
+        currentSection = trimmed.substring(1, trimmed.indexOf(']')).trim();
         sections[currentSection] = sections[currentSection] || {};
-      } else if (trimmedLine.includes('=')) {
-        const index = trimmedLine.indexOf('=');
-        const key = trimmedLine.substring(0, index).trim();
-        const value = trimmedLine.substring(index + 1).trim();
-        sections[currentSection][key] = value;
+      } else if (trimmed.includes('=')) {
+        const idx = trimmed.indexOf('=');
+        const key = trimmed.substring(0, idx).trim();
+        const val = trimmed.substring(idx + 1).trim();
+        sections[currentSection][key] = val;
       }
     }
     return sections;
@@ -38,27 +38,15 @@
       accept: '.ini',
       dropLabel: 'Drop an .ini file here',
       binary: false,
-      infoHtml: '<strong>INI Viewer:</strong> Visual INI explorer with easy copy and export.',
+      infoHtml: '<strong>INI Toolkit:</strong> Professional INI explorer with section navigation, search, and JSON export.',
       
       actions: [
         {
           label: '📋 Copy JSON',
           id: 'copy-json',
-          onClick: function (helpers, btn) {
-            const data = helpers.getState().parsedData;
-            if (data) {
-              helpers.copyToClipboard(JSON.stringify(data, null, 2), btn);
-            }
-          }
-        },
-        {
-          label: '📥 Download JSON',
-          id: 'dl-json',
-          onClick: function (helpers) {
-            const data = helpers.getState().parsedData;
-            if (data) {
-              helpers.download(helpers.getFile().name.replace(/\.ini$/i, '.json'), JSON.stringify(data, null, 2), 'application/json');
-            }
+          onClick: function (h, btn) {
+            const data = h.getState().parsedData;
+            if (data) h.copyToClipboard(JSON.stringify(data, null, 2), btn);
           }
         }
       ],
@@ -67,56 +55,71 @@
         try {
           const parsed = parseIni(content);
           helpers.setState('parsedData', parsed);
-          let html = '<div class="p-4 space-y-6">';
-          let hasContent = false;
+          const sections = Object.keys(parsed).filter(s => Object.keys(parsed[s]).length > 0);
 
-          for (const section in parsed) {
-            const keys = Object.keys(parsed[section]);
-            if (keys.length === 0) continue;
-            hasContent = true;
+          if (sections.length === 0) {
+             helpers.render('<div class="p-12 text-center text-surface-400 font-medium">This file does not contain any valid INI sections or key-value pairs.</div>');
+             return;
+          }
 
-            html += `
-              <div class="bg-white rounded-xl border border-surface-200 shadow-sm overflow-hidden">
-                <div class="bg-surface-50 px-4 py-2 border-b border-surface-100 flex items-center justify-between">
-                  <h3 class="text-sm font-bold text-surface-700 uppercase tracking-wider">${escapeHtml(section)}</h3>
-                  <span class="text-[10px] font-mono text-surface-400">${keys.length} keys</span>
+          helpers.render(`
+            <div class="flex h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm">
+              <!-- Sidebar -->
+              <div class="w-48 shrink-0 bg-surface-50 border-r border-surface-200 flex flex-col">
+                <div class="p-3 border-b border-surface-200 bg-white">
+                   <input type="text" id="ini-search" placeholder="Filter..." class="w-full px-2 py-1 text-[10px] border border-surface-200 rounded outline-none focus:ring-1 focus:ring-brand-500">
                 </div>
-                <div class="p-0">
-                  <table class="w-full text-sm text-left">
-                    <tbody class="divide-y divide-surface-100">
-            `;
-
-            for (const key of keys) {
-              html += `
-                <tr class="hover:bg-surface-50/50 transition-colors">
-                  <td class="px-4 py-2.5 font-medium text-surface-500 w-1/3 border-r border-surface-50">
-                    <div class="flex items-center gap-2">
-                      <span class="w-1.5 h-1.5 rounded-full bg-brand-400"></span>
-                      ${escapeHtml(key)}
-                    </div>
-                  </td>
-                  <td class="px-4 py-2.5 font-mono text-brand-600 break-all select-all">${escapeHtml(parsed[section][key])}</td>
-                </tr>
-              `;
-            }
-
-            html += `
-                    </tbody>
-                  </table>
+                <div class="flex-1 overflow-auto p-2 space-y-1">
+                   ${sections.map(s => `<button data-section="${escapeHtml(s)}" class="sec-nav w-full text-left px-2 py-1.5 text-[10px] font-bold text-surface-500 hover:text-brand-600 hover:bg-white rounded transition-colors truncate">${escapeHtml(s)}</button>`).join('')}
                 </div>
               </div>
-            `;
-          }
 
-          html += '</div>';
+              <!-- Content Area -->
+              <div id="ini-content" class="flex-1 overflow-auto p-6 space-y-8 bg-surface-50/30">
+                ${sections.map(s => `
+                  <section id="sec-${escapeHtml(s)}" class="ini-section bg-white rounded-xl border border-surface-200 shadow-sm overflow-hidden">
+                    <div class="bg-surface-50 px-4 py-2 border-b border-surface-100 flex items-center justify-between">
+                      <h3 class="text-[10px] font-bold text-surface-700 uppercase tracking-widest">${escapeHtml(s)}</h3>
+                    </div>
+                    <table class="w-full text-xs text-left">
+                      <tbody class="divide-y divide-surface-50">
+                        ${Object.entries(parsed[s]).map(([k, v]) => `
+                          <tr class="ini-row hover:bg-surface-50/50 transition-colors">
+                            <td class="px-4 py-2 font-medium text-surface-500 w-1/3 border-r border-surface-50 truncate">${escapeHtml(k)}</td>
+                            <td class="px-4 py-2 font-mono text-brand-600 break-all select-all">${escapeHtml(v)}</td>
+                          </tr>
+                        `).join('')}
+                      </tbody>
+                    </table>
+                  </section>
+                `).join('')}
+              </div>
+            </div>
+          `);
 
-          if (!hasContent) {
-            helpers.render('<div class="p-12 text-center text-surface-400 font-medium">No valid INI content found.</div>');
-          } else {
-            helpers.render(html);
-          }
+          const searchInput = document.getElementById('ini-search');
+          searchInput.oninput = () => {
+             const term = searchInput.value.toLowerCase();
+             document.querySelectorAll('.ini-row').forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(term) ? 'table-row' : 'none';
+             });
+             document.querySelectorAll('.ini-section').forEach(sec => {
+                const hasVisible = Array.from(sec.querySelectorAll('.ini-row')).some(r => r.style.display !== 'none');
+                sec.style.display = hasVisible ? 'block' : 'none';
+             });
+          };
+
+          document.querySelectorAll('.sec-nav').forEach(btn => {
+             btn.onclick = () => {
+                const id = `sec-${btn.getAttribute('data-section')}`;
+                const el = document.getElementById(id);
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+             };
+          });
+
         } catch (e) {
-          helpers.showError('Parsing Error', e.message);
+          helpers.render(`<div class="p-12 text-center text-surface-400">Unable to parse this INI file.</div>`);
         }
       }
     });

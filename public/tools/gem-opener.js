@@ -3,10 +3,6 @@
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
-      actions: [
-        { label: "📥 Download Original", id: "dl-orig", onClick: (h) => h.download(h.getFile().name, h.getContent()) },
-        { label: "📋 Copy Filename", id: "copy-name", onClick: (h, b) => h.copyToClipboard(h.getFile().name, b) }
-      ],
       accept: '.gem',
       binary: true,
       onInit: function (h) {
@@ -21,7 +17,7 @@
           return;
         }
 
-        h.render(`<div class="p-4"><div class="font-bold mb-4">${esc(file.name)}</div><div class="bg-white p-4 border rounded shadow-sm text-sm">Gem structure analysis not yet fully robust in this minimal view.</div></div>`);
+        h.render(`<button id="btn-copy-list" class="px-2 py-1 bg-surface-100 border rounded text-xs mb-2">📋 Copy File List</button><div class="p-4"><div class="font-bold mb-4">${esc(file.name)}</div><div class="bg-white p-4 border rounded shadow-sm text-sm">Gem structure analysis not yet fully robust in this minimal view.</div></div>`);
       }
     });
   };

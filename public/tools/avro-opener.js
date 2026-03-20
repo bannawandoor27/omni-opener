@@ -1,122 +1,123 @@
 /**
- * OmniOpener — Avro Viewer Tool
- * Uses OmniTool SDK, avsc, js-yaml, fast-xml-parser, and PapaParse.
- * Renders .avro files with cross-format export.
+ * OmniOpener — Avro Toolkit
+ * Uses OmniTool SDK and avsc.
  */
 (function () {
   'use strict';
 
-  let isAvscReady = false;
-  let records = [];
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(String(str)));
+    return div.innerHTML;
+  }
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       accept: '.avro',
-      dropLabel: 'Drop an .avro file here',
       binary: true,
-      infoHtml: '<strong>Avro Viewer:</strong> Displays .avro files with cross-format export (JSON, YAML, XML, CSV).',
+      infoHtml: '<strong>Avro Toolkit:</strong> Advanced Avro viewer with schema inspection, table view, and JSON export.',
       
-      onInit: async function(helpers) {
+      onInit: async function(h) {
           try {
-            const [avscMod, yamlMod, xmlMod, csvMod] = await Promise.all([
-              import('https://esm.sh/avsc@5.7.9'),
-              import('https://esm.sh/js-yaml@4.1.0'),
-              import('https://esm.sh/fast-xml-parser@4.3.2'),
-              import('https://esm.sh/papaparse@5.4.1')
-            ]);
+            const avscMod = await import('https://esm.sh/avsc@5.7.9');
             window.avsc = avscMod.default || avscMod;
-            window.jsyaml = yamlMod.default || yamlMod;
-            window.XMLParser = xmlMod.XMLParser;
-            window.XMLBuilder = xmlMod.XMLBuilder;
-            window.Papa = csvMod.default || csvMod;
-            isAvscReady = true;
           } catch (e) {
-            helpers.showError('Dependency Load Issue', 'Failed to initialize required libraries: ' + e.message);
+            h.render(`<div class="p-12 text-center text-surface-400">Unable to load the Avro processing engine.</div>`);
           }
       },
 
       actions: [
         {
           label: '📋 Copy JSON',
-          id: 'copy',
-          onClick: function (helpers, btn) {
-            helpers.copyToClipboard(JSON.stringify(records, null, 2), btn);
-          }
-        },
-        {
-          label: '📄 Export YAML',
-          id: 'export-yaml',
-          onClick: function (helpers) {
-            const yaml = window.jsyaml.dump(records);
-            helpers.download(helpers.getFile().name.replace('.avro', '.yaml'), yaml);
-          }
-        },
-        {
-          label: '📦 Export XML',
-          id: 'export-xml',
-          onClick: function (helpers) {
-            const builder = new window.XMLBuilder({ format: true, arrayMap: { records: 'record' } });
-            const xml = builder.build({ records });
-            helpers.download(helpers.getFile().name.replace('.avro', '.xml'), xml);
-          }
-        },
-        {
-          label: '📊 Export CSV',
-          id: 'export-csv',
-          onClick: function (helpers) {
-            const csv = window.Papa.unparse(records);
-            helpers.download(helpers.getFile().name.replace('.avro', '.csv'), csv);
+          id: 'copy-json',
+          onClick: function (h, btn) {
+            const data = h.getState().records;
+            if (data) h.copyToClipboard(JSON.stringify(data, null, 2), btn);
           }
         }
       ],
 
-      onFile: function (file, content, helpers) {
-        if (!isAvscReady) {
-          helpers.showError('Dependency not loaded', 'The libraries are still loading. Please try again in a moment.');
+      onFile: function (file, content, h) {
+        if (typeof avsc === 'undefined') {
+          h.showLoading('Loading Avro engine...');
+          setTimeout(() => this.onFile(file, content, h), 500);
           return;
         }
 
-        helpers.showLoading('Parsing Avro file...');
-        records = [];
-        
+        h.showLoading('Parsing Avro...');
+        const records = [];
         try {
-          const decoder = window.avsc.createBlobReader(new Blob([content]));
+          const decoder = avsc.createBlobReader(new Blob([content]));
+          let schema = null;
+          
+          decoder.on('metadata', (type) => { schema = type; });
           decoder.on('data', (record) => records.push(record));
           decoder.on('end', () => {
-              const prettyJson = JSON.stringify(records, null, 2);
-              const renderHtml = `
-                <div class="flex flex-col h-[70vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                  <div class="shrink-0 bg-surface-50 border-b border-surface-200 px-4 py-2 flex justify-between items-center text-xs text-surface-500 font-medium">
-                    <div class="flex items-center gap-2 truncate">
-                      <span class="text-lg">📦</span>
-                      <span class="truncate">${escapeHtml(file.name)}</span>
-                    </div>
-                    <div class="shrink-0">
-                      <span>${records.length.toLocaleString()} records</span>
-                    </div>
-                  </div>
-                  <div class="flex-1 overflow-auto bg-[#282c34] p-4">
-                    <pre class="font-mono text-[13px] leading-relaxed text-surface-100 whitespace-pre"><code class="hljs language-json">${escapeHtml(prettyJson)}</code></pre>
-                  </div>
-                </div>
-              `;
-              helpers.render(renderHtml);
+              h.setState('records', records);
+              h.setState('schema', schema);
+              renderApp(records, schema);
           });
           decoder.on('error', (err) => {
-              helpers.showError('Failed to parse Avro', err.message);
+             h.render(`<div class="p-12 text-center text-surface-400">This file does not appear to be a valid Avro container.</div>`);
           });
 
+          const renderApp = (data, schemaObj) => {
+            const fields = schemaObj ? schemaObj.fields.map(f => f.name) : (data.length > 0 ? Object.keys(data[0]) : []);
+            
+            h.render(`
+              <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm font-sans">
+                <div class="shrink-0 bg-surface-50 border-b border-surface-200 p-2 flex items-center justify-between">
+                  <div class="flex px-2">
+                    <button id="tab-table" class="px-4 py-1.5 text-[10px] font-bold uppercase border-b-2 border-brand-500 text-brand-600">Data Table</button>
+                    <button id="tab-schema" class="px-4 py-1.5 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400 hover:text-surface-600">Schema</button>
+                    <button id="tab-json" class="px-4 py-1.5 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400 hover:text-surface-600">Raw JSON</button>
+                  </div>
+                  <span class="px-4 text-[10px] font-mono text-surface-400">${data.length.toLocaleString()} records</span>
+                </div>
+
+                <div id="avro-viewport" class="flex-1 overflow-auto bg-white">
+                  <div id="view-table" class="w-full">
+                    <table class="w-full text-xs text-left border-collapse min-w-max">
+                      <thead class="sticky top-0 z-20 bg-surface-50 shadow-sm">
+                        <tr>
+                          ${fields.map(f => `<th class="px-4 py-2 border-b border-surface-200 text-surface-700 font-bold uppercase">${escapeHtml(f)}</th>`).join('')}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${data.slice(0, 500).map(row => `
+                          <tr class="hover:bg-surface-50 border-b border-surface-50 transition-colors">
+                            ${fields.map(f => `<td class="px-4 py-2 text-surface-600 truncate max-w-xs">${escapeHtml(JSON.stringify(row[f]))}</td>`).join('')}
+                          </tr>
+                        `).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                  <pre id="view-schema" class="hidden p-6 text-[12px] font-mono text-blue-600 bg-surface-50 h-full">${escapeHtml(JSON.stringify(schemaObj, null, 2))}</pre>
+                  <pre id="view-json" class="hidden p-6 text-[12px] font-mono text-surface-600 bg-white h-full">${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+                </div>
+              </div>
+            `);
+
+            const tabs = { table: document.getElementById('tab-table'), schema: document.getElementById('tab-schema'), json: document.getElementById('tab-json') };
+            const views = { table: document.getElementById('view-table'), schema: document.getElementById('view-schema'), json: document.getElementById('view-json') };
+
+            Object.keys(tabs).forEach(k => {
+               tabs[k].onclick = () => {
+                  Object.values(tabs).forEach(t => t.classList.replace('border-brand-500', 'border-transparent'));
+                  Object.values(tabs).forEach(t => t.classList.replace('text-brand-600', 'text-surface-400'));
+                  tabs[k].classList.replace('border-transparent', 'border-brand-500');
+                  tabs[k].classList.replace('text-surface-400', 'text-brand-600');
+                  Object.values(views).forEach(v => v.classList.add('hidden'));
+                  views[k].classList.remove('hidden');
+               };
+            });
+          };
+
         } catch (err) {
-          helpers.showError('Failed to parse Avro', 'The file may not be valid Avro. ' + err.message);
+           h.render(`<div class="p-12 text-center text-surface-400">Processing this Avro file failed. It may be corrupted.</div>`);
         }
       }
     });
   };
-
-  function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(str));
-    return div.innerHTML;
-  }
 })();

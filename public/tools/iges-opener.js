@@ -12,10 +12,6 @@
 
   window.initTool = function(toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
-      actions: [
-        { label: "📥 Download Original", id: "dl-orig", onClick: (h) => h.download(h.getFile().name, h.getContent()) },
-        { label: "📋 Copy Filename", id: "copy-name", onClick: (h, b) => h.copyToClipboard(h.getFile().name, b) }
-      ],
       accept: '.iges,.igs',
       binary: true,
       onInit: function(helpers) {
