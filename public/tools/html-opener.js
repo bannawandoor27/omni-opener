@@ -1,6 +1,6 @@
 /**
  * OmniOpener — HTML Toolkit
- * Uses OmniTool SDK and highlight.js. Renders .html files with device preview and meta extraction.
+ * Uses OmniTool SDK and highlight.js.
  */
 (function () {
   'use strict';
@@ -17,7 +17,7 @@
       accept: '.html,.htm',
       dropLabel: 'Drop an HTML file here',
       binary: false,
-      infoHtml: '<strong>HTML Toolkit:</strong> Professional HTML previewer with responsive device testing and metadata inspection.',
+      infoHtml: '<strong>HTML Toolkit:</strong> Professional HTML previewer with SEO inspection and accessibility auditing.',
       
       onInit: function(helpers) {
         helpers.loadCSS('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css');
@@ -50,13 +50,7 @@
           return;
         }
 
-        // Extract Meta Info (very basic)
         const doc = new DOMParser().parseFromString(content, 'text/html');
-        const title = doc.title || 'No Title';
-        const scripts = doc.querySelectorAll('script').length;
-        const styles = doc.querySelectorAll('link[rel="stylesheet"], style').length;
-        const images = doc.querySelectorAll('img').length;
-
         const highlightedCode = hljs.highlight(content.slice(0, 50000), {language: 'xml'}).value;
         
         helpers.render(`
@@ -67,17 +61,12 @@
                   <div class="flex px-1 bg-white border border-surface-200 rounded-lg">
                     <button id="tab-preview" class="px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-brand-500 text-brand-600">Preview</button>
                     <button id="tab-source" class="px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400 hover:text-surface-600">Source</button>
-                  </div>
-                  <div id="device-controls" class="flex gap-1">
-                    <button data-size="100%" class="dev-btn p-1 hover:bg-white rounded border border-transparent hover:border-surface-200" title="Desktop">🖥️</button>
-                    <button data-size="768px" class="dev-btn p-1 hover:bg-white rounded border border-transparent hover:border-surface-200" title="Tablet">平板</button>
-                    <button data-size="375px" class="dev-btn p-1 hover:bg-white rounded border border-transparent hover:border-surface-200" title="Mobile">📱</button>
+                    <button id="tab-insights" class="px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400 hover:text-surface-600">Insights</button>
                   </div>
                </div>
-               <div class="flex items-center gap-4 text-[10px] font-bold text-surface-400 uppercase">
-                  <span>${scripts} Scripts</span>
-                  <span>${styles} Styles</span>
-                  <span>${images} Images</span>
+               <div class="flex items-center gap-2">
+                  <button data-size="100%" class="dev-btn p-1 hover:bg-white rounded border border-transparent hover:border-surface-200" title="Desktop">🖥️</button>
+                  <button data-size="375px" class="dev-btn p-1 hover:bg-white rounded border border-transparent hover:border-surface-200" title="Mobile">📱</button>
                </div>
             </div>
 
@@ -89,15 +78,18 @@
                <div id="view-source" class="hidden w-full h-full bg-[#282c34] overflow-auto p-6 font-mono text-[12px] leading-relaxed">
                   <pre class="text-surface-100"><code>${highlightedCode}</code></pre>
                </div>
-            </div>
-
-            <!-- Meta Footer -->
-            <div class="shrink-0 bg-white border-t border-surface-200 px-4 py-2 text-[10px] flex items-center justify-between">
-               <div class="flex items-center gap-2">
-                  <span class="text-surface-400 font-bold uppercase">Title:</span>
-                  <span class="text-surface-900 font-medium">${escapeHtml(title)}</span>
+               <div id="view-insights" class="hidden w-full h-full bg-white overflow-auto p-8">
+                  <div class="max-w-3xl mx-auto space-y-8">
+                     <section>
+                        <h3 class="text-xs font-bold text-surface-400 uppercase tracking-widest mb-4">SEO Inspector</h3>
+                        <div id="seo-results" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+                     </section>
+                     <section>
+                        <h3 class="text-xs font-bold text-surface-400 uppercase tracking-widest mb-4">Accessibility Audit</h3>
+                        <div id="a11y-results" class="space-y-3"></div>
+                     </section>
+                  </div>
                </div>
-               <span class="font-mono text-surface-400">${(content.length/1024).toFixed(1)} KB</span>
             </div>
           </div>
         `);
@@ -105,33 +97,55 @@
         const iframe = document.getElementById('preview-iframe');
         iframe.srcdoc = content;
 
-        const tabPreview = document.getElementById('tab-preview');
-        const tabSource = document.getElementById('tab-source');
-        const viewPreview = document.getElementById('view-preview');
-        const viewSource = document.getElementById('view-source');
+        const tabs = { preview: document.getElementById('tab-preview'), source: document.getElementById('tab-source'), insights: document.getElementById('tab-insights') };
+        const views = { preview: document.getElementById('view-preview'), source: document.getElementById('view-source'), insights: document.getElementById('view-insights') };
 
-        tabPreview.onclick = () => {
-           tabPreview.className = "px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-brand-500 text-brand-600";
-           tabSource.className = "px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400 hover:text-surface-600";
-           viewPreview.classList.remove('hidden');
-           viewSource.classList.add('hidden');
-           document.getElementById('device-controls').classList.remove('opacity-30', 'pointer-events-none');
-        };
-
-        tabSource.onclick = () => {
-           tabSource.className = "px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-brand-500 text-brand-600";
-           tabPreview.className = "px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400 hover:text-surface-600";
-           viewSource.classList.remove('hidden');
-           viewPreview.classList.add('hidden');
-           document.getElementById('device-controls').classList.add('opacity-30', 'pointer-events-none');
-        };
+        Object.keys(tabs).forEach(k => {
+           tabs[k].onclick = () => {
+              Object.values(tabs).forEach(t => { t.className = "px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400 hover:text-surface-600"; });
+              Object.values(views).forEach(v => v.classList.add('hidden'));
+              tabs[k].className = "px-3 py-1 text-[10px] font-bold uppercase border-b-2 border-brand-500 text-brand-600";
+              views[k].classList.remove('hidden');
+              if (k === 'insights') runAudit();
+           };
+        });
 
         document.querySelectorAll('.dev-btn').forEach(btn => {
            btn.onclick = () => {
-              viewPreview.style.width = btn.getAttribute('data-size');
+              document.getElementById('view-preview').style.width = btn.getAttribute('data-size');
            };
         });
+
+        function runAudit() {
+           const seo = document.getElementById('seo-results');
+           const a11y = document.getElementById('a11y-results');
+           seo.innerHTML = ''; a11y.innerHTML = '';
+
+           // SEO
+           const meta = (name) => doc.querySelector(`meta[name="${name}"], meta[property="${name}"]`)?.getAttribute('content') || 'Missing';
+           const seoTags = [
+              { label: 'Title', value: doc.title || 'Missing' },
+              { label: 'Description', value: meta('description') },
+              { label: 'OG Image', value: meta('og:image') },
+              { label: 'Viewport', value: meta('viewport') }
+           ];
+           seoTags.forEach(tag => {
+              seo.innerHTML += `<div class="p-3 bg-surface-50 border border-surface-100 rounded-lg"><p class="text-[10px] font-bold text-surface-400 uppercase">${tag.label}</p><p class="text-xs text-surface-700 truncate mt-1" title="${tag.value}">${escapeHtml(tag.value)}</p></div>`;
+           });
+
+           // A11y
+           const issues = [];
+           const images = doc.querySelectorAll('img');
+           images.forEach(img => { if(!img.hasAttribute('alt')) issues.push({ type: 'Warning', msg: `Image missing alt text: ${img.src.split('/').pop()}` }); });
+           const html = doc.querySelector('html');
+           if (!html?.hasAttribute('lang')) issues.push({ type: 'Critical', msg: 'Missing lang attribute on <html> tag' });
+           if (issues.length === 0) a11y.innerHTML = '<p class="text-xs text-green-600 font-medium">No basic accessibility issues found!</p>';
+           else issues.forEach(iss => {
+              a11y.innerHTML += `<div class="flex items-center gap-3 p-3 ${iss.type === 'Critical' ? 'bg-red-50 text-red-700 border-red-100' : 'bg-yellow-50 text-yellow-700 border-yellow-100'} border rounded-lg text-xs font-medium"><span>${iss.type === 'Critical' ? '🔴' : '⚠️'}</span><span>${iss.msg}</span></div>`;
+           });
+        }
       }
     });
   };
 })();
+

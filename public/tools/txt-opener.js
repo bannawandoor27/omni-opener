@@ -1,6 +1,6 @@
 /**
  * OmniOpener — Text/Markdown Toolkit
- * Uses OmniTool SDK, highlight.js, and marked.js.
+ * Uses OmniTool SDK, highlight.js, marked.js, and jsPDF.
  */
 (function () {
   'use strict';
@@ -17,12 +17,13 @@
       accept: '.txt,.text,.log,.md,.markdown,.json,.xml,.yaml,.yml,.sql,.ini,.conf,.sh,.bat,.py,.js,.css,.html',
       dropLabel: 'Drop a text or markdown file here',
       binary: false,
-      infoHtml: '<strong>Text Toolkit:</strong> Advanced text viewer with syntax highlighting, line numbers, and Markdown preview.',
+      infoHtml: '<strong>Text Toolkit:</strong> Advanced text viewer with syntax highlighting, Find & Replace, and PDF export.',
       
       onInit: function(helpers) {
         helpers.loadCSS('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css');
         helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js');
         helpers.loadScript('https://cdn.jsdelivr.net/npm/marked/marked.min.js');
+        helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
       },
 
       actions: [
@@ -34,24 +35,23 @@
           }
         },
         {
-          label: '👁️ Toggle Preview',
-          id: 'toggle-preview',
+          label: '📄 Export PDF',
+          id: 'export-pdf',
           onClick: function (helpers) {
-            const isMd = helpers.getFile().name.toLowerCase().endsWith('.md') || helpers.getFile().name.toLowerCase().endsWith('.markdown');
-            if (!isMd) {
-               helpers.showError('Not a Markdown file', 'Preview is only available for .md and .markdown files.');
-               return;
-            }
-            const preview = document.getElementById('txt-preview-area');
-            const source = document.getElementById('txt-source-area');
-            preview.classList.toggle('hidden');
-            source.classList.toggle('hidden');
+             const { jsPDF } = window.jspdf;
+             const pdf = new jsPDF();
+             const lines = helpers.getContent().split('\n');
+             pdf.setFontSize(10);
+             pdf.text(lines.slice(0, 100), 10, 10); // Simple limited export
+             pdf.save(helpers.getFile().name.replace(/\.[^.]+$/, '.pdf'));
           }
         }
       ],
 
-      onFile: function (file, content, helpers) {
-        if (typeof hljs === 'undefined' || typeof marked === 'undefined') {
+      onFile: function _onFile(file, content, helpers) {
+        helpers.getMountEl()._onFileUpdate = (f, c) => _onFile(f, c, helpers);
+
+        if (typeof hljs === 'undefined' || typeof marked === 'undefined' || typeof jspdf === 'undefined') {
           helpers.showLoading('Loading text engines...');
           setTimeout(() => this.onFile(file, content, helpers), 500);
           return;
@@ -81,26 +81,36 @@
               </div>
             </div>
 
+            <!-- Find & Replace Bar -->
+            <div class="shrink-0 bg-[#21252b] border-b border-[#181a1f] px-4 py-2 flex gap-4">
+               <div class="flex-1 flex gap-2">
+                  <input type="text" id="txt-find" placeholder="Find..." class="bg-[#282c34] border border-[#30363d] rounded px-3 py-1 text-[10px] text-surface-100 outline-none w-1/2">
+                  <input type="text" id="txt-replace" placeholder="Replace with..." class="bg-[#282c34] border border-[#30363d] rounded px-3 py-1 text-[10px] text-surface-100 outline-none w-1/2">
+               </div>
+               <button id="btn-replace-all" class="px-3 py-1 bg-brand-600 text-white text-[10px] font-bold rounded hover:bg-brand-700">Replace All</button>
+            </div>
+
             <!-- View Area -->
             <div class="flex-1 overflow-hidden relative">
-               <!-- Source Area -->
                <div id="txt-source-area" class="absolute inset-0 flex overflow-auto p-4">
                   <div class="shrink-0 font-mono text-[12px] leading-relaxed border-r border-surface-700/30 mr-4 opacity-50">
                     ${lineNumbers}
                   </div>
                   <pre class="flex-1 font-mono text-[12px] leading-relaxed text-surface-100 whitespace-pre"><code>${highlighted}</code></pre>
                </div>
-               
-               <!-- Preview Area (Markdown) -->
-               <div id="txt-preview-area" class="absolute inset-0 hidden overflow-auto bg-white p-12">
-                  <div class="prose prose-slate max-w-none">
-                    ${isMd ? marked.parse(content) : ''}
-                  </div>
-               </div>
             </div>
           </div>
         `);
+
+        document.getElementById('btn-replace-all').onclick = () => {
+           const find = document.getElementById('txt-find').value;
+           const replace = document.getElementById('txt-replace').value;
+           if (!find) return;
+           const newContent = helpers.getContent().replaceAll(find, replace);
+           _onFile(file, newContent, helpers);
+        };
       }
     });
   };
 })();
+
