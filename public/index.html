@@ -4,13 +4,49 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OmniOpener — Open Any File in Your Browser</title>
-  <meta name="description" content="200+ browser-based file tools. No uploads, no installs. Open, view, and convert files entirely client-side.">
+  <meta name="description" content="100+ browser-based file tools. No uploads, no installs. Open, view, and convert files entirely client-side — 100% private.">
   <link rel="canonical" href="https://omniopener.dev">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="OmniOpener — Open Any File in Your Browser">
+  <meta property="og:description" content="100+ browser-based file tools. No uploads, no installs. 100% private and client-side.">
+  <meta property="og:url" content="https://omniopener.dev">
+  <meta property="og:site_name" content="OmniOpener">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="OmniOpener — Open Any File in Your Browser">
+  <meta name="twitter:description" content="100+ browser-based file tools. No uploads, no installs. 100% private.">
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+  <link rel="icon" href="/favicon.ico">
+
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "OmniOpener",
+    "url": "https://omniopener.dev",
+    "description": "Open any file in your browser. 100+ format-specific tools, all running 100% client-side. No uploads, no installs.",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "Any",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "browserRequirements": "Requires a modern browser with JavaScript enabled"
+  }
+  </script>
+
   <script>
-    // Suppress Tailwind CDN warning in console
     const originalWarn = console.warn;
     console.warn = function(...args) {
-      if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com should not be used in production')) return;
+      if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com')) return;
       originalWarn.apply(console, args);
     };
   </script>
@@ -42,12 +78,10 @@
     * { box-sizing: border-box; }
     body { font-family: 'Inter', system-ui, sans-serif; }
 
-    /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 
-    /* Animations */
     @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
     @keyframes slideIn { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
     @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 20px rgba(99,102,241,0.15); } 50% { box-shadow: 0 0 40px rgba(99,102,241,0.3); } }
@@ -56,17 +90,23 @@
     .slide-in { animation: slideIn 0.3s ease-out both; }
     .pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
 
-    /* Nav link hover */
     .nav-link { transition: all 0.2s ease; }
     .nav-link:hover { background: linear-gradient(90deg, rgba(99,102,241,0.1), transparent); transform: translateX(4px); }
     .nav-link.active { background: linear-gradient(90deg, rgba(99,102,241,0.15), transparent); border-left: 3px solid #6366f1; }
 
-    /* Drop zone */
+    .cat-pill { transition: all 0.15s ease; cursor: pointer; }
+    .cat-pill:hover { background: rgba(99,102,241,0.08); }
+    .cat-pill.active { background: #4f46e5 !important; color: #fff !important; }
+
     .drop-zone { transition: all 0.3s ease; }
     .drop-zone.drag-over { border-color: #6366f1; background: rgba(99,102,241,0.05); transform: scale(1.01); }
 
-    /* Glass effect */
     .glass { background: rgba(255,255,255,0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+
+    .tool-card { transition: all 0.2s ease; }
+    .tool-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px -5px rgba(99,102,241,0.15); }
+
+    .kbd { font-size: 0.65rem; padding: 2px 5px; border-radius: 4px; border: 1px solid #cbd5e1; background: #f1f5f9; color: #64748b; font-family: monospace; }
   </style>
 </head>
 <body class="bg-surface-50 text-surface-900 min-h-screen flex flex-col">
@@ -75,8 +115,7 @@
   <nav class="glass border-b border-surface-200 sticky top-0 z-50">
     <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-16">
-        <!-- Logo -->
-        <a href="/" class="flex items-center gap-2.5 group">
+        <a href="/" id="logo-link" class="flex items-center gap-2.5 group">
           <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-lg shadow-brand-500/25 group-hover:shadow-brand-500/40 transition-shadow">
             <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"/></svg>
           </div>
@@ -87,14 +126,23 @@
         <div class="hidden sm:flex items-center flex-1 max-w-md mx-8">
           <div class="relative w-full">
             <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-            <input id="search-input" type="text" placeholder="Search tools or file extensions..." class="w-full pl-10 pr-4 py-2 rounded-xl border border-surface-200 bg-white/80 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 transition-all">
+            <input id="search-input" type="text" placeholder="Search tools or formats..." class="w-full pl-10 pr-16 py-2 rounded-xl border border-surface-200 bg-white/80 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 transition-all" aria-label="Search tools">
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-0.5">
+              <span class="kbd" id="search-kbd">&#8984;K</span>
+            </span>
           </div>
         </div>
 
-        <!-- GitHub link -->
-        <a href="https://github.com" target="_blank" class="text-surface-500 hover:text-surface-700 transition-colors">
-          <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"/></svg>
-        </a>
+        <!-- Right side -->
+        <div class="flex items-center gap-3">
+          <span id="tool-count-badge" class="hidden sm:inline-flex items-center gap-1.5 bg-brand-50 text-brand-700 text-xs font-medium px-3 py-1 rounded-full">
+            <span class="w-1.5 h-1.5 bg-brand-500 rounded-full animate-pulse"></span>
+            <span id="tool-count-num">0</span> tools
+          </span>
+          <a href="https://github.com/bannawandoor27/omni-opener" target="_blank" rel="noopener" class="text-surface-400 hover:text-surface-700 transition-colors" title="View source on GitHub">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"/></svg>
+          </a>
+        </div>
       </div>
     </div>
   </nav>
@@ -102,38 +150,39 @@
   <!-- Main Content -->
   <div class="flex-1 flex max-w-screen-2xl mx-auto w-full">
 
-    <!-- Left Sidebar: Nav Menu -->
-    <aside id="nav-menu" class="w-64 border-r border-surface-200 bg-white/50 p-4 hidden lg:block overflow-y-auto shrink-0" style="height: calc(100vh - 4rem); position: sticky; top: 4rem;">
-      <div class="mb-4">
-        <h2 class="text-xs font-semibold text-surface-400 uppercase tracking-wider px-3 mb-2">Tools</h2>
-        <div id="nav-links" class="space-y-0.5">
-          <!-- Populated by app.js -->
-        </div>
+    <!-- Left Sidebar -->
+    <aside id="nav-menu" class="w-64 border-r border-surface-200 bg-white/50 hidden lg:flex flex-col shrink-0" style="height: calc(100vh - 4rem); position: sticky; top: 4rem;">
+      <div class="p-4 pb-2 border-b border-surface-100">
+        <h2 class="text-xs font-semibold text-surface-400 uppercase tracking-wider px-2 mb-2">Categories</h2>
+        <div id="nav-categories" class="flex flex-wrap gap-1.5"></div>
       </div>
-      <div class="mt-6 pt-6 border-t border-surface-200">
-        <h2 class="text-xs font-semibold text-surface-400 uppercase tracking-wider px-3 mb-2">Categories</h2>
-        <div id="nav-categories" class="space-y-0.5">
-          <!-- Populated by app.js -->
+      <div class="p-4 pt-3 overflow-y-auto flex-1">
+        <div class="flex items-center justify-between px-2 mb-2">
+          <h2 class="text-xs font-semibold text-surface-400 uppercase tracking-wider">Tools</h2>
+          <span id="nav-tool-count" class="text-xs text-surface-300"></span>
         </div>
+        <div id="nav-links" class="space-y-0.5"></div>
       </div>
     </aside>
 
-    <!-- Center: Tool Container -->
+    <!-- Center -->
     <main id="tool-container" class="flex-1 min-w-0 p-6 lg:p-8">
-      <!-- Landing page content (replaced when a tool loads) -->
       <div id="landing" class="fade-in">
-        <div class="max-w-3xl mx-auto text-center py-16">
-          <div class="inline-flex items-center gap-2 bg-brand-50 text-brand-700 text-sm font-medium px-4 py-1.5 rounded-full mb-6">
-            <span class="w-2 h-2 bg-brand-500 rounded-full animate-pulse"></span>
-            200+ formats supported
-          </div>
+        <div class="max-w-4xl mx-auto text-center py-12">
           <h1 class="text-5xl sm:text-6xl font-extrabold tracking-tight mb-6">
             Open <span class="bg-gradient-to-r from-brand-500 to-purple-600 bg-clip-text text-transparent">any file</span><br>
             in your browser
           </h1>
-          <p class="text-lg text-surface-500 mb-10 max-w-xl mx-auto leading-relaxed">
+          <p class="text-lg text-surface-500 mb-4 max-w-xl mx-auto leading-relaxed">
             No uploads. No installs. No sign-ups. Drop a file and work with it instantly — everything runs <strong class="text-surface-700">100% client-side</strong>.
           </p>
+
+          <!-- Trust signals -->
+          <div class="flex flex-wrap justify-center gap-4 mb-10 text-sm text-surface-500">
+            <span class="flex items-center gap-1.5"><svg class="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg> 100% Private</span>
+            <span class="flex items-center gap-1.5"><svg class="w-4 h-4 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Instant</span>
+            <span class="flex items-center gap-1.5"><svg class="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Free Forever</span>
+          </div>
 
           <!-- Global drop zone -->
           <div id="global-drop-zone" class="drop-zone border-2 border-dashed border-surface-300 rounded-2xl p-12 mb-12 cursor-pointer hover:border-brand-400 pulse-glow">
@@ -148,24 +197,22 @@
             </div>
           </div>
 
+          <!-- Category filter pills (landing) -->
+          <div id="landing-categories" class="flex flex-wrap justify-center gap-2 mb-6"></div>
+
           <!-- Tool Grid -->
-          <h2 class="text-sm font-semibold text-surface-400 uppercase tracking-wider mb-4">Available Tools</h2>
-          <div id="tool-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto">
-            <!-- Populated by app.js -->
+          <div id="tool-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-4xl mx-auto"></div>
+
+          <!-- Footer -->
+          <div class="mt-16 pt-8 border-t border-surface-200 text-sm text-surface-400">
+            <p>Every tool runs entirely in your browser — your files never leave your device.</p>
+            <p class="mt-2">
+              <a href="https://github.com/bannawandoor27/omni-opener" target="_blank" rel="noopener" class="text-brand-600 hover:underline">Open Source on GitHub</a>
+            </p>
           </div>
         </div>
       </div>
     </main>
-
-    <!-- Right Sidebar: Ad Space -->
-    <aside id="ad-space" class="w-64 border-l border-surface-200 bg-white/50 p-4 hidden xl:block shrink-0" style="height: calc(100vh - 4rem); position: sticky; top: 4rem;">
-      <div class="rounded-xl border border-surface-200 bg-surface-100/50 p-4 text-center">
-        <p class="text-xs text-surface-400 uppercase tracking-wider mb-2">Sponsored</p>
-        <div class="h-64 rounded-lg bg-gradient-to-br from-surface-100 to-surface-200 flex items-center justify-center">
-          <p class="text-sm text-surface-400">Ad space</p>
-        </div>
-      </div>
-    </aside>
   </div>
 
   <script src="/app.js"></script>
