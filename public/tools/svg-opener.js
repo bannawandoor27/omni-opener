@@ -30,6 +30,21 @@
               helpers.copyToClipboard(mini, btn);
             }
           } 
+        },
+        {
+          label: '🌓 Invert Colors',
+          id: 'invert-colors',
+          onClick: function (helpers) {
+             const content = helpers.getContent();
+             const inverted = content.replace(/#([0-9a-fA-F]{3,6})/g, (match, hex) => {
+                if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+                let r = 255 - parseInt(hex.substring(0, 2), 16);
+                let g = 255 - parseInt(hex.substring(2, 4), 16);
+                let b = 255 - parseInt(hex.substring(4, 6), 16);
+                return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+             });
+             helpers.getMountEl()._onFileUpdate(helpers.getFile(), inverted);
+          }
         }
       ],
 

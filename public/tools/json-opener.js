@@ -96,6 +96,13 @@
                       class="w-full pl-7 pr-4 py-2 text-xs font-mono border border-surface-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all bg-white"
                     >
                   </div>
+                  <div class="relative flex-1">
+                    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400">🔍</span>
+                    <input type="text" id="tree-search" 
+                      placeholder="Search in tree..." 
+                      class="w-full pl-8 pr-4 py-2 text-xs border border-surface-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all bg-white"
+                    >
+                  </div>
                   <button id="btn-run-query" class="px-3 py-2 bg-brand-600 text-white text-xs font-bold rounded-lg hover:bg-brand-700 transition-colors">Run</button>
                   <button id="btn-reset-query" class="px-3 py-2 bg-surface-100 text-surface-600 text-xs font-bold rounded-lg hover:bg-surface-200 transition-colors">Reset</button>
                 </div>
@@ -167,15 +174,32 @@
             };
           });
 
-          function renderTree(data, container, label = '', isLast = true) {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'pl-4 border-l border-surface-100 hover:border-brand-200 transition-colors';
-            
+          function hasMatch(data, term) {
+             if (data === null) return "null".includes(term);
+             if (typeof data !== 'object') return String(data).toLowerCase().includes(term);
+             if (Array.isArray(data)) return data.some(v => hasMatch(v, term));
+             return Object.entries(data).some(([k, v]) => String(k).toLowerCase().includes(term) || hasMatch(v, term));
+          }
+
+          function renderTree(data, container, label = '', isLast = true, searchTerm = '') {
             const isObject = data !== null && typeof data === 'object';
             const isArray = Array.isArray(data);
             
+            if (searchTerm) {
+               const matches = (String(label).toLowerCase().includes(searchTerm) || 
+                               (!isObject && String(data).toLowerCase().includes(searchTerm)));
+               if (!matches && isObject) {
+                  const childMatches = isArray ? 
+                     data.some(v => hasMatch(v, searchTerm)) : 
+                     Object.entries(data).some(([k, v]) => String(k).toLowerCase().includes(searchTerm) || hasMatch(v, searchTerm));
+                  if (!childMatches) return;
+               }
+            }
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'pl-4 border-l border-surface-100 hover:border-brand-200 transition-colors';
+            
             if (isObject) {
-              const keys = isArray ? data : Object.keys(data);
               const header = document.createElement('div');
               header.className = 'flex items-center gap-2 cursor-pointer group py-0.5';
               header.innerHTML = `
@@ -186,19 +210,17 @@
               
               const body = document.createElement('div');
               body.className = 'ml-2';
-              
               header.onclick = () => {
                 const isCollapsed = body.classList.toggle('hidden');
                 header.querySelector('span').style.transform = isCollapsed ? 'rotate(-90deg)' : '';
               };
               
               if (isArray) {
-                data.forEach((val, i) => renderTree(val, body, i, i === data.length - 1));
+                data.forEach((val, i) => renderTree(val, body, i, i === data.length - 1, searchTerm));
               } else {
                 const entries = Object.entries(data);
-                entries.forEach(([key, val], i) => renderTree(val, body, key, i === entries.length - 1));
+                entries.forEach(([key, val], i) => renderTree(val, body, key, i === entries.length - 1, searchTerm));
               }
-              
               wrapper.appendChild(header);
               wrapper.appendChild(body);
             } else {
@@ -209,12 +231,7 @@
               if (typeof data === 'boolean') valClass = 'text-purple-600';
               if (data === null) valClass = 'text-surface-400';
 
-              wrapper.innerHTML = `
-                <div class="py-0.5">
-                  <span class="text-brand-700 font-bold">${label ? label + ':' : ''}</span>
-                  <span class="${valClass}">${escapeHtml(valStr)}</span>
-                </div>
-              `;
+              wrapper.innerHTML = `<div class="py-0.5"><span class="text-brand-700 font-bold">${label ? label + ':' : ''}</span> <span class="${valClass}">${escapeHtml(valStr)}</span></div>`;
             }
             container.appendChild(wrapper);
           }
@@ -225,10 +242,13 @@
             const rawContainer = document.getElementById('view-raw');
             if (treeContainer) {
               treeContainer.innerHTML = '';
-              renderTree(current, treeContainer);
+              const searchTerm = document.getElementById('tree-search')?.value.toLowerCase() || '';
+              renderTree(current, treeContainer, '', true, searchTerm);
             }
             if (rawContainer) rawContainer.textContent = JSON.stringify(current, null, 2);
           }
+
+          document.getElementById('tree-search').oninput = updateViews;
 
           document.getElementById('btn-run-query').onclick = () => {
             const query = document.getElementById('json-query').value.trim();

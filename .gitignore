@@ -6,3 +6,12 @@ node_modules/
 .idea/
 *.log
 agent/state.json
+agent/qa_*.json
+agent/qa_*.js
+agent/loop.log
+agent/INSTRUCTIONS.md
+fix_all.js
+fix_all_final.js
+fix_tools.sh
+all_tools.txt
+config_tools.txt

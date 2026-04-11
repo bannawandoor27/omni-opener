@@ -141,14 +141,28 @@
         <div id="csv-content" class="flex-1 overflow-hidden relative bg-white">
           <!-- Table Tab -->
           <div id="view-table" class="absolute inset-0 flex flex-col">
-            <!-- Search -->
-            <div class="px-3 py-2 border-b border-surface-100">
-              <div class="relative">
+            <!-- Search & Controls -->
+            <div class="px-3 py-2 border-b border-surface-100 flex items-center gap-2">
+              <div class="relative flex-1">
                 <span class="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400">🔍</span>
                 <input type="text" id="csv-search" 
                   placeholder="Filter rows..." 
                   class="w-full pl-9 pr-4 py-1.5 text-sm border border-surface-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all bg-white"
                 >
+              </div>
+              <div class="relative group">
+                <button id="btn-toggle-cols" class="px-3 py-1.5 bg-white border border-surface-200 text-surface-600 text-xs font-bold rounded-lg hover:bg-surface-50 flex items-center gap-2">
+                  <span>📑 Columns</span>
+                  <span class="text-[10px] opacity-50">▼</span>
+                </button>
+                <div id="col-dropdown" class="hidden absolute right-0 mt-2 w-48 bg-white border border-surface-200 rounded-xl shadow-xl z-50 p-2 max-h-64 overflow-auto">
+                   ${fields.map(f => `
+                     <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-50 rounded-lg cursor-pointer transition-colors">
+                        <input type="checkbox" checked data-col="${escapeHtml(f)}" class="col-toggle accent-brand-500 w-3.5 h-3.5">
+                        <span class="text-xs text-surface-700 truncate">${escapeHtml(f)}</span>
+                     </label>
+                   `).join('')}
+                </div>
               </div>
             </div>
             
@@ -264,19 +278,50 @@
     // Table Logic
     let sortField = null;
     let sortDir = 1;
+    let visibleCols = new Set(fields);
     const searchInput = document.getElementById('csv-search');
     const tbody = document.getElementById('csv-body');
     const headers = document.querySelectorAll('.csv-header');
+    const toggleBtn = document.getElementById('btn-toggle-cols');
+    const colDropdown = document.getElementById('col-dropdown');
+    const colCheckboxes = document.querySelectorAll('.col-toggle');
+
+    if (toggleBtn) {
+       toggleBtn.onclick = (e) => {
+          e.stopPropagation();
+          colDropdown.classList.toggle('hidden');
+       };
+       document.addEventListener('click', () => colDropdown.classList.add('hidden'));
+       colDropdown.onclick = (e) => e.stopPropagation();
+    }
+
+    colCheckboxes.forEach(cb => {
+       cb.onchange = () => {
+          const field = cb.getAttribute('data-col');
+          if (cb.checked) visibleCols.add(field);
+          else visibleCols.delete(field);
+          updateTableHeader();
+          updateTable();
+       };
+    });
+
+    function updateTableHeader() {
+       headers.forEach(h => {
+          const field = h.getAttribute('data-field');
+          h.classList.toggle('hidden', !visibleCols.has(field));
+       });
+    }
 
     function renderRows(rows, cols) {
       const limit = 500;
       const toShow = rows.slice(0, limit);
+      const activeCols = cols.filter(f => visibleCols.has(f));
       return toShow.map((row, i) => `
         <tr class="hover:bg-surface-50 transition-colors border-b border-surface-100 last:border-0">
           <td class="px-4 py-2 text-surface-300 font-mono text-[10px] text-center bg-surface-50/50 sticky left-0 z-10">${i + 1}</td>
-          ${cols.map(f => `<td class="px-4 py-2 text-surface-600 truncate max-w-xs border-r border-surface-50 last:border-0">${escapeHtml(String(row[f] ?? ''))}</td>`).join('')}
+          ${activeCols.map(f => `<td class="px-4 py-2 text-surface-600 truncate max-w-xs border-r border-surface-50 last:border-0">${escapeHtml(String(row[f] ?? ''))}</td>`).join('')}
         </tr>
-      `).join('') + (rows.length > limit ? `<tr><td colspan="${cols.length + 1}" class="p-4 text-center text-surface-400 bg-surface-50 italic">Showing first ${limit} rows.</td></tr>` : '');
+      `).join('') + (rows.length > limit ? `<tr><td colspan="${activeCols.length + 1}" class="p-4 text-center text-surface-400 bg-surface-50 italic">Showing first ${limit} rows.</td></tr>` : '');
     }
 
     function updateTable() {

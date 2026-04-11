@@ -28,6 +28,16 @@
           }
         },
         {
+          label: '📦 Copy as JSON',
+          id: 'copy-json',
+          onClick: function (helpers, btn) {
+             const data = helpers.getState().parsedData;
+             if (data) {
+                helpers.copyToClipboard(JSON.stringify(data, null, 2), btn);
+             }
+          }
+        },
+        {
           label: '📥 Download JSON',
           id: 'dl-json',
           onClick: function (helpers) {

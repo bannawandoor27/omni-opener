@@ -85,6 +85,14 @@
           }
         },
         {
+          label: '📦 Minify',
+          id: 'minify-xml',
+          onClick: function (helpers) {
+            const minified = helpers.getContent().replace(/>\s+</g, '><').trim();
+            helpers.getMountEl()._onFileUpdate(helpers.getFile(), minified);
+          }
+        },
+        {
           label: '📥 Export JSON',
           id: 'export-json',
           onClick: function (helpers) {
