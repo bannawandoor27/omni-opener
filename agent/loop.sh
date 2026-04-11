@@ -378,6 +378,59 @@ process_format() {
   return 1
 }
 
+
+# ── Retry Failed Formats ──────────────────────────────────
+# Clears failed status for formats that failed >24h ago and retries them
+retry_failed() {
+  local tmp; tmp=$(mktemp)
+  # Pull out failed formats and clear them from state
+  local failed_formats
+  failed_formats=$(jq -r '.failed[].format' "$STATE" 2>/dev/null || true)
+  if [[ -z "$failed_formats" ]]; then return 0; fi
+
+  log "♻️  Retrying previously failed formats: $(echo $failed_formats | tr '\n' ' ')"
+  # Clear all failed entries so they get reprocessed
+  jq '.failed = []' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
+}
+
+# ── Discover New Formats via Gemini ───────────────────────
+# When queue is fully done, ask Gemini to suggest new file formats
+discover_formats() {
+  log "🔭 Discovering new file formats to build..."
+
+  local existing
+  existing=$(cut -d, -f1 "$QUEUE" | tr '\n' ',' | sed 's/,$//')
+
+  local discover_prompt="You are working on OmniOpener at $ROOT, a browser-based file utility that opens any file format client-side. We already support these formats: $existing. Your task: suggest exactly 20 new file format extensions we should add next. Focus on formats that are useful, have clear viewing/parsing value in a browser, and are NOT already in the list above. Consider: lesser-known document formats, scientific data formats, developer config formats, CAD/GIS formats, game asset formats, database dumps, font files, etc. Output ONLY a plain list — one format extension per line, no dots, no explanations, no numbering. Just the raw extension like: epub"
+
+  local result
+  result=$(call_gemini "$discover_prompt") || return 1
+
+  local added=0
+  while IFS= read -r fmt; do
+    fmt=$(echo "$fmt" | tr -d '[:space:].' | tr '[:upper:]' '[:lower:]')
+    [[ -z "$fmt" || ${#fmt} -gt 10 ]] && continue
+    # Skip if already in queue
+    if grep -qi "^${fmt}$" "$QUEUE" 2>/dev/null; then continue; fi
+    # Skip if already built
+    if is_built "$fmt"; then continue; fi
+    echo "$fmt" >> "$QUEUE"
+    log "  ➕ Added to queue: $fmt"
+    added=$((added + 1))
+  done <<< "$result"
+
+  if [[ $added -gt 0 ]]; then
+    ok "🆕 Discovered and queued $added new formats"
+    # Commit the updated queue
+    cd "$ROOT"
+    git add agent/queue.csv
+    git commit -m "chore: auto-discover $added new formats to build [automated]" || true
+    git push origin main 2>&1 || true
+  else
+    warn "No new formats discovered this round"
+  fi
+}
+
 # ── Main Loop ─────────────────────────────────────────────
 main() {
   init_state
@@ -439,8 +492,12 @@ main() {
       fi
 
       ok "🎉 All formats built and re-perfected!"
-      log "Sleeping 1 hour before re-checking queue..."
-      sleep 3600
+      # Retry any formats that previously failed
+      retry_failed
+      # Ask Gemini to discover new formats and add to queue
+      discover_formats
+      log "😴 Sleeping 5 minutes before next discovery cycle..."
+      sleep 300
       continue
     fi
 
