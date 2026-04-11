@@ -1371,6 +1371,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/ipynb-opener.js"
+    },
+    {
+      "slug": "har-opener",
+      "title": "HAR Opener",
+      "h1": "Open & View .har Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .har files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".har"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/har-opener.js"
     }
   ]
 }
