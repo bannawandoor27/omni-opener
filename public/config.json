@@ -1299,6 +1299,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/otf-opener.js"
+    },
+    {
+      "slug": "woff-opener",
+      "title": "WOFF Opener",
+      "h1": "Open & View .woff Files Online — Free & Private",
+      "meta_description": "Open, view, and preview .woff web fonts in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".woff"
+      ],
+      "category": "design",
+      "icon": "🔤",
+      "script_url": "/tools/woff-opener.js"
     }
   ]
 }
