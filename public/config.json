@@ -1455,6 +1455,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/dds-opener.js"
+    },
+    {
+      "slug": "torrent-opener",
+      "title": "Torrent Opener",
+      "h1": "Open & View .torrent Files Online",
+      "meta_description": "View the contents of .torrent files directly in your browser. See file lists, trackers, and generate magnet links locally and privately.",
+      "formats": [
+        ".torrent"
+      ],
+      "category": "general",
+      "icon": "🧲",
+      "script_url": "/tools/torrent-opener.js"
     }
   ]
 }
