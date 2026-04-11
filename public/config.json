@@ -1251,6 +1251,18 @@
       "category": "documents",
       "icon": "📖",
       "script_url": "/tools/mobi-opener.js"
+    },
+    {
+      "slug": "cbz-opener",
+      "title": "CBZ Opener",
+      "h1": "Open & View .cbz Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .cbz files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".cbz"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/cbz-opener.js"
     }
   ]
 }
