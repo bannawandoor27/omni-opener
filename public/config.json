@@ -1311,6 +1311,18 @@
       "category": "design",
       "icon": "🔤",
       "script_url": "/tools/woff-opener.js"
+    },
+    {
+      "slug": "woff2-opener",
+      "title": "WOFF2 Opener",
+      "h1": "Open & View .woff2 Files Online — Free & Private",
+      "meta_description": "Open, view, and preview .woff2 web fonts in your browser. High-performance WOFF2 font viewer and type tester.",
+      "formats": [
+        ".woff2"
+      ],
+      "category": "design",
+      "icon": "🔤",
+      "script_url": "/tools/woff2-opener.js"
     }
   ]
 }
