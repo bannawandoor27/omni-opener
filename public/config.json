@@ -1407,6 +1407,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/plist-opener.js"
+    },
+    {
+      "slug": "toml-opener",
+      "title": "TOML Opener",
+      "h1": "Open & View .toml Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .toml files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".toml"
+      ],
+      "category": "data",
+      "icon": "🔧",
+      "script_url": "/tools/toml-opener.js"
     }
   ]
 }
