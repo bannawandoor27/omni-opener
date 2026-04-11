@@ -1383,6 +1383,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/har-opener.js"
+    },
+    {
+      "slug": "pcap-opener",
+      "title": "PCAP Opener",
+      "h1": "Open & View .pcap Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .pcap files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".pcap"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/pcap-opener.js"
     }
   ]
 }
