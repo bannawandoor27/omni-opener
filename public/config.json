@@ -1431,6 +1431,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/tga-opener.js"
+    },
+    {
+      "slug": "dds-opener",
+      "title": "DDS Opener",
+      "h1": "Open & View .dds Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .dds files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".dds"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/dds-opener.js"
     }
   ]
 }
