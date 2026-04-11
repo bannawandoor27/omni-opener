@@ -1359,6 +1359,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/shp-opener.js"
+    },
+    {
+      "slug": "ipynb-opener",
+      "title": "IPYNB Opener",
+      "h1": "Open & View .ipynb Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .ipynb files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".ipynb"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/ipynb-opener.js"
     }
   ]
 }
