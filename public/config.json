@@ -1335,6 +1335,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/sqlite-opener.js"
+    },
+    {
+      "slug": "dcm-opener",
+      "title": "DCM Opener",
+      "h1": "Open & View .dcm Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .dcm files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".dcm"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/dcm-opener.js"
     }
   ]
 }
