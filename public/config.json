@@ -1287,6 +1287,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/ttf-opener.js"
+    },
+    {
+      "slug": "otf-opener",
+      "title": "OTF Opener",
+      "h1": "Open & View .otf Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .otf files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".otf"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/otf-opener.js"
     }
   ]
 }
