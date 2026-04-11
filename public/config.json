@@ -1347,6 +1347,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/dcm-opener.js"
+    },
+    {
+      "slug": "shp-opener",
+      "title": "SHP Opener",
+      "h1": "Open & View .shp Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .shp files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".shp"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/shp-opener.js"
     }
   ]
 }
