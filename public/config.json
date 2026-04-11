@@ -1395,6 +1395,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/pcap-opener.js"
+    },
+    {
+      "slug": "plist-opener",
+      "title": "PLIST Opener",
+      "h1": "Open & View .plist Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .plist files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".plist"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/plist-opener.js"
     }
   ]
 }
