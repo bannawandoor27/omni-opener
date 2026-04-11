@@ -1419,6 +1419,18 @@
       "category": "data",
       "icon": "🔧",
       "script_url": "/tools/toml-opener.js"
+    },
+    {
+      "slug": "tga-opener",
+      "title": "TGA Opener",
+      "h1": "Open & View .tga Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .tga files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".tga"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/tga-opener.js"
     }
   ]
 }
