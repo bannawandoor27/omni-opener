@@ -1263,6 +1263,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/cbz-opener.js"
+    },
+    {
+      "slug": "cbr-opener",
+      "title": "CBR Opener",
+      "h1": "Open & View .cbr Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .cbr files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".cbr"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/cbr-opener.js"
     }
   ]
 }
