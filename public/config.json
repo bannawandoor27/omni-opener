@@ -1323,6 +1323,18 @@
       "category": "design",
       "icon": "🔤",
       "script_url": "/tools/woff2-opener.js"
+    },
+    {
+      "slug": "sqlite-opener",
+      "title": "SQLITE Opener",
+      "h1": "Open & View .sqlite Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .sqlite files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".sqlite"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/sqlite-opener.js"
     }
   ]
 }
