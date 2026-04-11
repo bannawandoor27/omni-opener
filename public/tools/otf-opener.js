@@ -15,7 +15,7 @@
       },
 
       onFile: async function(file, content, helpers) {
-        // B1. Race condition check
+        // B1. Race condition check for CDN script
         if (typeof opentype === 'undefined') {
           helpers.showLoading('Initializing font engine...');
           await new Promise((resolve) => {
@@ -60,7 +60,7 @@
    */
   async function processFont(file, content, helpers) {
     // U6. Show loading immediately
-    helpers.showLoading('Parsing font tables...');
+    helpers.showLoading('Parsing font tables and glyphs...');
 
     // B2. ArrayBuffer check
     if (!(content instanceof ArrayBuffer)) {
@@ -69,15 +69,16 @@
     }
 
     try {
-      // B3. Wrap heavy parsing
+      // B3. Heavy parsing wrapped in try/catch
       const font = opentype.parse(content);
+      
       if (!font || !font.supported) {
         throw new Error('This font format is not fully supported or the file is corrupted.');
       }
 
       // U5. Check for empty font
       if (font.numGlyphs === 0) {
-        helpers.showError('Empty Font', 'This font file contains no glyphs.');
+        helpers.showError('Empty Font', 'This font file contains no glyphs and cannot be previewed.');
         return;
       }
 
@@ -96,16 +97,18 @@
     const fontName = getFontName(font);
     const subFamily = font.names.fontSubfamily?.en || font.names.fontSubfamily?.[''] || 'Regular';
     const copyright = font.names.copyright?.en || font.names.copyright?.[''] || '';
+    const outlineType = font.outlineFormat === 'truetype' ? 'TrueType' : 'OpenType';
     
     helpers.setState({ fontName: fontName });
 
-    // B5. Manage Font Injection & Memory
+    // B5. Manage Font Injection & Memory (Revoke old URL if exists)
     if (currentFontUrl) URL.revokeObjectURL(currentFontUrl);
     
     const fontId = 'omni-font-' + Math.random().toString(36).substring(2, 9);
     const blob = new Blob([content], { type: 'font/otf' });
     currentFontUrl = URL.createObjectURL(blob);
 
+    // Inject styles for the font preview
     const style = document.createElement('style');
     style.id = 'omni-font-style';
     style.textContent = `
@@ -136,7 +139,7 @@
           <span class="text-surface-300">|</span>
           <span>${formatSize(file.size)}</span>
           <span class="text-surface-300">|</span>
-          <span class="text-surface-500">${esc(font.outlineFormat === 'truetype' ? 'TrueType' : 'OpenType')} Font</span>
+          <span class="text-surface-500">${esc(outlineType)} Font</span>
           <span class="ml-auto bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full text-xs font-bold uppercase">${esc(subFamily)}</span>
         </div>
 
@@ -176,7 +179,7 @@
                   ${[12, 18, 24, 36, 48].map(size => `
                     <div class="border-b border-surface-100 pb-2 last:border-0">
                       <div class="text-[9px] text-surface-400 mb-1 font-mono uppercase">${size}px</div>
-                      <div class="font-custom-preview truncate text-surface-800" style="font-size: ${size}px">OmniOpener</div>
+                      <div class="font-custom-preview truncate text-surface-800" style="font-size: ${size}px">OmniOpener Type Specimen</div>
                     </div>
                   `).join('')}
                 </div>
@@ -192,7 +195,7 @@
               
               <div class="mt-8 space-y-8 border-t border-surface-100 pt-8">
                 <div>
-                   <h3 class="text-sm font-bold text-surface-400 uppercase tracking-widest mb-4">Type Specimen</h3>
+                   <h3 class="text-sm font-bold text-surface-400 uppercase tracking-widest mb-4">Character Set</h3>
                    <div class="space-y-6">
                     ${[
                       'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
@@ -217,12 +220,12 @@
           <!-- U10. Section Header -->
           <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
             <div>
-              <h3 class="font-semibold text-surface-800">Character Map</h3>
-              <p class="text-sm text-surface-500">Visual vectors stored in font file</p>
+              <h3 class="font-semibold text-surface-800">Glyph Explorer</h3>
+              <p class="text-sm text-surface-500">Vector definitions stored in the font file</p>
             </div>
             <div class="flex items-center gap-3">
               <div class="relative">
-                <input type="text" id="glyph-search" placeholder="Search glyph name..." class="pl-9 pr-4 py-2 text-sm border border-surface-200 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none transition-all w-48 md:w-64">
+                <input type="text" id="glyph-search" placeholder="Search glyph name or index..." class="pl-9 pr-4 py-2 text-sm border border-surface-200 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none transition-all w-48 md:w-64">
                 <span class="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400">🔍</span>
               </div>
               <span class="text-xs bg-brand-100 text-brand-700 px-3 py-1 rounded-full font-semibold" id="glyph-count">${font.numGlyphs} glyphs</span>
@@ -264,7 +267,7 @@
             </div>
 
             <div class="space-y-6">
-              <h3 class="font-semibold text-surface-800">Technical Metrics</h3>
+              <h3 class="font-semibold text-surface-800">Font Metrics</h3>
               <div class="grid grid-cols-1 gap-4">
                 ${[
                   { label: 'Units Per Em', val: font.unitsPerEm },
@@ -335,7 +338,7 @@
       previewInput.value = previewDisplay.textContent;
     });
 
-    // Glyph Rendering with Search & Pagination
+    // Glyph Rendering with Search & Pagination (B7. Large file handling)
     const glyphSearch = renderEl.querySelector('#glyph-search');
     let currentGlyphIndex = 0;
     const PAGE_SIZE = 150;
@@ -351,7 +354,6 @@
       let i = start;
       const lowerFilter = filter.toLowerCase();
 
-      // B7. Large file handling: pagination
       while (i < font.numGlyphs && itemsAdded < count) {
         const glyph = font.glyphs.get(i);
         const name = (glyph.name || '').toLowerCase();
@@ -373,6 +375,7 @@
           const ctx = canvas.getContext('2d');
           ctx.scale(dpr, dpr);
           
+          // Draw glyph scaled to fit canvas
           const scale = (size * 0.7) / font.unitsPerEm;
           const x = (size / 2) - (glyph.advanceWidth * scale / 2);
           const y = (size / 2) + (font.ascender * scale / 2);
@@ -404,7 +407,7 @@
       }
 
       if (filter) {
-        countLabel.textContent = `Search results`;
+        countLabel.textContent = `Found glyphs`;
       } else {
         countLabel.textContent = `${font.numGlyphs} glyphs`;
       }
