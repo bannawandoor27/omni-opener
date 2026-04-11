@@ -5,14 +5,14 @@
 (function () {
   'use strict';
 
-  let blobUrls = [];
+  var blobUrls = [];
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       accept: '.cbr,.rar',
       binary: true,
       dropLabel: 'Drop a .cbr or .rar comic here',
-      infoHtml: '<strong>How it works:</strong> This tool extracts and renders images from your CBR archive locally in your browser. No files are uploaded to any server.',
+      infoHtml: '<strong>How it works:</strong> This tool extracts and renders images from your CBR archive locally in your browser using the unrar.js library. No files are uploaded to any server.',
 
       actions: [
         {
@@ -32,7 +32,7 @@
       ],
 
       onInit: function (h) {
-        cleanupBlobUrls();
+        cleanup();
         // Load unrar library
         if (typeof Unrar === 'undefined') {
           h.loadScript('https://cdn.jsdelivr.net/npm/@fiahfy/unrar.js@0.1.1/dist/unrar.js');
@@ -41,11 +41,14 @@
 
       onFile: function (file, content, h) {
         h.showLoading('Extracting archive…');
-        cleanupBlobUrls();
+        cleanup();
 
         if (typeof Unrar === 'undefined') {
           h.loadScript('https://cdn.jsdelivr.net/npm/@fiahfy/unrar.js@0.1.1/dist/unrar.js', function () {
-            processRar(content, h);
+            // Small delay to ensure global is populated
+            setTimeout(function() {
+              processRar(content, h);
+            }, 50);
           });
         } else {
           processRar(content, h);
@@ -53,50 +56,55 @@
       },
 
       onDestroy: function () {
-        cleanupBlobUrls();
+        cleanup();
       }
     });
   };
 
-  function cleanupBlobUrls() {
+  function cleanup() {
     blobUrls.forEach(function (url) { URL.revokeObjectURL(url); });
     blobUrls = [];
   }
 
   function processRar(buffer, h) {
     try {
-      const unrar = new Unrar(new Uint8Array(buffer));
-      const files = unrar.extract();
+      // Handle potential UMD global variations
+      var UnrarClass = window.Unrar || (window.unrar && window.unrar.Unrar);
+      if (!UnrarClass) {
+        throw new Error('Unrar library failed to initialize.');
+      }
+
+      var unrar = new UnrarClass(new Uint8Array(buffer));
+      var files = unrar.extract();
 
       if (!files || files.length === 0) {
-        h.showError('No images found', 'This archive does not appear to contain any supported image files (JPG, PNG, WebP, etc.).');
+        h.showError('Empty Archive', 'This archive does not appear to contain any files.');
         return;
       }
 
+      // Filter for image files
       var entries = files.filter(function (file) {
-        return isImage(file.name);
+        var ext = file.name.split('.').pop().toLowerCase();
+        return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp'].indexOf(ext) !== -1;
       });
 
       if (entries.length === 0) {
-        h.showError('No images found', 'No supported image files found inside the archive.');
+        h.showError('No Images Found', 'No supported image files found inside the archive.');
         return;
       }
 
-      // Sort entries by name naturally
+      // Sort entries by name naturally (important for comics)
       entries.sort(function (a, b) {
         return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
       });
 
-      h.showLoading('Loading ' + entries.length + ' pages…');
-
-      h.render('<div id="cbr-container" class="flex flex-col items-center gap-8 p-8 bg-surface-100 min-h-full"></div>');
-      var container = h.getRenderEl().querySelector('#cbr-container');
-
-      // Clear loading state
-      container.innerHTML = '';
+      // Prepare container
+      h.render('<div id="cbr-viewer" class="flex flex-col items-center gap-8 p-4 md:p-8 bg-surface-50 min-h-full"></div>');
+      var container = h.getRenderEl().querySelector('#cbr-viewer');
       
       entries.forEach(function (file, i) {
-        var blob = new Blob([file.data], { type: getMimeType(file.name) });
+        var mime = getMimeType(file.name);
+        var blob = new Blob([file.data], { type: mime });
         var url = URL.createObjectURL(blob);
         blobUrls.push(url);
 
@@ -105,12 +113,12 @@
 
         var img = document.createElement('img');
         img.src = url;
-        img.className = 'max-w-full h-auto shadow-2xl rounded-sm border border-surface-200';
+        img.className = 'max-w-full h-auto shadow-2xl rounded-sm border border-surface-200 bg-white';
         img.alt = 'Page ' + (i + 1);
         img.loading = 'lazy';
 
         var caption = document.createElement('div');
-        caption.className = 'text-xs text-surface-500 font-mono';
+        caption.className = 'text-xs text-surface-400 font-mono';
         caption.textContent = (i + 1) + ' / ' + entries.length + ' — ' + file.name.split('/').pop();
 
         wrapper.appendChild(img);
@@ -120,7 +128,7 @@
 
       // Add back-to-top button
       var topBtn = document.createElement('button');
-      topBtn.className = 'mt-4 px-4 py-2 bg-white border border-surface-200 rounded-full text-sm font-medium hover:bg-surface-50 transition-colors shadow-sm';
+      topBtn.className = 'mt-6 px-6 py-2 bg-white border border-surface-200 rounded-full text-sm font-medium hover:bg-surface-100 transition-colors shadow-sm';
       topBtn.textContent = '↑ Back to Top';
       topBtn.onclick = function() { h.getRenderEl().scrollTo({ top: 0, behavior: 'smooth' }); };
       container.appendChild(topBtn);
@@ -130,22 +138,15 @@
     }
   }
 
-  function isImage(filename) {
-    var ext = filename.split('.').pop().toLowerCase();
-    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp'].includes(ext);
-  }
-
   function getMimeType(filename) {
     var ext = filename.split('.').pop().toLowerCase();
-    switch (ext) {
-      case 'jpg': case 'jpeg': return 'image/jpeg';
-      case 'png': return 'image/png';
-      case 'gif': return 'image/gif';
-      case 'webp': return 'image/webp';
-      case 'avif': return 'image/avif';
-      case 'bmp': return 'image/bmp';
-      default: return 'application/octet-stream';
-    }
+    var map = {
+      'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+      'png': 'image/png', 'gif': 'image/gif',
+      'webp': 'image/webp', 'avif': 'image/avif',
+      'bmp': 'image/bmp'
+    };
+    return map[ext] || 'application/octet-stream';
   }
 
 })();
