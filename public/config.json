@@ -237,6 +237,18 @@
       "script_url": "/tools/ods-opener.js"
     },
     {
+      "slug": "odp-opener",
+      "title": "ODP Opener",
+      "h1": "Open & View .odp Files Online",
+      "meta_description": "View and work with .odp (OpenDocument Presentation) files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".odp"
+      ],
+      "category": "documents",
+      "icon": "📊",
+      "script_url": "/tools/odp-opener.js"
+    },
+    {
       "slug": "avro-opener",
       "title": "AVRO Opener",
       "h1": "Open & View .avro Files Online",
