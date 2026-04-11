@@ -1237,6 +1237,20 @@
       "category": "packages",
       "icon": "📦",
       "script_url": "/tools/snap-opener.js"
+    },
+    {
+      "slug": "mobi-opener",
+      "title": "MOBI Opener",
+      "h1": "Open & View .mobi Ebooks Online",
+      "meta_description": "View and read .mobi and .azw ebook files directly in your browser. Free, private, no upload required.",
+      "formats": [
+        ".mobi",
+        ".prc",
+        ".azw"
+      ],
+      "category": "documents",
+      "icon": "📖",
+      "script_url": "/tools/mobi-opener.js"
     }
   ]
 }
