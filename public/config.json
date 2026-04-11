@@ -1275,6 +1275,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/cbr-opener.js"
+    },
+    {
+      "slug": "ttf-opener",
+      "title": "TTF Opener",
+      "h1": "Open & View .ttf Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .ttf files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".ttf"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/ttf-opener.js"
     }
   ]
 }
