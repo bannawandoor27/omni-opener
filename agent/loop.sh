@@ -326,6 +326,10 @@ commit_and_push() {
   git add -A
   git commit -m "feat: add ${format}-opener tool [automated]" || true
   git push origin main 2>&1 || git push origin master 2>&1
+  # Regenerate sitemap after deploy
+  if [[ -f "$ROOT/scripts/generate-sitemap.js" ]]; then
+    node "$ROOT/scripts/generate-sitemap.js" 2>/dev/null && git add public/sitemap.xml && git commit -m "chore: update sitemap [automated]" && git push origin main 2>/dev/null || true
+  fi
   ok "Pushed to GitHub"
 }
 

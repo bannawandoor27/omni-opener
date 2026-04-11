@@ -16,11 +16,21 @@
         {
           label: '📋 Copy File List',
           id: 'copy-list',
+          onClick: function (h, btn) {
+            const zip = h.getState().zip;
+            if (!zip) return;
+            const list = Object.keys(zip.files).filter(p => !zip.files[p].dir).sort().join('\n');
+            h.copyToClipboard(list, btn);
+          }
+        },
+        {
+          label: '📥 Download List',
+          id: 'download-list',
           onClick: function (h) {
             const zip = h.getState().zip;
             if (!zip) return;
-            const list = Object.keys(zip.files).filter(p => !zip.files[p].dir).join('\n');
-            h.copyToClipboard(list, h.getMountEl().querySelector('#omni-action-copy-list'));
+            const list = Object.keys(zip.files).filter(p => !zip.files[p].dir).sort().join('\n');
+            h.download('file-list.txt', list);
           }
         }
       ],
@@ -32,54 +42,58 @@
       },
 
       onFile: function (file, content, h) {
-        h.showLoading('Reading JAR contents…');
+        h.showLoading('Reading archive contents…');
         
-        // Wait for JSZip if it's still loading
-        const checkJSZip = () => {
+        // Wait for JSZip to be available (loaded via onInit)
+        const process = () => {
           if (typeof JSZip !== 'undefined') {
             JSZip.loadAsync(content).then(function (zip) {
               h.setState('zip', zip);
               renderFileList(zip, h);
             }).catch(function (err) {
-              h.showError('Failed to read JAR', err.message);
+              h.showError('Failed to read archive', err.message);
             });
           } else {
-            setTimeout(checkJSZip, 100);
+            setTimeout(process, 100);
           }
         };
-        checkJSZip();
+        process();
       }
     });
   };
 
   function renderFileList(zip, h) {
     let html = `
-      <div class="p-4 overflow-x-auto">
-        <table class="w-full text-left border-collapse min-w-[500px]">
-          <thead>
-            <tr class="border-b border-surface-200 text-surface-500 text-sm">
-              <th class="py-2 px-3 font-medium">File Path</th>
-              <th class="py-2 px-3 font-medium text-right">Size</th>
-              <th class="py-2 px-3 font-medium text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody class="text-sm">
+      <div class="p-4">
+        <div class="overflow-x-auto border border-surface-200 rounded-lg">
+          <table class="w-full text-left border-collapse min-w-[500px]">
+            <thead>
+              <tr class="bg-surface-50 border-b border-surface-200 text-surface-500 text-xs uppercase tracking-wider">
+                <th class="py-3 px-4 font-semibold">File Path</th>
+                <th class="py-3 px-4 font-semibold text-right">Size</th>
+                <th class="py-3 px-4 font-semibold text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody class="text-sm divide-y divide-surface-100">
     `;
 
     const fileNames = Object.keys(zip.files).filter(p => !zip.files[p].dir).sort();
     
     if (fileNames.length === 0) {
-      html += `<tr><td colspan="3" class="py-8 text-center text-surface-400">No files found in this archive.</td></tr>`;
+      html += `<tr><td colspan="3" class="py-12 text-center text-surface-400 italic">No files found in this archive.</td></tr>`;
     } else {
       fileNames.forEach(function (path) {
         const file = zip.files[path];
-        const size = formatSize(file._data.uncompressedSize || 0);
+        // uncompressedSize is often available in the internal _data or can be checked via metadata
+        const size = formatSize(file._data ? file._data.uncompressedSize : 0);
         html += `
-          <tr class="border-b border-surface-100 hover:bg-surface-50 transition-colors">
-            <td class="py-2 px-3 font-mono text-xs truncate max-w-md" title="${esc(path)}">${esc(path)}</td>
-            <td class="py-2 px-3 text-right text-surface-400 font-mono">${size}</td>
-            <td class="py-2 px-3 text-right">
-              <button class="dl-btn text-brand-600 hover:text-brand-700 font-medium px-2 py-1" data-path="${esc(path)}">Download</button>
+          <tr class="hover:bg-surface-50 transition-colors">
+            <td class="py-2.5 px-4 font-mono text-xs break-all" title="${esc(path)}">${esc(path)}</td>
+            <td class="py-2.5 px-4 text-right text-surface-400 font-mono text-xs whitespace-nowrap">${size}</td>
+            <td class="py-2.5 px-4 text-right">
+              <button class="dl-btn text-brand-600 hover:text-brand-700 font-medium text-xs bg-brand-50 hover:bg-brand-100 px-2.5 py-1 rounded transition-colors" data-path="${esc(path)}">
+                Download
+              </button>
             </td>
           </tr>
         `;
@@ -87,8 +101,9 @@
     }
 
     html += `
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
 
@@ -111,14 +126,15 @@
         }).catch(function(err) {
           console.error(err);
           btn.textContent = 'Error';
-          btn.classList.add('text-red-500');
+          btn.classList.remove('bg-brand-50', 'text-brand-600');
+          btn.classList.add('bg-red-50', 'text-red-600');
         });
       });
     });
   }
 
   function formatSize(bytes) {
-    if (bytes === 0) return '0 B';
+    if (!bytes || bytes === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
