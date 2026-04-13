@@ -1731,6 +1731,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/kdbx-opener.js"
+    },
+    {
+      "slug": "warc-opener",
+      "title": "WARC Opener",
+      "h1": "Open & View .warc Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .warc files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".warc"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/warc-opener.js"
     }
   ]
 }
