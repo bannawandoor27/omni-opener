@@ -1467,6 +1467,18 @@
       "category": "general",
       "icon": "🧲",
       "script_url": "/tools/torrent-opener.js"
+    },
+    {
+      "slug": "epub-opener",
+      "title": "EPUB Opener",
+      "h1": "Open & View .epub Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .epub files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".epub"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/epub-opener.js"
     }
   ]
 }
