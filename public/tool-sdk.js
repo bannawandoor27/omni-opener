@@ -226,6 +226,7 @@
         renderArea.innerHTML = '';
         actionBar.classList.add('hidden');
         filenameSpan.textContent = '';
+        fileInput.value = ''; // allow re-selecting the same file
       },
       /** Access the config object */
       config: config
