@@ -1851,6 +1851,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/wat-opener.js"
+    },
+    {
+      "slug": "gguf-opener",
+      "title": "GGUF Opener",
+      "h1": "Open & View .gguf Files Online \u2014 Free & Private",
+      "meta_description": "Open, view, and inspect GGUF model metadata and tensor info in your browser. 100% private, runs entirely client-side.",
+      "formats": [
+        ".gguf"
+      ],
+      "category": "system",
+      "icon": "🧠",
+      "script_url": "/tools/gguf-opener.js"
     }
   ]
 }
