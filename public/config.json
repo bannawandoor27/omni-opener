@@ -1683,6 +1683,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/eot-opener.js"
+    },
+    {
+      "slug": "ktx-opener",
+      "title": "KTX Opener",
+      "h1": "Open & View .ktx Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .ktx files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".ktx"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/ktx-opener.js"
     }
   ]
 }
