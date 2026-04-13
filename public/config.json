@@ -1707,6 +1707,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/pvr-opener.js"
+    },
+    {
+      "slug": "msg-opener",
+      "title": "MSG Opener",
+      "h1": "Open & View .msg Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .msg files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".msg"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/msg-opener.js"
     }
   ]
 }
