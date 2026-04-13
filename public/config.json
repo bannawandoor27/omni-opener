@@ -1611,6 +1611,18 @@
       "category": "3d",
       "icon": "🧬",
       "script_url": "/tools/pdb-opener.js"
+    },
+    {
+      "slug": "djvu-opener",
+      "title": "DJVU Opener",
+      "h1": "Open & View .djvu Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .djvu files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".djvu"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/djvu-opener.js"
     }
   ]
 }
