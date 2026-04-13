@@ -1695,6 +1695,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/ktx-opener.js"
+    },
+    {
+      "slug": "pvr-opener",
+      "title": "PVR Opener",
+      "h1": "Open & View .pvr Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .pvr files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".pvr"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/pvr-opener.js"
     }
   ]
 }
