@@ -1659,6 +1659,18 @@
       "category": "3d",
       "icon": "🧊",
       "script_url": "/tools/3ds-opener.js"
+    },
+    {
+      "slug": "3mf-opener",
+      "title": "3MF Opener",
+      "h1": "Open & View .3mf Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .3mf files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".3mf"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/3mf-opener.js"
     }
   ]
 }
