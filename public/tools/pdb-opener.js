@@ -2,11 +2,11 @@
  * OmniOpener — PDB Molecular Viewer
  * Uses OmniTool SDK and Three.js for high-performance 3D molecular visualization.
  */
-(function() {
+(function () {
   'use strict';
 
   // Standard CPK coloring for atoms
-  const CPK = {
+  var CPK = {
     'H': 0xffffff, 'C': 0x909090, 'N': 0x3050f8, 'O': 0xff0d0d,
     'S': 0xffff30, 'P': 0xff8000, 'FE': 0xdd7700, 'CL': 0x1ff01f,
     'MG': 0x8aff00, 'CA': 0x3dff00, 'ZN': 0x7d80b0, 'F': 0x90e050,
@@ -17,105 +17,135 @@
     'AU': 0xffd123, 'AG': 0xc0c0c0
   };
 
-  let autoSpin = true;
+  var autoSpin = true;
 
-  window.initTool = function(toolConfig, mountEl) {
+  window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       accept: '.pdb',
       dropLabel: 'Drop a .pdb file here',
       dropSub: 'Visualize molecular structures in 3D',
       binary: false,
-      onInit: function(helpers) {
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js');
-      },
-      onFile: function(file, content, helpers) {
+      infoHtml: '<strong>Privacy First:</strong> This molecular viewer runs entirely in your browser. Your structural data never leaves your device.',
+
+      onInit: function (h) {
         if (typeof THREE === 'undefined') {
-          helpers.showLoading('Initializing 3D engine...');
-          setTimeout(() => this.onFile(file, content, helpers), 200);
+          h.loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js');
+        }
+      },
+
+      onFile: function (file, content, h) {
+        if (!content || !content.trim()) {
+          h.showError('Empty File', 'This PDB file has no content.');
           return;
         }
 
-        helpers.showLoading('Parsing molecular data...');
-        try {
-          const data = parsePDB(content);
-          renderViewer(data, file, helpers);
-        } catch (e) {
-          helpers.showError('Could not parse PDB file', e.message);
-        }
+        h.showLoading('Parsing molecular data...');
+
+        // Small delay to ensure dependencies are ready and UI updates
+        setTimeout(function () {
+          if (typeof THREE === 'undefined') {
+            h.showError('Dependency Error', 'Three.js failed to load. Please check your connection.');
+            return;
+          }
+
+          try {
+            var data = parsePDB(content);
+            if (data.atoms.length === 0) {
+              h.showError('No Atoms Found', 'No valid atom records found in this PDB file.');
+              return;
+            }
+            renderViewer(data, file, h, content);
+          } catch (e) {
+            console.error(e);
+            h.showError('Processing Error', 'The file could not be parsed as a valid PDB.');
+          }
+        }, 100);
       },
+
       actions: [
         {
-          label: '📋 Copy Atoms',
+          label: '📋 Copy content',
           id: 'copy',
-          onClick: function(helpers, btn) {
-            helpers.copyToClipboard(helpers.getContent(), btn);
+          onClick: function (h, btn) {
+            h.copyToClipboard(h.getContent(), btn);
           }
         },
         {
           label: '📥 Download PDB',
-          id: 'dl',
-          onClick: function(helpers) {
-            helpers.download(helpers.getFile().name, helpers.getContent());
+          id: 'download',
+          onClick: function (h) {
+            h.download(h.getFile().name, h.getContent());
           }
         },
         {
           label: '📸 Save Image',
-          id: 'png',
-          onClick: function(helpers) {
-            const canvas = helpers.getRenderEl().querySelector('canvas');
+          id: 'screenshot',
+          onClick: function (h) {
+            var canvas = h.getRenderEl().querySelector('canvas');
             if (canvas) {
-              const url = canvas.toDataURL('image/png');
-              helpers.download(helpers.getFile().name.replace('.pdb', '.png'), url, 'image/png');
+              var url = canvas.toDataURL('image/png');
+              var name = h.getFile().name.replace(/\.[^/.]+$/, "") + '.png';
+              h.download(name, url, 'image/png');
+            } else {
+              h.showError('Capture Error', 'Viewer canvas not found.');
             }
           }
         },
         {
           label: '🔄 Toggle Spin',
           id: 'spin',
-          onClick: function() {
+          onClick: function () {
             autoSpin = !autoSpin;
           }
         }
-      ],
-      infoHtml: '<strong>Privacy First:</strong> This molecular viewer runs entirely in your browser. Your structural data never leaves your device.'
+      ]
     });
   };
 
   function parsePDB(text) {
-    const atoms = [];
-    const bonds = [];
-    const atomMap = {};
-    const lines = text.split('\n');
+    var atoms = [];
+    var bonds = [];
+    var atomMap = {};
+    var lines = text.split('\n');
+    var truncated = false;
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+    var MAX_LINES = 100000;
+    if (lines.length > MAX_LINES) truncated = true;
+    var limit = Math.min(lines.length, MAX_LINES);
+
+    for (var i = 0; i < limit; i++) {
+      var line = lines[i];
       if (line.startsWith('ATOM  ') || line.startsWith('HETATM')) {
-        const serial = parseInt(line.substring(6, 11).trim());
-        const x = parseFloat(line.substring(30, 38));
-        const y = parseFloat(line.substring(38, 46));
-        const z = parseFloat(line.substring(46, 54));
-        
-        let element = line.substring(76, 78).trim().toUpperCase();
+        var serial = parseInt(line.substring(6, 11).trim(), 10);
+        if (isNaN(serial)) continue;
+        var x = parseFloat(line.substring(30, 38));
+        var y = parseFloat(line.substring(38, 46));
+        var z = parseFloat(line.substring(46, 54));
+        if (isNaN(x) || isNaN(y) || isNaN(z)) continue;
+
+        var element = line.substring(76, 78).trim().toUpperCase();
         if (!element) {
           element = line.substring(12, 14).trim().replace(/[0-9]/g, '').toUpperCase();
         }
 
-        const resName = line.substring(17, 20).trim();
-        const chain = line.substring(21, 22).trim();
-        
-        const atom = { serial, x, y, z, element, resName, chain };
+        var resName = line.substring(17, 20).trim();
+        var chain = line.substring(21, 22).trim();
+
+        var atom = { serial: serial, x: x, y: y, z: z, element: element, resName: resName, chain: chain };
         atoms.push(atom);
         atomMap[serial] = atom;
       } else if (line.startsWith('CONECT')) {
-        const from = parseInt(line.substring(6, 11).trim());
-        const tos = [
-          parseInt(line.substring(11, 16).trim()),
-          parseInt(line.substring(16, 21).trim()),
-          parseInt(line.substring(21, 26).trim()),
-          parseInt(line.substring(26, 31).trim())
-        ].filter(n => !isNaN(n));
-        
-        for (const to of tos) {
+        var from = parseInt(line.substring(6, 11).trim(), 10);
+        if (isNaN(from)) continue;
+        var tos = [
+          parseInt(line.substring(11, 16).trim(), 10),
+          parseInt(line.substring(16, 21).trim(), 10),
+          parseInt(line.substring(21, 26).trim(), 10),
+          parseInt(line.substring(26, 31).trim(), 10)
+        ].filter(function (n) { return !isNaN(n); });
+
+        for (var j = 0; j < tos.length; j++) {
+          var to = tos[j];
           if (from < to && atomMap[to]) {
             bonds.push([from, to]);
           }
@@ -123,147 +153,195 @@
       }
     }
 
-    if (bonds.length === 0 && atoms.length > 0 && atoms.length < 2000) {
-      for (let i = 0; i < atoms.length; i++) {
-        for (let j = i + 1; j < atoms.length; j++) {
-          const a1 = atoms[i], a2 = atoms[j];
-          const d2 = Math.pow(a1.x - a2.x, 2) + Math.pow(a1.y - a2.y, 2) + Math.pow(a1.z - a2.z, 2);
-          if (d2 < 4.0) {
-             bonds.push([a1.serial, a2.serial]);
+    if (bonds.length === 0 && atoms.length > 0 && atoms.length < 4000) {
+      for (var i = 0; i < atoms.length; i++) {
+        for (var k = i + 1; k < atoms.length; k++) {
+          var a1 = atoms[i], a2 = atoms[k];
+          var dx = a1.x - a2.x;
+          var dy = a1.y - a2.y;
+          var dz = a1.z - a2.z;
+          if ((dx * dx + dy * dy + dz * dz) < 4.0) {
+            bonds.push([a1.serial, a2.serial]);
           }
         }
       }
     }
 
-    return { atoms, bonds, atomMap };
+    return { atoms: atoms, bonds: bonds, atomMap: atomMap, truncated: truncated };
   }
 
-  function renderViewer(data, file, helpers) {
-    const { atoms, bonds, atomMap } = data;
-    if (atoms.length === 0) throw new Error('No valid atom records found in this PDB file.');
+  function renderViewer(data, file, h, content) {
+    var atoms = data.atoms;
+    var bonds = data.bonds;
+    var atomMap = data.atomMap;
+    
+    var residues = new Set();
+    var chains = new Set();
+    atoms.forEach(function(a) {
+      residues.add(a.chain + a.resName);
+      chains.add(a.chain || 'A');
+    });
 
-    const residues = new Set(atoms.map(a => a.chain + a.resName));
-    const chains = new Set(atoms.map(a => a.chain || 'A'));
+    var lines = content.split('\n');
+    var displayLines = lines.slice(0, 5000); 
+    if (lines.length > 5000) {
+      displayLines.push('\n... (Content truncated for performance) ...');
+    }
 
-    helpers.render(`
-      <div class="flex flex-col h-[75vh] min-h-[500px] font-sans">
-        <div class="flex items-center gap-3 p-3 bg-surface-50 border-b border-surface-200 text-xs text-surface-600">
-          <div class="flex items-center gap-2 px-2 py-1 bg-white rounded border border-surface-100 shadow-sm">
-            <span class="font-bold text-surface-900">${esc(file.name)}</span>
-            <span class="text-surface-300">·</span>
-            <span>${(file.size / 1024).toFixed(1)} KB</span>
-          </div>
-          <div class="flex items-center gap-4 ml-auto">
-            <div class="flex flex-col items-end">
-              <span class="font-bold text-brand-600">${atoms.length.toLocaleString()}</span>
-              <span class="text-[9px] uppercase tracking-wider text-surface-400">Atoms</span>
-            </div>
-            <div class="flex flex-col items-end">
-              <span class="font-bold text-surface-700">${residues.size}</span>
-              <span class="text-[9px] uppercase tracking-wider text-surface-400">Residues</span>
-            </div>
-            <div class="flex flex-col items-end">
-              <span class="font-bold text-surface-700">${chains.size}</span>
-              <span class="text-[9px] uppercase tracking-wider text-surface-400">Chains</span>
-            </div>
-          </div>
-        </div>
+    var html = 
+      '<div class="flex flex-col h-[700px] font-sans">' +
+        '<div class="flex items-center gap-4 mb-4 border-b border-surface-200 px-2">' +
+          '<button id="tab-3d" class="px-4 py-2 font-medium text-brand-600 border-b-2 border-brand-600 transition-colors focus:outline-none">3D Viewer</button>' +
+          '<button id="tab-raw" class="px-4 py-2 font-medium text-surface-500 border-b-2 border-transparent hover:text-surface-700 transition-colors focus:outline-none">Raw Data</button>' +
+        '</div>' +
 
-        <div id="three-container" class="flex-1 bg-slate-950 relative overflow-hidden group cursor-grab active:cursor-grabbing">
-          <div class="absolute bottom-4 left-4 flex gap-2 pointer-events-none opacity-60 group-hover:opacity-100 transition-opacity">
-            <div class="px-2 py-1 bg-black/40 backdrop-blur text-white text-[10px] rounded border border-white/10">Drag to Orbit</div>
-            <div class="px-2 py-1 bg-black/40 backdrop-blur text-white text-[10px] rounded border border-white/10">Scroll to Zoom</div>
-          </div>
-          <button id="pdb-reset" class="absolute top-4 right-4 px-3 py-1 bg-white/10 hover:bg-white/20 backdrop-blur text-white text-[10px] font-bold rounded border border-white/10 transition-all z-10">
-            Reset View
-          </button>
-        </div>
-      </div>
-    `);
+        '<div id="view-3d" class="flex-1 flex flex-col min-h-0">' +
+          '<div class="flex items-center justify-between mb-3 px-1">' +
+            '<div class="flex flex-wrap gap-2">' +
+              '<span class="text-xs bg-brand-100 text-brand-700 px-2.5 py-1 rounded-full font-medium">' + atoms.length.toLocaleString() + ' atoms</span>' +
+              '<span class="text-xs bg-surface-100 text-surface-700 px-2.5 py-1 rounded-full font-medium">' + residues.size + ' residues</span>' +
+              '<span class="text-xs bg-surface-100 text-surface-700 px-2.5 py-1 rounded-full font-medium">' + chains.size + ' chains</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="flex-1 rounded-xl overflow-hidden border border-surface-200 relative bg-slate-950 group shadow-inner">' +
+            '<div id="three-container" class="absolute inset-0 cursor-grab active:cursor-grabbing"></div>' +
+            '<button id="pdb-reset" class="absolute top-4 right-4 px-3 py-1.5 bg-white/10 hover:bg-white/20 backdrop-blur text-white text-xs font-medium rounded-lg border border-white/20 transition-all z-10">Reset View</button>' +
+          '</div>' +
+        '</div>' +
 
-    const mount = helpers.getRenderEl().querySelector('#three-container');
-    const width = mount.clientWidth;
-    const height = mount.clientHeight;
+        '<div id="view-raw" class="flex-1 flex flex-col min-h-0 hidden">' +
+          '<div class="flex-1 rounded-xl overflow-hidden border border-surface-200 flex flex-col min-h-0 bg-gray-950 shadow-inner">' +
+            '<div class="flex-1 overflow-auto p-4">' +
+              '<pre class="text-sm font-mono text-gray-300 leading-relaxed m-0">' + 
+                displayLines.map(function(l) { return esc(l); }).join('\n') + 
+              '</pre>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    h.render(html);
+
+    var renderEl = h.getRenderEl();
+    var tab3d = renderEl.querySelector('#tab-3d');
+    var tabRaw = renderEl.querySelector('#tab-raw');
+    var view3d = renderEl.querySelector('#view-3d');
+    var viewRaw = renderEl.querySelector('#view-raw');
+
+    tab3d.addEventListener('click', function () {
+      tab3d.className = 'px-4 py-2 font-medium text-brand-600 border-b-2 border-brand-600 focus:outline-none';
+      tabRaw.className = 'px-4 py-2 font-medium text-surface-500 border-b-2 border-transparent hover:text-surface-700 focus:outline-none';
+      view3d.classList.remove('hidden');
+      viewRaw.classList.add('hidden');
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    tabRaw.addEventListener('click', function () {
+      tabRaw.className = 'px-4 py-2 font-medium text-brand-600 border-b-2 border-brand-600 focus:outline-none';
+      tab3d.className = 'px-4 py-2 font-medium text-surface-500 border-b-2 border-transparent hover:text-surface-700 focus:outline-none';
+      viewRaw.classList.remove('hidden');
+      view3d.classList.add('hidden');
+    });
+
+    // Three.js
+    var mount = renderEl.querySelector('#three-container');
+    var width = mount.clientWidth || 800;
+    var height = mount.clientHeight || 500;
+
+    var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     mount.appendChild(renderer.domElement);
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, width / height, 1, 5000);
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(45, width / height, 1, 5000);
     
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const l1 = new THREE.DirectionalLight(0xffffff, 1);
+    var l1 = new THREE.DirectionalLight(0xffffff, 1);
     l1.position.set(1, 1, 1);
     scene.add(l1);
-    const l2 = new THREE.DirectionalLight(0xffffff, 0.5);
-    l2.position.set(-1, -1, -1);
-    scene.add(l2);
 
-    const group = new THREE.Group();
+    var group = new THREE.Group();
     scene.add(group);
 
-    let minX = Infinity, minY = Infinity, minZ = Infinity;
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-    atoms.forEach(a => {
-      minX = Math.min(minX, a.x); maxX = Math.max(maxX, a.x);
-      minY = Math.min(minY, a.y); maxY = Math.max(maxY, a.y);
-      minZ = Math.min(minZ, a.z); maxZ = Math.max(maxZ, a.z);
+    var minX = Infinity, minY = Infinity, minZ = Infinity;
+    var maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    atoms.forEach(function(a) {
+      if (a.x < minX) minX = a.x; if (a.x > maxX) maxX = a.x;
+      if (a.y < minY) minY = a.y; if (a.y > maxY) maxY = a.y;
+      if (a.z < minZ) minZ = a.z; if (a.z > maxZ) maxZ = a.z;
     });
-    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
-    const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
+    var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+    var span = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
 
-    const elements = [...new Set(atoms.map(a => a.element))];
-    const sphereGeom = new THREE.SphereBufferGeometry(0.4, 12, 12);
+    var elementTypes = {};
+    atoms.forEach(function(a) {
+      if (!elementTypes[a.element]) elementTypes[a.element] = [];
+      elementTypes[a.element].push(a);
+    });
+
+    var sphereGeom = new THREE.SphereGeometry(0.4, 16, 16);
     
-    elements.forEach(el => {
-      const elAtoms = atoms.filter(a => a.element === el);
-      const color = CPK[el] || 0xcccccc;
-      const mat = new THREE.MeshPhongMaterial({ color, shininess: 100 });
-      const mesh = new THREE.InstancedMesh(sphereGeom, mat, elAtoms.length);
+    Object.keys(elementTypes).forEach(function(el) {
+      var elAtoms = elementTypes[el];
+      var color = CPK[el] || 0xcccccc;
+      var mat = new THREE.MeshPhongMaterial({ color: color, shininess: 80 });
+      var mesh = new THREE.InstancedMesh(sphereGeom, mat, elAtoms.length);
       
-      const matrix = new THREE.Matrix4();
-      elAtoms.forEach((a, i) => {
-        matrix.setPosition(a.x - cx, a.y - cy, a.z - cz);
+      var matrix = new THREE.Matrix4();
+      var pos = new THREE.Vector3();
+      elAtoms.forEach(function(a, i) {
+        pos.set(a.x - cx, a.y - cy, a.z - cz);
+        matrix.setPosition(pos);
         mesh.setMatrixAt(i, matrix);
       });
       group.add(mesh);
     });
 
-    const bondMat = new THREE.MeshPhongMaterial({ color: 0x888888, shininess: 30 });
-    const bondGeom = new THREE.CylinderBufferGeometry(0.1, 0.1, 1, 6);
-    
-    bonds.forEach(pair => {
-      const a1 = atomMap[pair[0]], a2 = atomMap[pair[1]];
-      if (!a1 || !a2) return;
+    if (bonds.length > 0) {
+      var bondMat = new THREE.MeshPhongMaterial({ color: 0x888888, shininess: 50 });
+      var bondGeom = new THREE.CylinderGeometry(0.1, 0.1, 1, 8);
+      var bondMesh = new THREE.InstancedMesh(bondGeom, bondMat, bonds.length);
       
-      const v1 = new THREE.Vector3(a1.x - cx, a1.y - cy, a1.z - cz);
-      const v2 = new THREE.Vector3(a2.x - cx, a2.y - cy, a2.z - cz);
-      const dist = v1.distanceTo(v2);
-      
-      const mesh = new THREE.Mesh(bondGeom, bondMat);
-      mesh.position.copy(v1).add(v2).multiplyScalar(0.5);
-      mesh.lookAt(v2);
-      mesh.rotateX(Math.PI / 2);
-      mesh.scale.set(1, dist, 1);
-      group.add(mesh);
-    });
+      var m = new THREE.Matrix4();
+      var q = new THREE.Quaternion();
+      var scale = new THREE.Vector3();
+      var center = new THREE.Vector3();
+      var up = new THREE.Vector3(0, 1, 0);
 
-    camera.position.z = span * 1.5 || 50;
+      bonds.forEach(function(pair, i) {
+        var a1 = atomMap[pair[0]], a2 = atomMap[pair[1]];
+        if (!a1 || !a2) return;
+        
+        var v1 = new THREE.Vector3(a1.x - cx, a1.y - cy, a1.z - cz);
+        var v2 = new THREE.Vector3(a2.x - cx, a2.y - cy, a2.z - cz);
+        var dist = v1.distanceTo(v2);
+        
+        center.copy(v1).add(v2).multiplyScalar(0.5);
+        var dir = new THREE.Vector3().subVectors(v2, v1).normalize();
+        q.setFromUnitVectors(up, dir);
+        
+        scale.set(1, dist, 1);
+        m.compose(center, q, scale);
+        bondMesh.setMatrixAt(i, m);
+      });
+      group.add(bondMesh);
+    }
+
+    camera.position.z = (span * 1.5) || 50;
     camera.lookAt(0, 0, 0);
 
-    let isDragging = false, lastX = 0, lastY = 0;
-    const onMouseDown = (e) => { isDragging = true; lastX = e.clientX; lastY = e.clientY; };
-    const onMouseMove = (e) => {
+    var isDragging = false, lastX = 0, lastY = 0;
+    var onMouseDown = function (e) { isDragging = true; lastX = e.clientX; lastY = e.clientY; };
+    var onMouseMove = function (e) {
       if (isDragging) {
         group.rotation.y += (e.clientX - lastX) * 0.007;
         group.rotation.x += (e.clientY - lastY) * 0.007;
         lastX = e.clientX; lastY = e.clientY;
       }
     };
-    const onMouseUp = () => isDragging = false;
-    const onWheel = (e) => {
+    var onMouseUp = function () { isDragging = false; };
+    var onWheel = function (e) {
       e.preventDefault();
       camera.position.z = Math.max(span * 0.1, camera.position.z + e.deltaY * 0.05);
     };
@@ -273,40 +351,47 @@
     window.addEventListener('mouseup', onMouseUp);
     mount.addEventListener('wheel', onWheel, { passive: false });
 
-    helpers.getRenderEl().querySelector('#pdb-reset').onclick = () => {
+    renderEl.querySelector('#pdb-reset').onclick = function () {
       group.rotation.set(0, 0, 0);
-      camera.position.z = span * 1.5 || 50;
+      camera.position.z = (span * 1.5) || 50;
     };
 
+    var animationId;
     function animate() {
       if (!mount.isConnected) {
         window.removeEventListener('mousemove', onMouseMove);
         window.removeEventListener('mouseup', onMouseUp);
         renderer.dispose();
+        cancelAnimationFrame(animationId);
         return;
       }
-      requestAnimationFrame(animate);
+      animationId = requestAnimationFrame(animate);
       if (autoSpin && !isDragging) group.rotation.y += 0.002;
       renderer.render(scene, camera);
     }
     animate();
 
-    const onResize = () => {
-      if (!mount.isConnected) {
-        window.removeEventListener('resize', onResize);
-        return;
+    var onResize = function () {
+      if (!mount.isConnected) return;
+      var newW = mount.clientWidth;
+      var newH = mount.clientHeight;
+      if (newW > 0 && newH > 0) {
+        camera.aspect = newW / newH;
+        camera.updateProjectionMatrix();
+        renderer.setSize(newW, newH);
       }
-      camera.aspect = mount.clientWidth / mount.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(mount.clientWidth, mount.clientHeight);
     };
     window.addEventListener('resize', onResize);
   }
 
   function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
+    if (!str) return '';
+    return str.toString()
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
 })();
