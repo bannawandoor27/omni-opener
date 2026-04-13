@@ -1479,6 +1479,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/epub-opener.js"
+    },
+    {
+      "slug": "hdf5-opener",
+      "title": "HDF5 Opener",
+      "h1": "Open & View .hdf5 Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .hdf5 files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".hdf5"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/hdf5-opener.js"
     }
   ]
 }
