@@ -1927,14 +1927,26 @@
     {
       "slug": "ged-opener",
       "title": "GED Opener",
-      "h1": "Open & View .ged Files Online — Free & Private",
-      "meta_description": "Open, view, and convert .ged files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "h1": "Open & View .ged Files Online \u2014 Free & Private",
+      "meta_description": "Open, view, and convert .ged files in your browser. No uploads, no installs \u2014 100% private, runs entirely client-side.",
       "formats": [
         ".ged"
       ],
       "category": "general",
-      "icon": "📁",
+      "icon": "\uD83D\uDCC1",
       "script_url": "/tools/ged-opener.js"
+    },
+    {
+      "slug": "bib-opener",
+      "title": "BibTeX Opener",
+      "h1": "Open & View .bib Files Online \u2014 Free & Private",
+      "meta_description": "View and manage BibTeX (.bib) bibliographic references directly in your browser. Free, private, and 100% client-side.",
+      "formats": [
+        ".bib"
+      ],
+      "category": "data",
+      "icon": "\uD83D\uDCD6",
+      "script_url": "/tools/bib-opener.js"
     }
   ]
 }
