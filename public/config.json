@@ -1767,6 +1767,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/br-opener.js"
+    },
+    {
+      "slug": "lz4-opener",
+      "title": "LZ4 Opener",
+      "h1": "Open & View .lz4 Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .lz4 files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".lz4"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/lz4-opener.js"
     }
   ]
 }
