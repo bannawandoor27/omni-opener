@@ -478,6 +478,18 @@
       "script_url": "/tools/stl-opener.js"
     },
     {
+      "slug": "fbx-opener",
+      "title": "FBX Viewer",
+      "h1": "Open & View .fbx 3D Models Online",
+      "meta_description": "View and explore FBX 3D models directly in your browser. Supports animations, wireframe mode, and texture previews. 100% private, no upload required.",
+      "formats": [
+        ".fbx"
+      ],
+      "category": "design",
+      "icon": "🧊",
+      "script_url": "/tools/fbx-opener.js"
+    },
+    {
       "slug": "step-opener",
       "title": "STEP Opener",
       "h1": "Open & View .step Files Online — Free & Private",
