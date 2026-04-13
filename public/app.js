@@ -12,6 +12,7 @@
 
   var $container, $navLinks, $navCategories, $searchInput;
   var $toolCountNum, $navToolCount;
+  var lastLoadedSlug = null; // track which tool's initTool is currently live
 
   document.addEventListener('DOMContentLoaded', init);
 
@@ -282,18 +283,18 @@
 
     document.getElementById('back-btn').addEventListener('click', function (e) { e.preventDefault(); navigateHome(); });
 
-    // Load script — cache to avoid re-fetching
+    // Load script — browser caches by URL, so reloading is cheap
     var doLoad = function () {
-      // If we already loaded this tool's script AND initTool is still that tool's version,
-      // just re-init directly (handles navigating back to same tool)
-      if (loadedScripts[slug] && typeof window.initTool === 'function') {
+      // Only reuse initTool if it belongs to THIS slug (not a different tool's function)
+      if (lastLoadedSlug === slug && typeof window.initTool === 'function') {
         var mount = document.getElementById('tool-mount');
         if (mount) window.initTool(tool, mount);
         return;
       }
 
-      // Reset initTool to prevent stale calls
+      // Reset initTool to prevent stale calls from previous tool
       window.initTool = null;
+      lastLoadedSlug = null;
 
       var old = document.getElementById('tool-script');
       if (old) old.remove();
@@ -303,6 +304,7 @@
       s.src = tool.script_url + '?v=' + (tool.slug); // cache-busting per tool
       s.onload = function () {
         loadedScripts[slug] = true;
+        lastLoadedSlug = slug;
         var mount = document.getElementById('tool-mount');
         if (typeof window.initTool === 'function' && mount) {
           window.initTool(tool, mount);

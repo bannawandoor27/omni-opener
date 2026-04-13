@@ -6,9 +6,6 @@
   'use strict';
 
   window.initTool = function (toolConfig, mountEl) {
-    var _hlsInstance = null;
-    var _hlsUrl = null;
-
     OmniTool.create(mountEl, toolConfig, {
       accept: '.m3u8,.m3u',
       dropLabel: 'Drop an M3U8 or M3U playlist here',
@@ -56,10 +53,7 @@
       ],
 
       onInit: function (h) {
-        if (typeof window.m3u8Parser === 'undefined') {
-          h.loadScript('https://cdn.jsdelivr.net/npm/m3u8-parser@7.1.0/dist/m3u8-parser.min.js');
-        h.loadScript('https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js');
-        }
+        h.loadScript('https://cdn.jsdelivr.net/npm/m3u8-parser@7.1.0/dist/m3u8-parser.min.js');
       },
 
       onFile: async function (file, content, h) {
@@ -99,10 +93,7 @@
           h.showError('Could not open m3u8 file', 'The file may be corrupted or use an unsupported M3U8 variant. Ensure it follows HLS specifications.');
         }
       },
-      onDestroy: function() {
-        if (_hlsInstance) { try { _hlsInstance.destroy(); } catch(e) {} _hlsInstance = null; }
-        if (_hlsUrl) { URL.revokeObjectURL(_hlsUrl); _hlsUrl = null; }
-      }
+      onDestroy: function() {}
     });
   };
 
@@ -199,65 +190,6 @@
 
     html += `</div>`;
     h.render(html);
-    // HLS Player Init
-    setTimeout(() => {
-      const video = document.getElementById('hls-player');
-      if (!video || !window.Hls) return;
-
-      if (_hlsInstance) { try { _hlsInstance.destroy(); } catch(e) {} _hlsInstance = null; }
-      if (_hlsUrl) { URL.revokeObjectURL(_hlsUrl); _hlsUrl = null; }
-
-      const blob = new Blob([content], { type: 'application/vnd.apple.mpegurl' });
-      const url = URL.createObjectURL(blob);
-      _hlsUrl = url;
-
-      if (Hls.isSupported()) {
-        _hlsInstance = new Hls();
-        _hlsInstance.loadSource(url);
-        _hlsInstance.attachMedia(video);
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = url;
-      }
-
-      // Media Controls Logic
-      const speedBtns = document.querySelectorAll('.speed-btn');
-      const volumeSlider = document.querySelector('.volume-slider');
-      const volumeValue = document.querySelector('.volume-value');
-      
-      speedBtns.forEach(btn => {
-        btn.onclick = () => {
-          const speed = parseFloat(btn.dataset.speed);
-          video.playbackRate = speed;
-          speedBtns.forEach(b => b.classList.remove('bg-white', 'shadow-sm'));
-          btn.classList.add('bg-white', 'shadow-sm');
-        };
-      });
-
-      if (volumeSlider) {
-        let audioCtx, source, gainNode;
-        volumeSlider.oninput = () => {
-          const vol = parseFloat(volumeSlider.value);
-          volumeValue.textContent = Math.round(vol * 100) + '%';
-          if (vol > 1.0) {
-            if (!audioCtx) {
-              try {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                source = audioCtx.createMediaElementSource(video);
-                gainNode = audioCtx.createGain();
-                source.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
-              } catch (e) {}
-            }
-            if (gainNode) gainNode.gain.value = vol;
-            video.volume = 1.0;
-          } else {
-            if (gainNode) gainNode.gain.value = 1.0;
-            video.volume = vol;
-          }
-        };
-      }
-    }, 1000);
-
 
     // Attach Search
     const search = document.getElementById('tool-search');
@@ -291,7 +223,7 @@
         } else if (isMedia) {
           const col = [
             { key: 'duration', sort: (a, b) => a.duration - b.duration },
-            { key: 'uri', sort: (a, b) => s.uri.localeCompare(s.uri) }
+            { key: 'uri', sort: (a, b) => a.uri.localeCompare(b.uri) }
           ].find(c => c.key === key);
           if (col) manifest.segments.sort((a, b) => col.sort(a, b) * sortDir);
         }
