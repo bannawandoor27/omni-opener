@@ -1791,6 +1791,18 @@
       "category": "design",
       "icon": "🏗️",
       "script_url": "/tools/ifc-opener.js"
+    },
+    {
+      "slug": "nii-opener",
+      "title": "NII Opener",
+      "h1": "Open & View .nii Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .nii files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".nii"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/nii-opener.js"
     }
   ]
 }
