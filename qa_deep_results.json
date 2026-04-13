@@ -1,0 +1,736 @@
+[
+  {
+    "slug": "drawio-viewer",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "md-to-pdf",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "csv-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "json-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "xml-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "yaml-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "svg-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "pdf-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "docx-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "xlsx-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "pptx-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "rtf-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "txt-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "html-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "log-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "ini-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "sql-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "odt-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "ods-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "odp-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "avro-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "parquet-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "proto-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "geojson-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "kml-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "gpx-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "graphql-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "ics-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "vcf-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "eml-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "mbox-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "pem-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "crt-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "key-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "wasm-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "glb-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "gltf-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "obj-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "stl-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "fbx-opener",
+    "success": false,
+    "errors": [
+      "Request failed: https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.min.js (net::ERR_ABORTED)"
+    ]
+  },
+  {
+    "slug": "step-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "iges-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "dxf-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "dwg-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "eps-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "ai-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "psd-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "sketch-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "fig-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "xd-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "webp-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "avif-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "heic-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "tiff-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "bmp-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "ico-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "gif-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "apng-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "mp3-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "wav-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "ogg-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "flac-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "aac-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "midi-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "mp4-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "webm-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "avi-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "mkv-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "mov-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "m3u8-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "srt-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "vtt-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "ass-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "lrc-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "zip-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "tar-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "gz-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "bz2-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "xz-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "7z-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "rar-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "iso-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "dmg-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "deb-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "rpm-opener",
+    "success": false,
+    "errors": [
+      "Unexpected identifier 'DB'",
+      "window.initTool is not defined"
+    ]
+  },
+  {
+    "slug": "flatpak-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "appimage-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "war-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "ear-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "apk-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "aab-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "ipa-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "exe-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "msi-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "dll-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "so-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "dylib-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "whl-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "egg-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "gem-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "nupkg-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "crate-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "jar-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "snap-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "mobi-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "cbz-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "cbr-opener",
+    "success": false,
+    "errors": [
+      "Request failed: https://cdn.jsdelivr.net/npm/@fiahfy/unrar.js@0.1.1/dist/unrar.js (net::ERR_ABORTED)"
+    ]
+  },
+  {
+    "slug": "ttf-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "otf-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "woff-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "woff2-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "sqlite-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "dcm-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "shp-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "ipynb-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "har-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "pcap-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "plist-opener",
+    "success": false,
+    "errors": [
+      "Cannot find module '@xmldom/xmldom'"
+    ]
+  },
+  {
+    "slug": "toml-opener",
+    "success": false,
+    "errors": [
+      "Cannot read properties of undefined (reading 'then')"
+    ]
+  },
+  {
+    "slug": "tga-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "dds-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "torrent-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "epub-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "hdf5-opener",
+    "success": false,
+    "errors": [
+      "Request failed: https://cdn.jsdelivr.net/npm/jsfive@0.3.10/dist/browser/jsfive.min.js (net::ERR_ABORTED)"
+    ]
+  },
+  {
+    "slug": "fits-opener",
+    "success": false,
+    "errors": [
+      "Request failed: https://cdn.jsdelivr.net/npm/fitsjs@0.10.4/dist/fits.min.js (net::ERR_ABORTED)"
+    ]
+  },
+  {
+    "slug": "nc-opener",
+    "success": false,
+    "errors": [
+      "Request failed: https://cdn.jsdelivr.net/npm/netcdfjs@0.11.0/dist/netcdfjs.min.js (net::ERR_ABORTED)"
+    ]
+  },
+  {
+    "slug": "las-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "dae-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "exr-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "p12-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "p7s-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "cue-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "pdb-opener",
+    "success": false,
+    "errors": [
+      "Request failed: https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.min.js (net::ERR_ABORTED)"
+    ]
+  },
+  {
+    "slug": "djvu-opener",
+    "success": false,
+    "errors": [
+      "Request failed: https://djvu.js.org/djvu.js (net::ERR_ABORTED)",
+      "Request failed: https://djvu.js.org/djvu_viewer.css (net::ERR_BLOCKED_BY_ORB)"
+    ]
+  },
+  {
+    "slug": "xps-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "ply-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "3ds-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "3mf-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "eot-opener",
+    "success": false,
+    "errors": [
+      "Request failed: https://cdn.jsdelivr.net/npm/fonteditor-core@2.1.11/dist/fonteditor.min.js (net::ERR_ABORTED)"
+    ]
+  },
+  {
+    "slug": "ktx-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "pvr-opener",
+    "success": true,
+    "errors": []
+  },
+  {
+    "slug": "msg-opener",
+    "success": true,
+    "errors": []
+  }
+]
