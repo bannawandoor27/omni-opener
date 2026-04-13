@@ -9,7 +9,7 @@
   let resizeHandler, metadata = {};
 
   window.initTool = function (toolConfig, mountEl) {
-    OmniTool.create(mountEl, toolConfig, {
+    const opts = {
       accept: '.ktx,.ktx2',
       binary: true,
       infoHtml: '<strong>KTX Viewer:</strong> High-performance viewer for KTX1 and KTX2 (Basis Universal) textures. Supports compressed formats and mipmaps. All processing happens in your browser.',
@@ -22,7 +22,9 @@
             if (!renderer || !scene || !camera) return;
             renderer.render(scene, camera);
             const dataUrl = renderer.domElement.toDataURL('image/png');
-            h.download('texture-export.png', dataUrl, 'image/png');
+            // Convert dataURL to Blob for proper download via SDK
+            const blob = dataURLToBlob(dataUrl);
+            h.download('texture-export.png', blob, 'image/png');
           }
         },
         {
@@ -35,41 +37,49 @@
       ],
 
       onInit: function (h) {
-        h.loadScripts([
-          'https://cdn.jsdelivr.net/npm/three@0.137.0/build/three.min.js',
-          'https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/loaders/KTXLoader.js',
-          'https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/loaders/KTX2Loader.js',
-          'https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/controls/OrbitControls.js'
-        ]);
+        // Return promise to signal async init, though SDK might not await it
+        return new Promise((resolve) => {
+          h.loadScripts([
+            'https://cdn.jsdelivr.net/npm/three@0.137.0/build/three.min.js',
+            'https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/loaders/KTXLoader.js',
+            'https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/loaders/KTX2Loader.js',
+            'https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/controls/OrbitControls.js'
+          ], resolve);
+        });
       },
 
       onFile: function (file, content, h) {
-        if (!window.THREE || !THREE.KTXLoader || !THREE.KTX2Loader || !THREE.OrbitControls) {
-          h.showLoading('Loading graphics engine...');
-          setTimeout(() => this.onFile(file, content, h), 300);
-          return;
-        }
-
-        h.showLoading('Analyzing texture...');
-
-        try {
-          const header = new Uint8Array(content.slice(0, 12));
-          const isKTX2 = header[1] === 0x4B && header[2] === 0x54 && header[3] === 0x58 && header[5] === 0x32;
-          
-          if (isKTX2) {
-            loadKTX2(content, file, h);
-          } else {
-            loadKTX1(content, file, h);
+        const checkAndRun = () => {
+          if (!window.THREE || !THREE.KTXLoader || !THREE.KTX2Loader || !THREE.OrbitControls) {
+            h.showLoading('Loading graphics engine...');
+            setTimeout(checkAndRun, 300);
+            return;
           }
-        } catch (err) {
-          h.showError('Parsing Error', err.message);
-        }
+
+          h.showLoading('Analyzing texture...');
+
+          try {
+            const header = new Uint8Array(content.slice(0, 12));
+            const isKTX2 = header[1] === 0x4B && header[2] === 0x54 && header[3] === 0x58 && header[5] === 0x32;
+            
+            if (isKTX2) {
+              loadKTX2(content, file, h);
+            } else {
+              loadKTX1(content, file, h);
+            }
+          } catch (err) {
+            h.showError('Parsing Error', err.message);
+          }
+        };
+        checkAndRun();
       },
 
       onDestroy: function () {
         cleanup();
       }
-    });
+    };
+
+    OmniTool.create(mountEl, toolConfig, opts);
 
     function cleanup() {
       if (animationId) cancelAnimationFrame(animationId);
@@ -108,6 +118,7 @@
     }
 
     function loadKTX2(content, file, h) {
+      // KTX2Loader needs a renderer to detect support for compressed formats
       const tempRenderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
       const loader = new THREE.KTX2Loader();
       loader.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/libs/basis/');
@@ -125,8 +136,8 @@
     function renderTexture(texture, version, file, h) {
       cleanup();
 
-      const width = texture.image.width || 0;
-      const height = texture.image.height || 0;
+      const width = texture.image ? texture.image.width : (texture.mipmaps && texture.mipmaps[0] ? texture.mipmaps[0].width : 0);
+      const height = texture.image ? texture.image.height : (texture.mipmaps && texture.mipmaps[0] ? texture.mipmaps[0].height : 0);
       const mipmaps = texture.mipmaps ? texture.mipmaps.length : 1;
 
       metadata = {
@@ -161,6 +172,8 @@
       `);
 
       const container = document.getElementById('ktx-viewport');
+      if (!container) return;
+
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x0f172a);
 
@@ -177,7 +190,7 @@
       texture.magFilter = THREE.LinearFilter;
       texture.needsUpdate = true;
 
-      const texAspect = width / height;
+      const texAspect = (width / height) || 1;
       const geometry = new THREE.PlaneGeometry(texAspect > 1 ? 1 : texAspect, texAspect > 1 ? 1 / texAspect : 1);
       const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
       mesh = new THREE.Mesh(geometry, material);
@@ -187,7 +200,7 @@
       controls.enableDamping = true;
 
       resizeHandler = () => {
-        if (!container || !renderer) return;
+        if (!container || !renderer || !camera) return;
         camera.aspect = container.clientWidth / container.clientHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(container.clientWidth, container.clientHeight);
@@ -197,7 +210,7 @@
       function animate() {
         if (!renderer) return;
         animationId = requestAnimationFrame(animate);
-        controls.update();
+        if (controls) controls.update();
         renderer.render(scene, camera);
       }
       animate();
@@ -205,8 +218,21 @@
   };
 
   function esc(str) {
+    if (!str) return '';
     const d = document.createElement('div');
     d.textContent = str;
     return d.innerHTML;
+  }
+
+  function dataURLToBlob(dataurl) {
+    const arr = dataurl.split(',');
+    const mime = arr[0].match(/:(.*?);/)[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
   }
 })();
