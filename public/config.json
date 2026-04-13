@@ -1539,6 +1539,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/las-opener.js"
+    },
+    {
+      "slug": "dae-opener",
+      "title": "DAE Opener",
+      "h1": "Open & View .dae Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .dae files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".dae"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/dae-opener.js"
     }
   ]
 }
