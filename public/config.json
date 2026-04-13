@@ -1779,6 +1779,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/lz4-opener.js"
+    },
+    {
+      "slug": "ifc-opener",
+      "title": "IFC Opener",
+      "h1": "Open & View .ifc BIM Files Online",
+      "meta_description": "View and explore IFC (Industry Foundation Classes) BIM models directly in your browser. Professional architectural viewer, 100% private, no upload required.",
+      "formats": [
+        ".ifc"
+      ],
+      "category": "design",
+      "icon": "🏗️",
+      "script_url": "/tools/ifc-opener.js"
     }
   ]
 }
