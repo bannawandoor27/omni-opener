@@ -1911,6 +1911,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/pcd-opener.js"
+    },
+    {
+      "slug": "dot-opener",
+      "title": "DOT Opener",
+      "h1": "Open & View .dot Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .dot files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".dot"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/dot-opener.js"
     }
   ]
 }
