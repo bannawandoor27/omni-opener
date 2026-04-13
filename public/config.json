@@ -1875,6 +1875,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/onnx-opener.js"
+    },
+    {
+      "slug": "sf2-opener",
+      "title": "SF2 Opener",
+      "h1": "Open & View .sf2 Files Online — Free & Private",
+      "meta_description": "Open, view, and inspect SoundFont (.sf2) files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".sf2"
+      ],
+      "category": "audio",
+      "icon": "🎵",
+      "script_url": "/tools/sf2-opener.js"
     }
   ]
 }
