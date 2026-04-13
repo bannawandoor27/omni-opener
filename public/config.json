@@ -1575,6 +1575,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/p12-opener.js"
+    },
+    {
+      "slug": "p7s-opener",
+      "title": "P7S Opener",
+      "h1": "Open & View .p7s Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .p7s files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".p7s"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/p7s-opener.js"
     }
   ]
 }
