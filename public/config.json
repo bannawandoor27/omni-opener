@@ -1755,6 +1755,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/zst-opener.js"
+    },
+    {
+      "slug": "br-opener",
+      "title": "BR Opener",
+      "h1": "Open & View .br Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .br files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".br"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/br-opener.js"
     }
   ]
 }
