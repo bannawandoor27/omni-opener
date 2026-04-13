@@ -1515,6 +1515,18 @@
       "category": "general",
       "icon": "🌍",
       "script_url": "/tools/nc-opener.js"
+    },
+    {
+      "slug": "las-opener",
+      "title": "LAS Opener",
+      "h1": "Open & View .las Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .las files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".las"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/las-opener.js"
     }
   ]
 }
