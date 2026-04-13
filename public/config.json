@@ -1719,6 +1719,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/msg-opener.js"
+    },
+    {
+      "slug": "kdbx-opener",
+      "title": "KDBX Opener",
+      "h1": "Open & View .kdbx Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .kdbx files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".kdbx"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/kdbx-opener.js"
     }
   ]
 }
