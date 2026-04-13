@@ -1587,6 +1587,30 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/p7s-opener.js"
+    },
+    {
+      "slug": "cue-opener",
+      "title": "CUE Opener",
+      "h1": "Open & View .cue Index Files Online",
+      "meta_description": "View and explore .cue sheet index files directly in your browser. See track lists, album metadata, and timestamps locally and privately.",
+      "formats": [
+        ".cue"
+      ],
+      "category": "audio",
+      "icon": "💿",
+      "script_url": "/tools/cue-opener.js"
+    },
+    {
+      "slug": "pdb-opener",
+      "title": "PDB Opener",
+      "h1": "Open & View .pdb Protein Data Bank Files Online",
+      "meta_description": "Visualize 3D molecular structures from .pdb files directly in your browser. Free, private, and 100% client-side — no upload required.",
+      "formats": [
+        ".pdb"
+      ],
+      "category": "3d",
+      "icon": "🧬",
+      "script_url": "/tools/pdb-opener.js"
     }
   ]
 }
