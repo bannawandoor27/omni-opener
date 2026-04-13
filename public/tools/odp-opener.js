@@ -29,10 +29,10 @@
         helpers.loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
       },
 
-      onFile: function (file, content, helpers) {
+      onFile: function _onFileFn(file, content, helpers) {
         if (typeof JSZip === 'undefined') {
           helpers.showLoading('Initialising parser...');
-          setTimeout(() => this.onFile(file, content, helpers), 500);
+          setTimeout(() => _onFileFn(file, content, helpers), 500);
           return;
         }
 

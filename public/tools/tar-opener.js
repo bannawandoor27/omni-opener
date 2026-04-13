@@ -233,6 +233,8 @@
     document.getElementById('tar-preview-modal').onclick = (e) => { if (e.target.id === 'tar-preview-modal') hidePreview(); };
   }
 
+  var _tarLastPreviewUrl = null;
+
   function showPreview(file, helpers) {
     const modal = document.getElementById('tar-preview-modal');
     const contentEl = document.getElementById('preview-content');
@@ -251,8 +253,10 @@
     const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico'].includes(ext);
 
     if (isImage) {
+      if (_tarLastPreviewUrl) { URL.revokeObjectURL(_tarLastPreviewUrl); _tarLastPreviewUrl = null; }
       const blob = new Blob([file.data]);
       const url = URL.createObjectURL(blob);
+      _tarLastPreviewUrl = url;
       contentEl.innerHTML = `<div class="flex items-center justify-center h-full"><img src="${url}" class="max-w-full max-h-full object-contain shadow-lg rounded-lg"></div>`;
     } else {
       const text = new TextDecoder().decode(file.data);
@@ -268,6 +272,7 @@
   }
 
   function hidePreview() {
+    if (_tarLastPreviewUrl) { URL.revokeObjectURL(_tarLastPreviewUrl); _tarLastPreviewUrl = null; }
     document.getElementById('tar-preview-modal').classList.add('hidden');
     document.getElementById('preview-content').innerHTML = '';
   }

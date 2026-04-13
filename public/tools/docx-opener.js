@@ -46,10 +46,10 @@
         }
       ],
 
-      onFile: function (file, content, h) {
+      onFile: function _onFileFn(file, content, h) {
         if (typeof mammoth === 'undefined' || typeof TurndownService === 'undefined') {
           h.showLoading('Loading Word engines...');
-          setTimeout(() => this.onFile(file, content, h), 500);
+          setTimeout(() => _onFileFn(file, content, h), 500);
           return;
         }
 

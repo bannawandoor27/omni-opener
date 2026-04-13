@@ -90,10 +90,10 @@
         });
       },
 
-      onFile: function (file, content, h) {
+      onFile: function _onFileFn(file, content, h) {
         if (typeof THREE === 'undefined' || typeof THREE.OrbitControls === 'undefined') {
           h.showLoading('Initializing 3D engine...');
-          setTimeout(() => this.onFile(file, content, h), 500);
+          setTimeout(() => _onFileFn(file, content, h), 500);
           return;
         }
 

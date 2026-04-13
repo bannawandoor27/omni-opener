@@ -32,7 +32,7 @@
       onFile: function _onFile(file, content, h) {
         if (typeof L === 'undefined' || typeof toGeoJSON === 'undefined' || typeof Chart === 'undefined') {
           h.showLoading('Loading map engines...');
-          setTimeout(() => this.onFile(file, content, h), 500);
+          setTimeout(() => _onFileFn(file, content, h), 500);
           return;
         }
 

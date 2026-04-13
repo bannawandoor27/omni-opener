@@ -44,10 +44,10 @@
         }
       ],
 
-      onFile: function (file, content, h) {
+      onFile: function _onFileFn(file, content, h) {
         if (typeof RTFJS === 'undefined' || typeof TurndownService === 'undefined') {
           h.showLoading('Loading RTF engines...');
-          setTimeout(() => this.onFile(file, content, h), 500);
+          setTimeout(() => _onFileFn(file, content, h), 500);
           return;
         }
 

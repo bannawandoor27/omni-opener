@@ -74,6 +74,8 @@
     const fontId = 'font-' + Math.random().toString(36).substring(2, 9);
     const blob = new Blob([buffer], { type: 'font/woff' });
     const url = URL.createObjectURL(blob);
+    // Revoke blob URL after font has loaded
+    setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
     
     // Inject @font-face style
     const styleId = 'omni-font-style';

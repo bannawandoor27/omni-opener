@@ -49,10 +49,10 @@
         }
       ],
 
-      onFile: function (file, content, h) {
+      onFile: function _onFileFn(file, content, h) {
         if (typeof jQuery === 'undefined' || typeof JSZip === 'undefined' || !jQuery.fn.pptx2html) {
           h.showLoading('Loading presentation engines...');
-          setTimeout(() => this.onFile(file, content, h), 1000);
+          setTimeout(() => _onFileFn(file, content, h), 1000);
           return;
         }
 

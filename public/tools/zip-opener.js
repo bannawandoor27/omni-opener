@@ -227,6 +227,8 @@
     };
   }
 
+  var _lastPreviewUrl = null;
+
   async function showPreview(file, helpers) {
     const modal = document.getElementById('zip-preview-modal');
     const contentEl = document.getElementById('preview-content');
@@ -248,7 +250,9 @@
     try {
       if (isImage) {
         const blob = await file.entry.async('blob');
+        if (_lastPreviewUrl) { URL.revokeObjectURL(_lastPreviewUrl); _lastPreviewUrl = null; }
         const url = URL.createObjectURL(blob);
+        _lastPreviewUrl = url;
         contentEl.innerHTML = `<div class="flex items-center justify-center h-full"><img src="${url}" class="max-w-full max-h-full object-contain shadow-lg rounded-lg"></div>`;
       } else {
         const text = await file.entry.async('string');
@@ -269,6 +273,7 @@
   }
 
   function hidePreview() {
+    if (_lastPreviewUrl) { URL.revokeObjectURL(_lastPreviewUrl); _lastPreviewUrl = null; }
     document.getElementById('zip-preview-modal').classList.add('hidden');
     document.getElementById('preview-content').innerHTML = '';
   }

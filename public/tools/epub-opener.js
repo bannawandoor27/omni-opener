@@ -89,7 +89,7 @@
             attempts++;
             if (typeof JSZip !== 'undefined') {
               clearInterval(checkZip);
-              this.onFile(file, content, helpers);
+              _onFileFn(file, content, helpers);
             } else if (attempts > 20) {
               clearInterval(checkZip);
               helpers.showError('Engine timeout', 'The JSZip library failed to load. Please check your connection and try again.');
@@ -190,10 +190,14 @@
           label: '📥 Download',
           id: 'download',
           onClick: function(helpers) {
-            helpers.download(helpers.getFile().name, helpers.getContent());
+            helpers.download(helpers.getFile().name, helpers.getContent(), 'application/epub+zip');
           }
         }
-      ]
+      ],
+
+      onDestroy: function() {
+        cleanupUrls();
+      }
     });
   };
 

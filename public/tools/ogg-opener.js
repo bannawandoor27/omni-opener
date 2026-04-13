@@ -51,7 +51,7 @@
           h.loadScript('https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js', () => {
             // Re-trigger file processing once script is loaded
             if (h.getFile() === file) {
-               this.onFile(file, content, h);
+               _onFileFn(file, content, h);
             }
           });
           return;

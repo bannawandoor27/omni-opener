@@ -6,6 +6,7 @@
   'use strict';
 
   var wavesurfer = null;
+  var currentWavUrl = null;
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
@@ -73,8 +74,12 @@
 
       onDestroy: function () {
         if (wavesurfer) {
-          wavesurfer.destroy();
+          try { wavesurfer.destroy(); } catch(e) {}
           wavesurfer = null;
+        }
+        if (currentWavUrl) {
+          URL.revokeObjectURL(currentWavUrl);
+          currentWavUrl = null;
         }
       }
     });
@@ -126,10 +131,16 @@
 
     if (wavesurfer) {
       wavesurfer.destroy();
+      wavesurfer = null;
+    }
+    if (currentWavUrl) {
+      URL.revokeObjectURL(currentWavUrl);
+      currentWavUrl = null;
     }
 
     var blob = new Blob([buffer], { type: 'audio/wav' });
     var url = URL.createObjectURL(blob);
+    currentWavUrl = url;
 
     wavesurfer = WaveSurfer.create({
       container: '#waveform',

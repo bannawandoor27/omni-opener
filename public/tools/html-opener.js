@@ -39,14 +39,16 @@
             const blob = new Blob([helpers.getContent()], { type: 'text/html' });
             const url = URL.createObjectURL(blob);
             window.open(url, '_blank');
+            // Revoke after browser has time to navigate
+            setTimeout(function() { URL.revokeObjectURL(url); }, 10000);
           }
         }
       ],
 
-      onFile: function (file, content, helpers) {
+      onFile: function _onFileFn(file, content, helpers) {
         if (typeof hljs === 'undefined') {
           helpers.showLoading('Loading highlighter...');
-          setTimeout(() => this.onFile(file, content, helpers), 500);
+          setTimeout(() => _onFileFn(file, content, helpers), 500);
           return;
         }
 

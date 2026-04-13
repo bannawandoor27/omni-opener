@@ -28,10 +28,10 @@
         });
       },
 
-      onFile: function (file, content, h) {
+      onFile: function _onFileFn(file, content, h) {
         if (!window.THREE || !THREE.GLTFLoader || !THREE.OrbitControls) {
           h.showLoading('Loading 3D engine...');
-          setTimeout(() => this.onFile(file, content, h), 1000);
+          setTimeout(() => _onFileFn(file, content, h), 1000);
           return;
         }
 

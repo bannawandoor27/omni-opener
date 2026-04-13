@@ -46,10 +46,10 @@
         });
       },
 
-      onFile: function (file, content, h) {
+      onFile: function _onFileFn(file, content, h) {
         if (typeof pdfjsLib === 'undefined') {
           h.showLoading('Loading AI engine...');
-          setTimeout(() => this.onFile(file, content, h), 500);
+          setTimeout(() => _onFileFn(file, content, h), 500);
           return;
         }
 

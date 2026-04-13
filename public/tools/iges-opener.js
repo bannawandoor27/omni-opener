@@ -23,10 +23,10 @@
           });
         });
       },
-      onFile: function(file, content, helpers) {
+      onFile: function _onFileFn(file, content, helpers) {
         helpers.showLoading('Parsing CAD file...');
         if (typeof occtImportJs === 'undefined') {
-          setTimeout(() => this.onFile(file, content, helpers), 500);
+          setTimeout(() => _onFileFn(file, content, helpers), 500);
           return;
         }
         

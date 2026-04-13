@@ -1,5 +1,7 @@
 (function() {
   window.initTool = function(toolConfig, mountEl) {
+    var _videoUrl = null;
+
     OmniTool.create(mountEl, toolConfig, {
       accept: '.webm',
       dropLabel: 'Drop a .webm file here',
@@ -18,7 +20,9 @@
           const blob = new Blob([content], { type: 'video/webm' });
           const url = URL.createObjectURL(blob);
           
-          // Store blob and filename for actions
+          // Revoke previous URL and track the new one
+          if (_videoUrl) { URL.revokeObjectURL(_videoUrl); }
+          _videoUrl = url;
           helpers.setState('videoBlob', blob);
           helpers.setState('fileName', file.name);
 
@@ -203,7 +207,10 @@
           }
         }
       ],
-      infoHtml: '<strong>Privacy:</strong> 100% client-side. Your files never leave your device.'
+      infoHtml: '<strong>Privacy:</strong> 100% client-side. Your files never leave your device.',
+      onDestroy: function() {
+        if (_videoUrl) { URL.revokeObjectURL(_videoUrl); _videoUrl = null; }
+      }
     });
   };
 })();

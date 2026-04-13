@@ -6,6 +6,9 @@
   'use strict';
 
   window.initTool = function (toolConfig, mountEl) {
+    var _hlsInstance = null;
+    var _hlsUrl = null;
+
     OmniTool.create(mountEl, toolConfig, {
       accept: '.m3u8,.m3u',
       dropLabel: 'Drop an M3U8 or M3U playlist here',
@@ -95,6 +98,10 @@
         } catch (err) {
           h.showError('Could not open m3u8 file', 'The file may be corrupted or use an unsupported M3U8 variant. Ensure it follows HLS specifications.');
         }
+      },
+      onDestroy: function() {
+        if (_hlsInstance) { try { _hlsInstance.destroy(); } catch(e) {} _hlsInstance = null; }
+        if (_hlsUrl) { URL.revokeObjectURL(_hlsUrl); _hlsUrl = null; }
       }
     });
   };
@@ -197,13 +204,17 @@
       const video = document.getElementById('hls-player');
       if (!video || !window.Hls) return;
 
+      if (_hlsInstance) { try { _hlsInstance.destroy(); } catch(e) {} _hlsInstance = null; }
+      if (_hlsUrl) { URL.revokeObjectURL(_hlsUrl); _hlsUrl = null; }
+
       const blob = new Blob([content], { type: 'application/vnd.apple.mpegurl' });
       const url = URL.createObjectURL(blob);
+      _hlsUrl = url;
 
       if (Hls.isSupported()) {
-        const hls = new Hls();
-        hls.loadSource(url);
-        hls.attachMedia(video);
+        _hlsInstance = new Hls();
+        _hlsInstance.loadSource(url);
+        _hlsInstance.attachMedia(video);
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = url;
       }

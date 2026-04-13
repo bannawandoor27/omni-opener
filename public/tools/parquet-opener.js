@@ -45,7 +45,7 @@
       onFile: async function (file, content, h) {
         if (typeof parquet === 'undefined') {
           h.showLoading('Loading Parquet engine...');
-          setTimeout(() => this.onFile(file, content, h), 500);
+          setTimeout(() => _onFileFn(file, content, h), 500);
           return;
         }
 

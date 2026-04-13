@@ -28,7 +28,7 @@
       onFile: function _onFile(file, content, h) {
         if (typeof L === 'undefined') {
           h.showLoading('Loading Map engine...');
-          setTimeout(() => this.onFile(file, content, h), 500);
+          setTimeout(() => _onFileFn(file, content, h), 500);
           return;
         }
 

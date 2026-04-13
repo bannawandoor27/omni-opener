@@ -92,6 +92,8 @@
       }
     `;
     document.head.appendChild(style);
+    // Revoke blob URL after a delay — browser will have loaded the font by then
+    setTimeout(function() { URL.revokeObjectURL(fontUrl); }, 5000);
 
     const html = `
       <div class="p-6">

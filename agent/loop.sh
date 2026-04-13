@@ -322,9 +322,10 @@ update_config() {
 # ── Git Commit & Push ─────────────────────────────────────
 commit_and_push() {
   local format="$1"
+  local message="${2:-feat: add ${format}-opener tool [automated]}"
   cd "$ROOT"
   git add -A
-  git commit -m "feat: add ${format}-opener tool [automated]" || true
+  git commit -m "$message" || true
   git push origin main 2>&1 || git push origin master 2>&1
   # Regenerate sitemap and pre-render tool pages after deploy
   if [[ -f "$ROOT/scripts/generate-sitemap.js" ]]; then
@@ -488,24 +489,26 @@ main() {
         perfect_tool "$reperfect_format"
         if validate_tool "$reperfect_format"; then
           mark_reperfected "$reperfect_format"
-          commit_and_push "$reperfect_format"
+          commit_and_push "$reperfect_format" "fix: perfect ${reperfect_format}-opener [automated]"
           ok "✅ Re-perfected and deployed: $reperfect_format"
         else
           warn "Re-perfection broke $reperfect_format — running improve and marking done anyway"
           improve_tool "$reperfect_format"
           mark_reperfected "$reperfect_format"
-          commit_and_push "$reperfect_format"
+          commit_and_push "$reperfect_format" "fix: improve ${reperfect_format}-opener [automated]"
         fi
         sleep $SLEEP_BETWEEN
         continue
       fi
 
-      ok "🎉 All formats built and re-perfected!"
+      ok "🎉 All tools perfected — resetting cycle to continue improving..."
       # Retry any formats that previously failed
       retry_failed
-      # Ask Gemini to discover new formats and add to queue
-      discover_formats
-      log "😴 Sleeping 5 minutes before next discovery cycle..."
+      # Reset the reperfected list so we cycle through all tools again indefinitely
+      # (Do NOT discover new formats — focus is on perfecting existing tools)
+      local tmp; tmp=$(mktemp)
+      jq '.reperfected = []' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
+      log "😴 Sleeping 5 minutes before next perfection cycle..."
       sleep 300
       continue
     fi

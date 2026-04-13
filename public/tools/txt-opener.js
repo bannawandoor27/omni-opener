@@ -53,7 +53,7 @@
 
         if (typeof hljs === 'undefined' || typeof marked === 'undefined' || typeof jspdf === 'undefined') {
           helpers.showLoading('Loading text engines...');
-          setTimeout(() => this.onFile(file, content, helpers), 500);
+          setTimeout(() => _onFileFn(file, content, helpers), 500);
           return;
         }
 

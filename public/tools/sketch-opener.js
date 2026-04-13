@@ -13,6 +13,7 @@
   }
 
   window.initTool = function (toolConfig, mountEl) {
+    var _previewUrl = null;
     OmniTool.create(mountEl, toolConfig, {
       accept: '.sketch',
       binary: true,
@@ -22,10 +23,10 @@
         h.loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
       },
 
-      onFile: function (file, content, h) {
+      onFile: function _onFileFn(file, content, h) {
         if (typeof JSZip === 'undefined') {
           h.showLoading('Loading Sketch engine...');
-          setTimeout(() => this.onFile(file, content, h), 500);
+          setTimeout(() => _onFileFn(file, content, h), 500);
           return;
         }
 
@@ -34,7 +35,9 @@
           const previewFile = zip.file('previews/preview.png');
           if (previewFile) {
              previewFile.async('blob').then(blob => {
+                if (_previewUrl) { URL.revokeObjectURL(_previewUrl); }
                 const url = URL.createObjectURL(blob);
+                _previewUrl = url;
                 h.render(`
                   <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-surface-100 shadow-sm">
                     <div class="shrink-0 bg-white border-b border-surface-200 px-4 py-2 flex items-center justify-between">
@@ -60,6 +63,9 @@
         }).catch(err => {
            h.render(`<div class="p-12 text-center text-surface-400">This file does not appear to be a valid Sketch bundle.</div>`);
         });
+      },
+      onDestroy: function() {
+        if (_previewUrl) { URL.revokeObjectURL(_previewUrl); _previewUrl = null; }
       }
     });
   };

@@ -16,11 +16,23 @@ B3. Missing await/callback: If async library functions (JSZip, pdf.js, mammoth) 
 
 B4. CDN load order: If library B depends on library A, ensure A's callback loads B. Do not call library functions before their script has finished loading.
 
-B5. Memory leaks: If createObjectURL is called, revoke it after use with URL.revokeObjectURL(url) — but ONLY after the element has finished using it (e.g., for non-media elements; for <audio>/<video> leave it alive while element exists).
+B5. Memory leaks: If createObjectURL is called, revoke it after use with URL.revokeObjectURL(url). RULES:
+    - For image/blob previews: revoke when the next file loads (save URL in closure var, revoke at start of onFile) AND in onDestroy.
+    - For audio/video src: revoke in onDestroy only (keep alive while element is used).
+    - For font @font-face: setTimeout(revoke, 5000) after injecting (font needs time to load).
+    - Add onDestroy hook to the OmniTool.create() options object to clean up on unmount.
 
 B6. XSS vectors: If user file content is inserted into innerHTML without sanitization, at minimum remove <script> tags and javascript: hrefs. Always use escaping for file content shown in text contexts.
 
 B7. Large file handling: If the tool attempts to render the entire content of a very large file into the DOM at once (e.g., a 50MB log file), add pagination or truncation with a "showing first N rows" notice.
+
+B8. Strict mode self-reference crash (CRITICAL — very common bug): The OmniTool SDK calls opts.onFile() without binding `this`, so `this === undefined` inside onFile in strict mode. The pattern `onFile: function(file, content, h) { setTimeout(() => this.onFile(...)) }` will CRASH with "Cannot read properties of undefined (reading 'onFile')". Fix: use a named function expression and reference it by name:
+    WRONG:  onFile: function(file, content, h) { setTimeout(() => this.onFile(file, content, h), 500); }
+    RIGHT:  onFile: function _onFileFn(file, content, h) { setTimeout(function() { _onFileFn(file, content, h); }, 500); }
+
+B9. Global namespace pollution: Do NOT assign WaveSurfer, audio contexts, or media elements to window globals (e.g., window.ws = wavesurfer). Use closure variables inside initTool() instead. Inline onclick attributes referencing window.ws (e.g. onclick="window.ws.setPlaybackRate(0.5)") are broken if window.ws is not set. Replace with addEventListener after render.
+
+B10. canvas.toDataURL() passed to download(): helpers.download() expects a Blob or ArrayBuffer, not a string. canvas.toDataURL() returns a base64 string — if you pass it as content, the downloaded file will be corrupt. Use canvas.toBlob(function(blob) { helpers.download(filename, blob, mimeType); }, mimeType) instead.
 
 ══════════════════════════════════════════════════
 PART 2 — UX COMPLETENESS

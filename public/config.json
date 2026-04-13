@@ -610,6 +610,33 @@
       "script_url": "/tools/xd-opener.js"
     },
     {
+      "slug": "jpg-opener",
+      "title": "JPG Opener",
+      "h1": "Open & View JPG / JPEG Images Online",
+      "meta_description": "View JPEG and JPG images directly in your browser. Zoom, rotate, and download — free, private, no upload required.",
+      "formats": [
+        ".jpg",
+        ".jpeg",
+        ".jpe",
+        ".jfif"
+      ],
+      "category": "images",
+      "icon": "🖼️",
+      "script_url": "/tools/jpg-opener.js"
+    },
+    {
+      "slug": "png-opener",
+      "title": "PNG Opener",
+      "h1": "Open & View PNG Images Online",
+      "meta_description": "View PNG images directly in your browser with transparency support. Zoom, rotate, and download — free, private, no upload required.",
+      "formats": [
+        ".png"
+      ],
+      "category": "images",
+      "icon": "🖼️",
+      "script_url": "/tools/png-opener.js"
+    },
+    {
       "slug": "webp-opener",
       "title": "WebP Opener",
       "h1": "Open & View .webp Images Online",
