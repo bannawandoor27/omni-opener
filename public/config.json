@@ -1839,6 +1839,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/cbor-opener.js"
+    },
+    {
+      "slug": "wat-opener",
+      "title": "WAT Opener",
+      "h1": "Open & View .wat Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .wat files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".wat"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/wat-opener.js"
     }
   ]
 }
