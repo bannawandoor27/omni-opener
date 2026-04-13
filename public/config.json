@@ -1671,6 +1671,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/3mf-opener.js"
+    },
+    {
+      "slug": "eot-opener",
+      "title": "EOT Opener",
+      "h1": "Open & View .eot Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .eot files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".eot"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/eot-opener.js"
     }
   ]
 }
