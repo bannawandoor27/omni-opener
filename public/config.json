@@ -1743,6 +1743,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/warc-opener.js"
+    },
+    {
+      "slug": "zst-opener",
+      "title": "ZST Opener",
+      "h1": "Open & View .zst Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .zst files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".zst"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/zst-opener.js"
     }
   ]
 }
