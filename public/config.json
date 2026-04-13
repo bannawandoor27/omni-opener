@@ -1623,6 +1623,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/djvu-opener.js"
+    },
+    {
+      "slug": "xps-opener",
+      "title": "XPS Opener",
+      "h1": "Open & View .xps Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .xps files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".xps"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/xps-opener.js"
     }
   ]
 }
