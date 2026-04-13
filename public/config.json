@@ -1491,6 +1491,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/hdf5-opener.js"
+    },
+    {
+      "slug": "fits-opener",
+      "title": "FITS Opener",
+      "h1": "Open & View .fits Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .fits files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".fits"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/fits-opener.js"
     }
   ]
 }
