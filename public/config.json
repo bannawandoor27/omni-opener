@@ -1563,6 +1563,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/exr-opener.js"
+    },
+    {
+      "slug": "p12-opener",
+      "title": "P12 Opener",
+      "h1": "Open & View .p12 Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .p12 files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".p12"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/p12-opener.js"
     }
   ]
 }
