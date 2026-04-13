@@ -1635,6 +1635,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/xps-opener.js"
+    },
+    {
+      "slug": "ply-opener",
+      "title": "PLY Opener",
+      "h1": "Open & View .ply Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .ply files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".ply"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/ply-opener.js"
     }
   ]
 }
