@@ -1855,7 +1855,7 @@
     {
       "slug": "gguf-opener",
       "title": "GGUF Opener",
-      "h1": "Open & View .gguf Files Online \u2014 Free & Private",
+      "h1": "Open & View .gguf Files Online — Free & Private",
       "meta_description": "Open, view, and inspect GGUF model metadata and tensor info in your browser. 100% private, runs entirely client-side.",
       "formats": [
         ".gguf"
@@ -1863,6 +1863,18 @@
       "category": "system",
       "icon": "🧠",
       "script_url": "/tools/gguf-opener.js"
+    },
+    {
+      "slug": "onnx-opener",
+      "title": "ONNX Opener",
+      "h1": "Open & View .onnx Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .onnx files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".onnx"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/onnx-opener.js"
     }
   ]
 }
