@@ -1551,6 +1551,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/dae-opener.js"
+    },
+    {
+      "slug": "exr-opener",
+      "title": "EXR Opener",
+      "h1": "Open & View .exr Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .exr files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".exr"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/exr-opener.js"
     }
   ]
 }
