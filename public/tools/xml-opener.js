@@ -78,23 +78,13 @@
       actions: [
         {
           label: '✨ Prettify',
-          id: 'prettify-xml',
           onClick: function (helpers) {
             const formatted = prettifyXml(helpers.getContent());
             helpers.getMountEl()._onFileUpdate(helpers.getFile(), formatted);
           }
         },
         {
-          label: '📦 Minify',
-          id: 'minify-xml',
-          onClick: function (helpers) {
-            const minified = helpers.getContent().replace(/>\s+</g, '><').trim();
-            helpers.getMountEl()._onFileUpdate(helpers.getFile(), minified);
-          }
-        },
-        {
           label: '📥 Export JSON',
-          id: 'export-json',
           onClick: function (helpers) {
             const data = helpers.getState().parsedData;
             if (data) {
@@ -117,41 +107,50 @@
           const parser = new DOMParser();
           const xmlDoc = parser.parseFromString(content, "text/xml");
           const parsed = xmlToJson(xmlDoc);
-          helpers.setState('parsedData', parsed);
-          helpers.setState('xmlDoc', xmlDoc);
+          helpers.setState({ parsedData: parsed, xmlDoc: xmlDoc, fileName: file.name, fileSize: (content.length/1024).toFixed(1) });
 
           const isFeed = content.includes('<rss') || content.includes('<feed');
           
           const renderHtml = `
-            <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm">
+            <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm font-sans">
               <div class="shrink-0 bg-surface-50 border-b border-surface-200">
-                <div class="p-2 flex items-center justify-between">
-                  <div class="flex px-2">
-                    <button id="tab-tree" class="px-4 py-1.5 text-[10px] font-bold uppercase border-b-2 border-brand-500 text-brand-600">Tree View</button>
-                    ${isFeed ? `<button id="tab-preview" class="px-4 py-1.5 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400 hover:text-surface-600">Feed Preview</button>` : ''}
-                    <button id="tab-source" class="px-4 py-1.5 text-[10px] font-bold uppercase border-b-2 border-transparent text-surface-400 hover:text-surface-600">Source</button>
+                <div class="flex items-center justify-between px-4 py-3">
+                  <div class="flex items-center gap-3">
+                    <span class="text-xl">📄</span>
+                    <div class="space-y-0.5">
+                      <h3 class="text-sm font-bold text-surface-900 truncate max-w-md">${escapeHtml(file.name)}</h3>
+                      <p class="text-[10px] text-surface-400 font-bold uppercase tracking-wider">${helpers.getState().fileSize} KB • XML Document</p>
+                    </div>
                   </div>
-                  <div class="px-4 text-[10px] font-mono text-surface-400">${(content.length/1024).toFixed(1)} KB</div>
+                  <div class="flex gap-2">
+                    <button id="btn-expand-all" class="px-2 py-1 text-[10px] font-bold bg-white border border-surface-200 rounded hover:bg-surface-50 uppercase">Expand All</button>
+                    <button id="btn-collapse-all" class="px-2 py-1 text-[10px] font-bold bg-white border border-surface-200 rounded hover:bg-surface-50 uppercase">Collapse All</button>
+                  </div>
                 </div>
 
-                <!-- XPath Bar -->
-                <div class="px-3 pb-3 pt-1 flex gap-2 border-t border-surface-100">
+                <div class="px-4 pb-3 pt-1 flex gap-2 border-t border-surface-100">
                    <div class="relative flex-1">
                       <span class="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-brand-500 font-mono">/</span>
-                      <input type="text" id="xpath-query" placeholder="XPath Query (e.g. //item/title)" class="w-full pl-7 pr-4 py-1.5 text-xs font-mono border border-surface-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 bg-white">
+                      <input type="text" id="xpath-query" placeholder="XPath Query (e.g. //item/title)" class="w-full pl-7 pr-4 py-1.5 text-xs font-mono border border-surface-200 rounded-lg focus:ring-2 focus:ring-brand-500/20 bg-white outline-none">
                    </div>
-                   <button id="btn-run-xpath" class="px-3 py-1.5 bg-brand-600 text-white text-[10px] font-bold rounded-lg hover:bg-brand-700">Run</button>
+                   <button id="btn-run-xpath" class="px-4 py-1.5 bg-brand-600 text-white text-xs font-bold rounded-lg hover:bg-brand-700 shadow-sm">Run</button>
+                </div>
+
+                <div class="flex px-4 border-t border-surface-100 bg-white gap-4">
+                  <button id="tab-tree" class="px-2 py-2 text-[10px] font-bold uppercase tracking-wider border-b-2 border-brand-500 text-brand-600">Tree View</button>
+                  ${isFeed ? `<button id="tab-preview" class="px-2 py-2 text-[10px] font-bold uppercase tracking-wider border-b-2 border-transparent text-surface-400">Feed Preview</button>` : ''}
+                  <button id="tab-source" class="px-2 py-2 text-[10px] font-bold uppercase tracking-wider border-b-2 border-transparent text-surface-400">Source</button>
                 </div>
               </div>
 
-              <div id="xml-viewport" class="flex-1 overflow-auto p-4 bg-white font-mono text-[12px]">
-                <div id="view-xpath" class="hidden mb-6 p-4 bg-surface-50 rounded-xl border border-surface-200">
-                   <h3 class="text-[10px] font-bold uppercase text-surface-400 mb-2">Query Results</h3>
+              <div id="xml-viewport" class="flex-1 overflow-auto p-6 bg-white font-mono text-[13px]">
+                <div id="view-xpath" class="hidden mb-6 p-4 bg-brand-50 rounded-xl border border-brand-100">
+                   <h3 class="text-[10px] font-bold uppercase text-brand-600 mb-2">Query Results</h3>
                    <div id="xpath-results" class="space-y-2 max-h-48 overflow-auto"></div>
                 </div>
                 <div id="view-tree" class="space-y-1"></div>
                 <div id="view-preview" class="hidden prose prose-sm max-w-none"></div>
-                <pre id="view-source" class="hidden hljs language-xml p-4 rounded-lg overflow-auto"></pre>
+                <pre id="view-source" class="hidden hljs language-xml p-4 rounded-xl border border-surface-100 overflow-auto"></pre>
               </div>
             </div>
           `;
@@ -170,7 +169,7 @@
               if (entries.length === 0) return;
               const header = document.createElement('div');
               header.className = 'flex items-center gap-2 cursor-pointer group';
-              header.innerHTML = `<span class="text-[8px] text-surface-300 group-hover:text-brand-500">▼</span><span class="text-brand-700 font-bold">${escapeHtml(label || 'root')}</span>`;
+              header.innerHTML = `<span class="text-[10px] text-surface-300 group-hover:text-brand-500 transition-transform">▼</span><span class="text-brand-700 font-bold">${escapeHtml(label || 'root')}</span>`;
               const body = document.createElement('div');
               body.className = 'ml-1';
               header.onclick = () => {
@@ -189,7 +188,16 @@
 
           sourceContainer.innerHTML = hljs.highlight(content.slice(0, 50000), { language: 'xml' }).value;
 
-          // XPath Logic
+          document.getElementById('btn-expand-all').onclick = () => {
+            treeContainer.querySelectorAll('.hidden').forEach(el => el.classList.remove('hidden'));
+            treeContainer.querySelectorAll('.transition-transform').forEach(el => el.style.transform = '');
+          };
+
+          document.getElementById('btn-collapse-all').onclick = () => {
+            treeContainer.querySelectorAll('.ml-1').forEach(el => el.classList.add('hidden'));
+            treeContainer.querySelectorAll('.transition-transform').forEach(el => el.style.transform = 'rotate(-90deg)');
+          };
+
           document.getElementById('btn-run-xpath').onclick = () => {
              const query = document.getElementById('xpath-query').value.trim();
              if (!query) return;
@@ -203,7 +211,7 @@
                 let count = 0;
                 while (node) {
                    const item = document.createElement('div');
-                   item.className = 'p-2 bg-white border border-surface-100 rounded text-[11px] truncate';
+                   item.className = 'p-2 bg-white border border-brand-100 rounded text-[11px] truncate';
                    item.textContent = node.textContent || node.outerHTML || String(node);
                    resultsList.appendChild(item);
                    node = nodes.iterateNext();
@@ -215,17 +223,17 @@
              }
           };
 
-          const tabs = { tree: document.getElementById('tab-tree'), preview: document.getElementById('tab-preview'), source: document.getElementById('tab-source') };
-          const views = { tree: treeContainer, preview: previewContainer, source: sourceContainer };
-          Object.keys(tabs).forEach(k => {
-            if (!tabs[k]) return;
-            tabs[k].onclick = () => {
-              Object.values(tabs).forEach(t => t && t.classList.replace('border-brand-500', 'border-transparent'));
-              Object.values(tabs).forEach(t => t && t.classList.replace('text-brand-600', 'text-surface-400'));
-              tabs[k].classList.replace('border-transparent', 'border-brand-500');
-              tabs[k].classList.replace('text-surface-400', 'text-brand-600');
-              Object.values(views).forEach(v => v && v.classList.add('hidden'));
-              views[k].classList.remove('hidden');
+          const tabBtns = [document.getElementById('tab-tree'), document.getElementById('tab-preview'), document.getElementById('tab-source')].filter(Boolean);
+          const views = [treeContainer, previewContainer, sourceContainer].filter(Boolean);
+
+          tabBtns.forEach((btn, idx) => {
+            btn.onclick = () => {
+              tabBtns.forEach(b => b.classList.replace('border-brand-500', 'border-transparent'));
+              tabBtns.forEach(b => b.classList.replace('text-brand-600', 'text-surface-400'));
+              btn.classList.replace('border-transparent', 'border-brand-500');
+              btn.classList.replace('text-surface-400', 'text-brand-600');
+              views.forEach(v => v.classList.add('hidden'));
+              views[idx].classList.remove('hidden');
             };
           });
         } catch (e) {
@@ -235,4 +243,3 @@
     });
   };
 })();
-

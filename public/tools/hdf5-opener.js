@@ -1,206 +1,123 @@
-/**
- * OmniOpener — HDF5 Viewer Tool
- * Uses OmniTool SDK and jsfive to explore HDF5 files in the browser.
- */
 (function () {
   'use strict';
+
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function fmtBytes(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : b > 1024 ? (b / 1024).toFixed(0) + ' KB' : b + ' B'; }
+
+  function generateHexDump(bytes, maxBytes) {
+    const limit = Math.min(bytes.length, maxBytes);
+    const lines = [];
+    for (let i = 0; i < limit; i += 16) {
+      const offset = i.toString(16).padStart(8, '0').toUpperCase();
+      const chunk = bytes.slice(i, Math.min(i + 16, limit));
+      const hex = Array.from(chunk).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+      const ascii = Array.from(chunk).map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
+      const hexPadded = hex.padEnd(16 * 3 - 1, ' ');
+      lines.push(offset + '  ' + hexPadded + '  |' + ascii + '|');
+    }
+    return lines.join('\n');
+  }
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
-      accept: '.h5,.hdf5,.he5',
-      dropLabel: 'Drop an HDF5 file here',
-      infoHtml: '<strong>Privacy:</strong> This tool uses <a href="https://github.com/usnistgov/jsfive" target="_blank" class="text-brand-600 hover:underline">jsfive</a> to parse HDF5 files locally in your browser. No data is uploaded.',
-
+      accept: '.h5,.hdf5,.hdf,.he5,.he4,.hdf4',
+      dropLabel: 'Drop an HDF5 file here (.h5, .hdf5, .hdf)',
       actions: [
         {
-          label: '📥 Download Structure (JSON)',
-          id: 'dl-json',
-          onClick: function (h) {
-            const structure = h.getState().structure;
-            if (structure) {
-              h.download(h.getFile().name + '.json', JSON.stringify(structure, null, 2), 'application/json');
-            }
-          }
-        },
-        {
-          label: '📋 Copy Metadata',
-          id: 'copy-meta',
-          onClick: function (h, btn) {
-            const structure = h.getState().structure;
-            if (structure) {
-              h.copyToClipboard(JSON.stringify(structure.attributes || {}, null, 2), btn);
-            }
+          label: '📥 Download', id: 'dl', onClick: function (h) {
+            h.download(h.getFile().name, h.getContent());
           }
         }
       ],
+      onFile: async function (file, content, h) {
+        h.showLoading('Analyzing HDF5 file...');
 
-      onInit: function (h) {
-        h.loadScripts([
-          'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js',
-          'https://cdn.jsdelivr.net/npm/jsfive@0.3.10/dist/browser/jsfive.min.js'
-        ]);
-      },
+        const bytes = new Uint8Array(content);
+        const view = new DataView(content);
 
-      onFile: function (file, content, h) {
-        h.showLoading('Parsing HDF5 file…');
+        // SHA-256
+        const hashBuf = await crypto.subtle.digest('SHA-256', content);
+        const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
 
-        // Small delay for script load check
-        setTimeout(function () {
-          if (typeof hdf5 === 'undefined') {
-            h.showError('Dependency Error', 'jsfive library failed to load.');
-            return;
+        // HDF5 magic bytes: 89 48 44 46 0d 0a 1a 0a
+        const HDF5_MAGIC = [0x89, 0x48, 0x44, 0x46, 0x0D, 0x0A, 0x1A, 0x0A];
+        let magicValid = bytes.length >= 8;
+        if (magicValid) {
+          for (let i = 0; i < 8; i++) {
+            if (bytes[i] !== HDF5_MAGIC[i]) { magicValid = false; break; }
           }
+        }
 
-          try {
-            const f = new hdf5.File(content, file.name);
-            const structure = parseHdf5Structure(f);
-            h.setState('structure', structure);
-            renderHdf5(structure, h);
-          } catch (err) {
-            h.showError('Parse Error', err.message);
-          }
-        }, 200);
+        const magicHex = bytes.length >= 8
+          ? Array.from(bytes.slice(0, 8)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')
+          : 'N/A';
+        const magicExpected = '89 48 44 46 0D 0A 1A 0A';
+
+        // Superblock version (byte 8)
+        let superblockVersion = 'N/A';
+        let superblockDesc = '';
+        if (bytes.length > 8) {
+          const v = bytes[8];
+          superblockVersion = String(v);
+          if (v === 0) superblockDesc = 'Version 0 (HDF5 ≤ 1.6)';
+          else if (v === 1) superblockDesc = 'Version 1 (HDF5 1.6)';
+          else if (v === 2) superblockDesc = 'Version 2 (HDF5 1.8+)';
+          else if (v === 3) superblockDesc = 'Version 3 (HDF5 1.10+)';
+          else superblockDesc = 'Unknown version';
+        }
+
+        // Full magic bytes row (first 16 bytes)
+        const first16 = bytes.length >= 16
+          ? Array.from(bytes.slice(0, 16)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')
+          : Array.from(bytes.slice(0, bytes.length)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+
+        // Hex dump first 4KB
+        const hexDump = generateHexDump(bytes, 4096);
+
+        const validBadge = magicValid
+          ? '<span style="color:#22c55e;font-weight:bold;">✔ Valid HDF5 Signature</span>'
+          : '<span style="color:#ef4444;font-weight:bold;">✘ Invalid HDF5 Signature</span>';
+
+        h.render(`
+          <div style="font-family:system-ui,sans-serif;max-width:860px;margin:0 auto;padding:16px;">
+            <h2 style="margin:0 0 4px;font-size:1.3rem;">HDF5 File Analysis</h2>
+            <p style="margin:0 0 16px;color:#888;font-size:.9rem;">${esc(file.name)} &mdash; ${fmtBytes(file.size)}</p>
+
+            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
+              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">Signature Validation</div>
+              <div style="margin-bottom:6px;">${validBadge}</div>
+              <table style="font-size:.82rem;border-collapse:collapse;width:100%;">
+                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Expected magic</td><td style="font-family:monospace;">${magicExpected}</td></tr>
+                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">File bytes 0–7</td><td style="font-family:monospace;">${esc(magicHex)}</td></tr>
+                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Bytes 0–15</td><td style="font-family:monospace;word-break:break-all;">${esc(first16)}</td></tr>
+              </table>
+            </div>
+
+            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
+              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">HDF5 Header</div>
+              <table style="font-size:.82rem;border-collapse:collapse;width:100%;">
+                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Superblock Version</td><td style="font-family:monospace;">${esc(superblockVersion)} &mdash; ${esc(superblockDesc)}</td></tr>
+                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">File Size</td><td>${fmtBytes(file.size)} (${file.size.toLocaleString()} bytes)</td></tr>
+              </table>
+            </div>
+
+            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
+              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">SHA-256 Hash</div>
+              <div style="font-family:monospace;font-size:.8rem;word-break:break-all;color:#86efac;">${esc(hashHex)}</div>
+            </div>
+
+            <div style="background:#fffbeb;border:1px solid #fbbf24;border-radius:8px;padding:14px;margin-bottom:16px;color:#92400e;">
+              <strong>Opening HDF5 Files:</strong> Use <strong>HDF5 Viewer</strong> (HDFView), <strong>Python h5py</strong> (<code>import h5py; f = h5py.File('file.h5','r')</code>), or <strong>MATLAB</strong> (<code>h5info</code> / <code>h5read</code>) to open HDF5 files. HDF5 is a hierarchical data format used in scientific computing.
+            </div>
+
+            <div style="background:#0f172a;border-radius:8px;padding:16px;margin-bottom:8px;">
+              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">Hex Dump (first 4 KB)</div>
+              <pre style="font-family:'Courier New',monospace;font-size:.72rem;color:#94a3b8;margin:0;overflow-x:auto;white-space:pre;line-height:1.5;">${esc(hexDump)}</pre>
+            </div>
+          </div>
+        `);
       }
     });
   };
-
-  /**
-   * Recursively parse HDF5 file structure into a serializable object
-   */
-  function parseHdf5Structure(item, name = '/') {
-    const info = {
-      name: name,
-      type: item instanceof hdf5.Group ? 'Group' : 'Dataset',
-      attributes: {}
-    };
-
-    // Extract attributes
-    if (item.attrs) {
-      Object.keys(item.attrs).forEach(key => {
-        info.attributes[key] = item.attrs[key];
-      });
-    }
-
-    if (item instanceof hdf5.Group) {
-      info.children = {};
-      Object.keys(item.keys).forEach(key => {
-        try {
-          const child = item.get(key);
-          info.children[key] = parseHdf5Structure(child, key);
-        } catch (e) {
-          info.children[key] = { name: key, type: 'Error', error: e.message };
-        }
-      });
-    } else if (item instanceof hdf5.Dataset) {
-      info.shape = item.shape;
-      info.dtype = item.dtype;
-      // We don't extract the whole value here to keep the structure object lightweight
-      // but we could preview small datasets.
-      if (item.shape.reduce((a, b) => a * b, 1) < 100) {
-        try {
-          info.valuePreview = Array.from(item.value);
-        } catch (e) {}
-      }
-    }
-
-    return info;
-  }
-
-  /**
-   * Render the HDF5 structure as an interactive tree
-   */
-  function renderHdf5(structure, h) {
-    let html = `
-      <div class="p-6">
-        <h2 class="text-xl font-bold text-surface-800 mb-4 flex items-center gap-2">
-          <span class="text-2xl">📦</span> ${h.getFile().name}
-        </h2>
-        
-        <div class="space-y-4">
-          <section>
-            <h3 class="text-sm font-semibold text-surface-500 uppercase tracking-wider mb-2">Root Attributes</h3>
-            ${renderAttributes(structure.attributes)}
-          </section>
-
-          <section>
-            <h3 class="text-sm font-semibold text-surface-500 uppercase tracking-wider mb-2">Hierarchy</h3>
-            <div class="border border-surface-200 rounded-lg overflow-hidden bg-surface-50">
-              ${renderNode(structure, 0)}
-            </div>
-          </section>
-        </div>
-      </div>
-    `;
-
-    h.render(html);
-
-    // Bind toggle events
-    h.getRenderEl().querySelectorAll('.hdf5-toggle').forEach(btn => {
-      btn.addEventListener('click', function() {
-        const targetId = this.dataset.target;
-        const target = document.getElementById(targetId);
-        const icon = this.querySelector('.toggle-icon');
-        if (target.classList.contains('hidden')) {
-          target.classList.remove('hidden');
-          icon.textContent = '▼';
-        } else {
-          target.classList.add('hidden');
-          icon.textContent = '▶';
-        }
-      });
-    });
-  }
-
-  function renderAttributes(attrs) {
-    const keys = Object.keys(attrs);
-    if (keys.length === 0) return '<p class="text-sm text-surface-400 italic">No attributes</p>';
-
-    return `
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-        ${keys.map(k => `
-          <div class="flex text-sm border-b border-surface-100 pb-1">
-            <span class="font-medium text-surface-600 w-1/3 truncate" title="${k}">${k}</span>
-            <span class="text-surface-500 w-2/3 truncate" title="${attrs[k]}">${attrs[k]}</span>
-          </div>
-        `).join('')}
-      </div>
-    `;
-  }
-
-  function renderNode(node, depth) {
-    const id = 'hdf5-node-' + Math.random().toString(36).substr(2, 9);
-    const indent = depth * 1.5;
-    const isGroup = node.type === 'Group';
-    const hasChildren = isGroup && Object.keys(node.children || {}).length > 0;
-
-    let html = `
-      <div class="border-b border-surface-100 last:border-0">
-        <div class="flex items-center py-2 px-3 hover:bg-surface-100 transition-colors group">
-          <div style="width: ${indent}rem"></div>
-          
-          ${hasChildren ? `
-            <button class="hdf5-toggle p-1 mr-1 text-surface-400 hover:text-brand-600 transition-colors" data-target="${id}">
-              <span class="toggle-icon text-xs w-4 inline-block">▶</span>
-            </button>
-          ` : '<div class="w-6"></div>'}
-
-          <span class="mr-2 text-lg">${isGroup ? '📁' : '📊'}</span>
-          <div class="flex flex-col min-w-0">
-            <span class="font-medium text-surface-700 truncate">${node.name}</span>
-            ${!isGroup ? `<span class="text-[10px] text-surface-400 uppercase font-bold">${node.dtype} [${node.shape.join(', ')}]</span>` : ''}
-          </div>
-        </div>
-
-        ${hasChildren ? `
-          <div id="${id}" class="hidden bg-white">
-            ${Object.values(node.children).map(child => renderNode(child, depth + 1)).join('')}
-          </div>
-        ` : ''}
-      </div>
-    `;
-
-    return html;
-  }
-
 })();

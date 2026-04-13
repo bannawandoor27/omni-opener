@@ -39,7 +39,7 @@
       ],
 
       onInit: function (h) {
-        h.loadScript('https://cdn.jsdelivr.net/npm/plist@3.1.0/dist/plist.min.js');
+        h.loadScript('https://cdn.jsdelivr.net/npm/plist@3.0.6/dist/plist.min.js');
       },
 
       onFile: function (file, buffer, h) {

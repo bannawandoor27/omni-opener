@@ -19,12 +19,12 @@
       binary: true,
       onInit: function(helpers) {
         // Core Three.js as requested
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.min.js', () => {
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js', () => {
           // fflate is required for many binary FBX files (compression)
           helpers.loadScript('https://cdn.jsdelivr.net/npm/fflate@0.8.2/lib/browser.min.js', () => {
             // Load FBXLoader and OrbitControls from a compatible UMD source
-            helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/FBXLoader.js', () => {
-              helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js');
+            helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js', () => {
+              helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js');
             });
           });
         });

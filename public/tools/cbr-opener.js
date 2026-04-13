@@ -1,152 +1,155 @@
 /**
- * OmniOpener — CBR Opener Tool
- * Uses OmniTool SDK. Renders .cbr (RAR) comic archives in the browser.
+ * OmniOpener — CBR/CBZ Comic Archive Viewer
+ * CBZ (ZIP-based): extracts and shows all images using JSZip.
+ * CBR (RAR-based): shows metadata and hex dump (RAR extraction requires desktop software).
  */
 (function () {
   'use strict';
 
-  var blobUrls = [];
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function fmtBytes(b) { return b > 1048576 ? (b/1048576).toFixed(1)+' MB' : b > 1024 ? (b/1024).toFixed(0)+' KB' : b+' B'; }
 
   window.initTool = function (toolConfig, mountEl) {
-    OmniTool.create(mountEl, toolConfig, {
-      accept: '.cbr,.rar',
-      binary: true,
-      dropLabel: 'Drop a .cbr or .rar comic here',
-      infoHtml: '<strong>How it works:</strong> This tool extracts and renders images from your CBR archive locally in your browser using the unrar.js library. No files are uploaded to any server.',
+    var blobUrls = [];
 
+    function cleanup() {
+      blobUrls.forEach(function(u) { URL.revokeObjectURL(u); });
+      blobUrls = [];
+    }
+
+    OmniTool.create(mountEl, toolConfig, {
+      accept: '.cbr,.cbz,.rar,.zip',
+      binary: true,
+      dropLabel: 'Drop a CBR or CBZ comic archive here',
+      infoHtml: '<strong>Privacy:</strong> All processing happens in your browser. Files are never uploaded.',
       actions: [
         {
-          label: '📋 Copy Filename',
-          id: 'copy-name',
-          onClick: function (h, btn) {
-            h.copyToClipboard(h.getFile().name, btn);
-          }
-        },
-        {
-          label: '📥 Download Original',
-          id: 'download',
-          onClick: function (h) {
-            h.download(h.getFile().name, h.getContent(), h.getFile().type);
-          }
+          label: '📥 Download',
+          id: 'dl',
+          onClick: function (h) { var f = h.getFile(); h.download(f.name, h.getContent()); }
         }
       ],
 
-      onInit: function (h) {
+      onFile: async function (file, content, h) {
         cleanup();
-        // Load unrar library
-        if (typeof Unrar === 'undefined') {
-          h.loadScript('https://cdn.jsdelivr.net/npm/@fiahfy/unrar.js@0.1.1/dist/unrar.js');
-        }
-      },
+        h.showLoading('Reading archive…');
 
-      onFile: function (file, content, h) {
-        h.showLoading('Extracting archive…');
-        cleanup();
+        const bytes = new Uint8Array(content);
+        const magic = (bytes[0] << 8 | bytes[1]);
 
-        if (typeof Unrar === 'undefined') {
-          h.loadScript('https://cdn.jsdelivr.net/npm/@fiahfy/unrar.js@0.1.1/dist/unrar.js', function () {
-            // Small delay to ensure global is populated
-            setTimeout(function() {
-              processRar(content, h);
-            }, 50);
+        // Detect format by magic bytes
+        const isZip = (bytes[0] === 0x50 && bytes[1] === 0x4B); // PK
+        const isRar = (bytes[0] === 0x52 && bytes[1] === 0x61 && bytes[2] === 0x72); // Rar!
+        const isRar5 = (bytes[0] === 0x52 && bytes[1] === 0x61 && bytes[2] === 0x72 && bytes[3] === 0x21 && bytes[4] === 0x1A && bytes[5] === 0x07 && bytes[6] === 0x01);
+
+        // SHA-256 hash
+        const hashBuf = await crypto.subtle.digest('SHA-256', content);
+        const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
+
+        const magicStr = Array.from(bytes.slice(0,16)).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
+
+        if (isZip) {
+          // CBZ — ZIP format, extract images with JSZip
+          h.showLoading('Loading JSZip…');
+          h.loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js', async function() {
+            try {
+              const zip = await JSZip.loadAsync(content);
+              const imageFiles = [];
+              zip.forEach(function(path, entry) {
+                if (!entry.dir && /\.(jpe?g|png|gif|webp|bmp)$/i.test(path)) {
+                  imageFiles.push({ path: path, entry: entry });
+                }
+              });
+              imageFiles.sort(function(a, b) { return a.path.localeCompare(b.path); });
+
+              h.render(`
+                <div class="p-4 space-y-4">
+                  <div class="flex flex-wrap items-center gap-3 border-b border-surface-200 pb-3">
+                    <div>
+                      <h3 class="font-bold text-surface-900">${esc(file.name)}</h3>
+                      <p class="text-sm text-surface-500">${fmtBytes(file.size)} • CBZ (ZIP) • ${imageFiles.length} pages</p>
+                    </div>
+                  </div>
+                  <div id="cbz-pages" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3"></div>
+                  <p class="text-xs text-surface-400 text-center">SHA-256: ${hashHex}</p>
+                </div>
+              `);
+
+              const container = document.getElementById('cbz-pages');
+              for (const imgFile of imageFiles.slice(0, 50)) {
+                const blob = await imgFile.entry.async('blob');
+                const url = URL.createObjectURL(blob);
+                blobUrls.push(url);
+                const div = document.createElement('div');
+                div.className = 'border border-surface-200 rounded-lg overflow-hidden';
+                div.innerHTML = '<img src="' + url + '" class="w-full h-auto object-contain" loading="lazy">'
+                  + '<p class="text-[10px] text-center text-surface-400 p-1 truncate">' + esc(imgFile.path.split('/').pop()) + '</p>';
+                container.appendChild(div);
+              }
+              if (imageFiles.length > 50) {
+                container.insertAdjacentHTML('beforeend', '<p class="col-span-full text-center text-sm text-surface-400">Showing first 50 of ' + imageFiles.length + ' pages</p>');
+              }
+            } catch(e) {
+              h.showError('Failed to read ZIP archive', e.message);
+            }
           });
+
+        } else if (isRar || isRar5) {
+          // CBR — RAR format, can't extract in browser (no reliable WASM RAR library)
+          const rarVer = isRar5 ? '5.x' : '4.x and earlier';
+          const hexDump = generateHexDump(bytes.slice(0, 1024));
+          h.render(`
+            <div class="p-6 space-y-6">
+              <div class="border-b border-surface-200 pb-4">
+                <h3 class="text-xl font-bold text-surface-900">${esc(file.name)}</h3>
+                <p class="text-sm text-surface-500">${fmtBytes(file.size)} • CBR (RAR ${rarVer})</p>
+              </div>
+              <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+                <strong>RAR format detected.</strong> Full comic extraction requires a desktop app like
+                CDisplay Ex, YACReader, or ComicRack. Download the file below.
+              </div>
+              <div class="grid grid-cols-2 gap-4 text-sm">
+                <div class="bg-surface-50 rounded-xl p-4 border border-surface-200">
+                  <h4 class="font-bold text-surface-700 mb-2 uppercase text-xs">Archive Info</h4>
+                  <div class="space-y-1">
+                    <div class="flex justify-between"><span class="text-surface-500">Format:</span><span>RAR ${rarVer}</span></div>
+                    <div class="flex justify-between"><span class="text-surface-500">Magic:</span><span class="font-mono text-xs">${magicStr.slice(0,17)}…</span></div>
+                  </div>
+                </div>
+                <div class="bg-surface-50 rounded-xl p-4 border border-surface-200">
+                  <h4 class="font-bold text-surface-700 mb-2 uppercase text-xs">Hash</h4>
+                  <span class="font-mono text-[10px] break-all">${hashHex}</span>
+                </div>
+              </div>
+              <div class="border border-surface-200 rounded-xl overflow-hidden">
+                <div class="bg-surface-100 px-4 py-2 border-b text-xs font-bold text-surface-700 uppercase">Hex Dump (first 1KB)</div>
+                <pre class="p-4 font-mono text-[10px] leading-tight overflow-auto max-h-48 bg-white">${esc(hexDump)}</pre>
+              </div>
+            </div>
+          `);
         } else {
-          processRar(content, h);
+          h.showError('Unknown format', 'Not a valid CBR (RAR) or CBZ (ZIP) file. Magic: ' + magicStr.slice(0,11));
         }
       },
-
-      onDestroy: function () {
-        cleanup();
-      }
+      onDestroy: cleanup
     });
-  };
 
-  function cleanup() {
-    blobUrls.forEach(function (url) { URL.revokeObjectURL(url); });
-    blobUrls = [];
-  }
-
-  function processRar(buffer, h) {
-    try {
-      // Handle potential UMD global variations
-      var UnrarClass = window.Unrar || (window.unrar && window.unrar.Unrar);
-      if (!UnrarClass) {
-        throw new Error('Unrar library failed to initialize.');
+    function generateHexDump(bytes) {
+      var out = '';
+      for (var i = 0; i < bytes.length; i += 16) {
+        var line = i.toString(16).padStart(6, '0') + '  ';
+        var ascii = '';
+        for (var j = 0; j < 16; j++) {
+          if (i + j < bytes.length) {
+            var b = bytes[i + j];
+            line += b.toString(16).padStart(2, '0') + ' ';
+            ascii += (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.';
+          } else { line += '   '; }
+          if (j === 7) line += ' ';
+        }
+        out += line + '|' + ascii + '|\n';
       }
-
-      var unrar = new UnrarClass(new Uint8Array(buffer));
-      var files = unrar.extract();
-
-      if (!files || files.length === 0) {
-        h.showError('Empty Archive', 'This archive does not appear to contain any files.');
-        return;
-      }
-
-      // Filter for image files
-      var entries = files.filter(function (file) {
-        var ext = file.name.split('.').pop().toLowerCase();
-        return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp'].indexOf(ext) !== -1;
-      });
-
-      if (entries.length === 0) {
-        h.showError('No Images Found', 'No supported image files found inside the archive.');
-        return;
-      }
-
-      // Sort entries by name naturally (important for comics)
-      entries.sort(function (a, b) {
-        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-      });
-
-      // Prepare container
-      h.render('<div id="cbr-viewer" class="flex flex-col items-center gap-8 p-4 md:p-8 bg-surface-50 min-h-full"></div>');
-      var container = h.getRenderEl().querySelector('#cbr-viewer');
-      
-      entries.forEach(function (file, i) {
-        var mime = getMimeType(file.name);
-        var blob = new Blob([file.data], { type: mime });
-        var url = URL.createObjectURL(blob);
-        blobUrls.push(url);
-
-        var wrapper = document.createElement('div');
-        wrapper.className = 'w-full max-w-4xl flex flex-col items-center gap-2';
-
-        var img = document.createElement('img');
-        img.src = url;
-        img.className = 'max-w-full h-auto shadow-2xl rounded-sm border border-surface-200 bg-white';
-        img.alt = 'Page ' + (i + 1);
-        img.loading = 'lazy';
-
-        var caption = document.createElement('div');
-        caption.className = 'text-xs text-surface-400 font-mono';
-        caption.textContent = (i + 1) + ' / ' + entries.length + ' — ' + file.name.split('/').pop();
-
-        wrapper.appendChild(img);
-        wrapper.appendChild(caption);
-        container.appendChild(wrapper);
-      });
-
-      // Add back-to-top button
-      var topBtn = document.createElement('button');
-      topBtn.className = 'mt-6 px-6 py-2 bg-white border border-surface-200 rounded-full text-sm font-medium hover:bg-surface-100 transition-colors shadow-sm';
-      topBtn.textContent = '↑ Back to Top';
-      topBtn.onclick = function() { h.getRenderEl().scrollTo({ top: 0, behavior: 'smooth' }); };
-      container.appendChild(topBtn);
-
-    } catch (err) {
-      h.showError('Failed to open CBR', err.message);
+      return out;
     }
-  }
-
-  function getMimeType(filename) {
-    var ext = filename.split('.').pop().toLowerCase();
-    var map = {
-      'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
-      'png': 'image/png', 'gif': 'image/gif',
-      'webp': 'image/webp', 'avif': 'image/avif',
-      'bmp': 'image/bmp'
-    };
-    return map[ext] || 'application/octet-stream';
-  }
-
+  };
 })();

@@ -1,266 +1,184 @@
-/**
- * OmniOpener — FITS Explorer
- * Uses OmniTool SDK and astrojs/fitsjs.
- * Renders FITS (Flexible Image Transport System) images and tables client-side.
- */
 (function () {
   'use strict';
 
-  function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(String(str)));
-    return div.innerHTML;
-  }
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function fmtBytes(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : b > 1024 ? (b / 1024).toFixed(0) + ' KB' : b + ' B'; }
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
-      accept: '.fits,.fit,.fts',
       binary: true,
-      infoHtml: '<strong>FITS Explorer:</strong> Professional astronomy viewer for images and tabular data. Runs entirely in your browser using astrojs/fitsjs.',
-      
+      accept: '.fits,.fit,.fts,.fits.gz',
+      dropLabel: 'Drop a FITS file here (.fits, .fit, .fts)',
       actions: [
         {
-          label: '📋 Copy Header',
-          id: 'copy-header',
-          onClick: function (h, btn) {
-            const state = h.getState();
-            if (state.headerJson) {
-              h.copyToClipboard(JSON.stringify(state.headerJson, null, 2), btn);
-            } else {
-              h.copyToClipboard('No header data loaded', btn);
-            }
-          }
-        },
-        {
-          label: '📥 Download JSON',
-          id: 'dl-json',
-          onClick: function (h) {
-            const state = h.getState();
-            if (state.headerJson) {
-              h.download(h.getFile().name + '.json', JSON.stringify(state.headerJson, null, 2), 'application/json');
-            }
-          }
-        },
-        {
-          label: '🖼️ Export PNG',
-          id: 'export-png',
-          onClick: function (h) {
-            const canvas = h.getRenderEl().querySelector('canvas');
-            if (canvas) {
-              h.download(h.getFile().name + '.png', canvas.toDataURL(), 'image/png');
-            }
+          label: '📥 Download', id: 'dl', onClick: function (h) {
+            h.download(h.getFile().name, h.getContent());
           }
         }
       ],
+      onFile: async function (file, content, h) {
+        h.showLoading('Analyzing FITS file...');
 
-      onInit: function (h) {
-        h.loadScript('https://cdn.jsdelivr.net/npm/fitsjs@0.10.4/dist/fits.min.js');
-      },
+        const bytes = new Uint8Array(content);
 
-      onFile: function (file, content, h) {
-        const FITS_LIB = (window.astrojs && window.astrojs.fits) ? window.astrojs.fits : (window.FITS ? { FITS: window.FITS } : null);
-        
-        if (!FITS_LIB) {
-          h.showLoading('Preparing FITS engine...');
-          setTimeout(() => this.onFile(file, content, h), 500);
-          return;
+        // SHA-256
+        const hashBuf = await crypto.subtle.digest('SHA-256', content);
+        const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+        // FITS signature: first 8 bytes should be "SIMPLE  " (with spaces) for standard FITS
+        const first8 = String.fromCharCode(...bytes.slice(0, Math.min(8, bytes.length)));
+        const first4 = String.fromCharCode(...bytes.slice(0, Math.min(4, bytes.length)));
+
+        let sigValid = false;
+        let sigNote = '';
+        if (first8 === 'SIMPLE  ') {
+          sigValid = true;
+          sigNote = 'Standard FITS primary HDU';
+        } else if (first4 === 'FITS') {
+          sigValid = true;
+          sigNote = 'FITS variant signature';
+        } else if (first8.startsWith('SIMPLE')) {
+          sigValid = true;
+          sigNote = 'FITS (SIMPLE keyword detected)';
+        } else {
+          sigNote = 'Expected "SIMPLE  " at offset 0';
         }
 
-        h.showLoading('Analyzing FITS HDUs...');
-        
-        try {
-          new FITS_LIB.FITS(content, function(f) {
-            const hdus = f.hdus;
-            if (!hdus || hdus.length === 0) {
-              h.showError('Invalid FITS', 'No HDUs found in this file.');
-              return;
-            }
+        const first8Hex = Array.from(bytes.slice(0, Math.min(8, bytes.length)))
+          .map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
 
-            h.setState({
-              fits: f,
-              headerJson: hdus.map(hdu => hdu.header.cards)
-            });
+        // Parse FITS primary header block (2880 bytes, 36 cards of 80 chars each)
+        const BLOCK_SIZE = 2880;
+        const CARD_SIZE = 80;
+        const KNOWN_KEYWORDS = [
+          'SIMPLE', 'BITPIX', 'NAXIS', 'NAXIS1', 'NAXIS2', 'NAXIS3',
+          'TELESCOP', 'OBJECT', 'DATE-OBS', 'INSTRUME', 'OBSERVER',
+          'ORIGIN', 'EXTEND', 'BSCALE', 'BZERO', 'BUNIT', 'EQUINOX',
+          'EPOCH', 'CRPIX1', 'CRPIX2', 'CDELT1', 'CDELT2', 'CRVAL1',
+          'CRVAL2', 'CTYPE1', 'CTYPE2', 'DATE', 'AUTHOR', 'REFERENC'
+        ];
 
-            renderHDUTabs(f, 0, h, file);
-          });
-        } catch (err) {
-          h.showError('Parse Failed', err.message);
+        const headerCards = [];
+        const keywords = {};
+        let endFound = false;
+
+        const headerLimit = Math.min(bytes.length, BLOCK_SIZE * 4); // scan up to 4 blocks
+        const decoder = new TextDecoder('ascii');
+
+        for (let cardStart = 0; cardStart < headerLimit && !endFound; cardStart += CARD_SIZE) {
+          if (cardStart + CARD_SIZE > bytes.length) break;
+          const cardBytes = bytes.slice(cardStart, cardStart + CARD_SIZE);
+          const card = decoder.decode(cardBytes);
+
+          const keyword = card.substring(0, 8).trimEnd();
+          if (keyword === 'END') { endFound = true; break; }
+          if (keyword === '' || keyword === ' ') continue;
+
+          const valueComment = card.substring(10); // after "KEYWORD = "
+          // Strip leading/trailing spaces and comment after /
+          let rawValue = card.substring(10, 80);
+          // For string values (surrounded by quotes)
+          let value = rawValue.trim();
+          if (value.startsWith("'")) {
+            const closeQ = value.indexOf("'", 1);
+            value = closeQ > 0 ? value.substring(1, closeQ).trim() : value.substring(1).trim();
+          } else {
+            // numeric or logical — take up to /
+            const slashIdx = value.indexOf('/');
+            value = slashIdx >= 0 ? value.substring(0, slashIdx).trim() : value.trim();
+          }
+
+          if (KNOWN_KEYWORDS.includes(keyword) || keyword.startsWith('NAXIS')) {
+            keywords[keyword] = value;
+            headerCards.push({ keyword, value });
+          } else if (keyword && keyword !== 'COMMENT' && keyword !== 'HISTORY') {
+            headerCards.push({ keyword, value });
+          }
         }
+
+        // Build keyword table rows
+        let kwRows = '';
+        if (headerCards.length > 0) {
+          // prioritize known keywords first
+          const priority = ['SIMPLE', 'BITPIX', 'NAXIS', 'NAXIS1', 'NAXIS2', 'NAXIS3',
+            'OBJECT', 'TELESCOP', 'INSTRUME', 'OBSERVER', 'ORIGIN', 'DATE-OBS', 'DATE', 'AUTHOR'];
+          const shown = new Set();
+          const orderedCards = [];
+
+          for (const kw of priority) {
+            const card = headerCards.find(c => c.keyword === kw);
+            if (card && !shown.has(card.keyword)) { orderedCards.push(card); shown.add(card.keyword); }
+          }
+          for (const card of headerCards) {
+            if (!shown.has(card.keyword)) { orderedCards.push(card); shown.add(card.keyword); }
+          }
+
+          for (const { keyword, value } of orderedCards.slice(0, 60)) {
+            kwRows += `<tr>
+              <td style="color:#7dd3fc;font-family:monospace;padding:3px 14px 3px 0;white-space:nowrap;vertical-align:top;">${esc(keyword)}</td>
+              <td style="font-family:monospace;font-size:.82rem;word-break:break-all;">${esc(value)}</td>
+            </tr>`;
+          }
+        } else {
+          kwRows = '<tr><td colspan="2" style="color:#94a3b8;font-style:italic;">No parseable FITS keywords found in header block</td></tr>';
+        }
+
+        // Image dimensions if present
+        let dimInfo = '';
+        if (keywords['NAXIS'] && keywords['NAXIS1']) {
+          const naxis = keywords['NAXIS'];
+          const n1 = keywords['NAXIS1'] || '?';
+          const n2 = keywords['NAXIS2'] || '';
+          const n3 = keywords['NAXIS3'] || '';
+          dimInfo = `<tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Dimensions</td><td>${esc(naxis)}D: ${esc(n1)}${n2 ? ' × ' + esc(n2) : ''}${n3 ? ' × ' + esc(n3) : ''} px</td></tr>`;
+        }
+        const bitpixDesc = { '8': '8-bit unsigned int', '16': '16-bit signed int', '32': '32-bit signed int', '-32': '32-bit float', '-64': '64-bit double' };
+        let bitpixInfo = '';
+        if (keywords['BITPIX']) {
+          bitpixInfo = `<tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">BITPIX</td><td>${esc(keywords['BITPIX'])} &mdash; ${esc(bitpixDesc[keywords['BITPIX']] || 'Custom')}</td></tr>`;
+        }
+
+        const validBadge = sigValid
+          ? '<span style="color:#22c55e;font-weight:bold;">✔ Valid FITS Signature</span>'
+          : '<span style="color:#ef4444;font-weight:bold;">✘ Invalid FITS Signature</span>';
+
+        h.render(`
+          <div style="font-family:system-ui,sans-serif;max-width:860px;margin:0 auto;padding:16px;">
+            <h2 style="margin:0 0 4px;font-size:1.3rem;">FITS File Analysis</h2>
+            <p style="margin:0 0 16px;color:#888;font-size:.9rem;">${esc(file.name)} &mdash; ${fmtBytes(file.size)}</p>
+
+            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
+              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">Signature Validation</div>
+              <div style="margin-bottom:6px;">${validBadge}</div>
+              <table style="font-size:.82rem;border-collapse:collapse;width:100%;">
+                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Expected</td><td style="font-family:monospace;">"SIMPLE  " (0x53 49 4D 50 4C 45 20 20)</td></tr>
+                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">File bytes 0–7</td><td style="font-family:monospace;">${esc(first8Hex)} &nbsp; "${esc(first8)}"</td></tr>
+                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Note</td><td>${esc(sigNote)}</td></tr>
+                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">File Size</td><td>${fmtBytes(file.size)} (${file.size.toLocaleString()} bytes)</td></tr>
+                ${bitpixInfo}
+                ${dimInfo}
+              </table>
+            </div>
+
+            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
+              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:10px;">Primary Header Keywords</div>
+              <table style="font-size:.82rem;border-collapse:collapse;width:100%;">
+                ${kwRows}
+              </table>
+              ${!endFound ? '<div style="color:#fbbf24;font-size:.8rem;margin-top:8px;">⚠ END card not found in first 4 blocks — file may be truncated or non-standard</div>' : ''}
+            </div>
+
+            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
+              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">SHA-256 Hash</div>
+              <div style="font-family:monospace;font-size:.8rem;word-break:break-all;color:#86efac;">${esc(hashHex)}</div>
+            </div>
+
+            <div style="background:#eff6ff;border:1px solid #3b82f6;border-radius:8px;padding:14px;margin-bottom:16px;color:#1e3a8a;">
+              <strong>Opening FITS Files:</strong> Use <strong>DS9</strong> (SAOImageDS9) for astronomical image viewing, <strong>Astropy</strong> in Python (<code>from astropy.io import fits</code>), or <strong>IRAF</strong> for professional reduction. FITS (Flexible Image Transport System) is the standard format for astronomical data.
+            </div>
+          </div>
+        `);
       }
     });
   };
-
-  function renderHDUTabs(fits, activeIdx, h, file) {
-    const hdus = fits.hdus;
-    let tabsHtml = '';
-    if (hdus.length > 1) {
-      tabsHtml = '<div class="flex gap-1 p-2 bg-surface-50 border-b border-surface-200 overflow-x-auto">';
-      hdus.forEach((hdu, i) => {
-        const type = hdu.header.get('XTENSION') || 'PRIMARY';
-        const active = i === activeIdx ? 'bg-brand-600 text-white' : 'bg-white text-surface-600 hover:bg-surface-100';
-        tabsHtml += `<button class="hdu-tab px-3 py-1 rounded-md text-[10px] font-bold border border-surface-200 transition-colors ${active}" data-idx="${i}">${type} #${i}</button>`;
-      });
-      tabsHtml += '</div>';
-    }
-
-    h.render(`
-      <div class="flex flex-col h-[80vh] bg-surface-100 rounded-xl overflow-hidden border border-surface-200">
-        ${tabsHtml}
-        <div id="hdu-content" class="flex-1 overflow-auto bg-white relative">
-          <div class="p-8 flex items-center justify-center h-full"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div></div>
-        </div>
-      </div>
-    `);
-
-    // Bind tabs
-    h.getRenderEl().querySelectorAll('.hdu-tab').forEach(btn => {
-      btn.onclick = () => renderHDUTabs(fits, parseInt(btn.dataset.idx), h, file);
-    });
-
-    renderHDU(hdus[activeIdx], activeIdx, h, file);
-  }
-
-  function renderHDU(hdu, idx, h, file) {
-    const container = document.getElementById('hdu-content');
-    const header = hdu.header;
-    const type = header.get('XTENSION') || 'PRIMARY';
-    const bitpix = header.get('BITPIX');
-    const naxis = header.get('NAXIS');
-    
-    let infoHtml = `
-      <div class="sticky top-0 z-10 bg-surface-50 border-b border-surface-200 p-3 flex items-center justify-between">
-        <div>
-          <h3 class="font-bold text-surface-900 text-sm">${type} HDU #${idx}</h3>
-          <p class="text-[10px] text-surface-500 font-mono uppercase">BITPIX: ${bitpix} | NAXIS: ${naxis}</p>
-        </div>
-        <button id="btn-show-hdr" class="px-3 py-1 text-[10px] font-bold bg-white border border-surface-200 rounded-lg hover:bg-surface-100 transition-colors shadow-sm">View Raw Header</button>
-      </div>
-      <div id="header-cards" class="hidden p-4 bg-surface-900 text-green-400 font-mono text-[10px] overflow-auto max-h-[300px] whitespace-pre border-b border-surface-800 shadow-inner"></div>
-    `;
-
-    container.innerHTML = infoHtml + '<div id="hdu-view" class="p-8 flex flex-col items-center justify-center min-h-[400px]"></div>';
-
-    // Populate header cards
-    const cardsEl = document.getElementById('header-cards');
-    let cardsStr = '';
-    header.cards.forEach(c => {
-      const key = (c.key || '').padEnd(8);
-      const val = String(c.value !== undefined ? c.value : '').padEnd(20);
-      const comm = c.comment ? ' / ' + c.comment : '';
-      cardsStr += `${key} = ${val}${comm}\n`;
-    });
-    cardsEl.textContent = cardsStr;
-
-    document.getElementById('btn-show-hdr').onclick = function() {
-      cardsEl.classList.toggle('hidden');
-      this.textContent = cardsEl.classList.contains('hidden') ? 'View Raw Header' : 'Hide Raw Header';
-    };
-
-    const view = document.getElementById('hdu-view');
-
-    // Handle Image Data
-    if (naxis >= 2 && bitpix) {
-      view.innerHTML = `
-        <div class="flex flex-col items-center gap-6 w-full">
-           <div class="relative group">
-             <canvas id="fits-canvas" class="shadow-2xl rounded-lg bg-black max-w-full h-auto cursor-crosshair"></canvas>
-             <div class="absolute bottom-2 right-2 bg-black/50 backdrop-blur text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-               ${header.get('NAXIS1')} x ${header.get('NAXIS2')}
-             </div>
-           </div>
-           <div id="fits-meta" class="bg-surface-50 px-4 py-2 rounded-full border border-surface-200 text-[10px] font-medium text-surface-600 shadow-sm"></div>
-        </div>
-      `;
-      const canvas = document.getElementById('fits-canvas');
-      const meta = document.getElementById('fits-meta');
-      
-      const width = header.get('NAXIS1');
-      const height = header.get('NAXIS2');
-      canvas.width = width;
-      canvas.height = height;
-      
-      const dataUnit = hdu.data;
-      dataUnit.getFrame(0, function(data) {
-        const ctx = canvas.getContext('2d');
-        const imgData = ctx.createImageData(width, height);
-        
-        // Linear scaling for display
-        let min = Infinity, max = -Infinity;
-        for (let i = 0; i < data.length; i++) {
-          const v = data[i];
-          if (v < min) min = v;
-          if (v > max) max = v;
-        }
-        
-        const range = max - min || 1;
-        for (let i = 0; i < data.length; i++) {
-          const val = ((data[i] - min) / range) * 255;
-          const pxIdx = i * 4;
-          imgData.data[pxIdx] = val;
-          imgData.data[pxIdx+1] = val;
-          imgData.data[pxIdx+2] = val;
-          imgData.data[pxIdx+3] = 255;
-        }
-        ctx.putImageData(imgData, 0, 0);
-        meta.textContent = `Auto-stretched visualization (Min: ${min.toFixed(2)}, Max: ${max.toFixed(2)})`;
-      });
-    } 
-    // Handle Table Data
-    else if (type === 'BINTABLE' || type === 'TABLE') {
-      view.innerHTML = `
-        <div class="w-full h-full overflow-auto border border-surface-200 rounded-lg shadow-sm bg-white">
-          <table id="fits-table" class="min-w-full text-[11px] text-left border-collapse">
-            <thead class="bg-surface-50 sticky top-0"></thead>
-            <tbody class="divide-y divide-surface-100"></tbody>
-          </table>
-          <div id="table-loading" class="p-8 text-center text-surface-400">Loading table rows...</div>
-        </div>
-      `;
-      const table = document.getElementById('fits-table');
-      const dataUnit = hdu.data;
-      
-      dataUnit.getRows(0, 100, function(rows) {
-        document.getElementById('table-loading').remove();
-        const columns = dataUnit.columns;
-        
-        const head = table.querySelector('thead');
-        let headRow = '<tr class="border-b border-surface-200">';
-        columns.forEach(col => {
-          headRow += `<th class="px-4 py-2 font-bold text-surface-700 whitespace-nowrap">${escapeHtml(col)}</th>`;
-        });
-        headRow += '</tr>';
-        head.innerHTML = headRow;
-        
-        const body = table.querySelector('tbody');
-        rows.forEach(row => {
-          let bodyRow = '<tr class="hover:bg-surface-50 transition-colors">';
-          columns.forEach(col => {
-            const val = row[col];
-            bodyRow += `<td class="px-4 py-2 text-surface-600 whitespace-nowrap font-mono">${escapeHtml(val)}</td>`;
-          });
-          bodyRow += '</tr>';
-          body.insertAdjacentHTML('beforeend', bodyRow);
-        });
-        
-        if (dataUnit.rows > 100) {
-          const footer = document.createElement('div');
-          footer.className = 'p-4 bg-surface-50 text-center text-xs text-surface-400 italic';
-          footer.textContent = `Showing first 100 rows of ${dataUnit.rows} total.`;
-          table.parentElement.appendChild(footer);
-        }
-      });
-    } 
-    // Fallback
-    else {
-      view.innerHTML = `
-        <div class="text-center space-y-3">
-          <div class="text-4xl">📊</div>
-          <div class="text-surface-900 font-bold">Metadata Only HDU</div>
-          <p class="text-surface-500 text-xs max-w-xs">This HDU contains header metadata but no renderable image or table data.</p>
-        </div>
-      `;
-    }
-  }
-
 })();

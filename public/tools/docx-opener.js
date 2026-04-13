@@ -16,7 +16,7 @@
     OmniTool.create(mountEl, toolConfig, {
       accept: '.docx',
       binary: true,
-      infoHtml: '<strong>DOCX Toolkit:</strong> Professional-grade Word document viewer with Table of Contents, Markdown export, and word counts.',
+      infoHtml: '<strong>DOCX Toolkit:</strong> Professional-grade Word document viewer with search, reading time, and Markdown export.',
       
       onInit: function (h) {
         h.loadScript('https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js');
@@ -36,7 +36,9 @@
           label: '📝 Export Markdown',
           id: 'export-md',
           onClick: function (h) {
-             const html = document.getElementById('docx-render-area').innerHTML;
+             const area = document.getElementById('docx-render-area');
+             if (!area) return;
+             const html = area.innerHTML;
              const turndownService = new TurndownService();
              const markdown = turndownService.turndown(html);
              h.download(h.getFile().name.replace(/\.docx$/i, '.md'), markdown, 'text/markdown');
@@ -59,20 +61,30 @@
                 const text = textResult.value;
                 const wordCount = text.trim().split(/\s+/).length;
                 const charCount = text.length;
+                const readingTime = Math.ceil(wordCount / 200);
                 h.setState('plainText', text);
 
                 h.render(`
-                  <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                  <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm font-sans">
                     <!-- Header -->
-                    <div class="shrink-0 bg-surface-50 border-b border-surface-200 px-4 py-3 flex items-center justify-between">
+                    <div class="shrink-0 bg-surface-50 border-b border-surface-200 px-4 py-3 flex flex-wrap items-center justify-between gap-4">
                       <div class="flex items-center gap-3">
-                         <span class="text-lg">📄</span>
-                         <span class="text-sm font-bold text-surface-900 truncate max-w-xs">${escapeHtml(file.name)}</span>
+                         <span class="text-xl">📄</span>
+                         <div class="space-y-0.5">
+                           <h3 class="text-sm font-bold text-surface-900 truncate max-w-xs">${escapeHtml(file.name)}</h3>
+                           <div class="flex items-center gap-2 text-[10px] font-bold text-surface-400 uppercase tracking-widest">
+                             <span>${wordCount.toLocaleString()} Words</span>
+                             <span>•</span>
+                             <span>${readingTime} Min Read</span>
+                           </div>
+                         </div>
                       </div>
-                      <div class="flex items-center gap-4 text-[10px] font-bold text-surface-400 uppercase tracking-widest">
-                        <span>${wordCount.toLocaleString()} Words</span>
-                        <span class="w-1 h-1 bg-surface-300 rounded-full"></span>
-                        <span>${charCount.toLocaleString()} Chars</span>
+                      
+                      <div class="flex items-center gap-3">
+                        <div class="relative">
+                          <input type="text" id="docx-search" placeholder="Find in document..." class="pl-8 pr-4 py-1.5 text-xs bg-white border border-surface-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none w-48 shadow-sm">
+                          <span class="absolute left-2.5 top-2 text-xs opacity-40">🔍</span>
+                        </div>
                       </div>
                     </div>
 
@@ -85,8 +97,8 @@
                        </div>
 
                        <!-- Render Area -->
-                       <div class="flex-1 overflow-auto bg-surface-100 p-8 flex justify-center scroll-smooth">
-                         <div id="docx-render-area" class="bg-white shadow-xl rounded-sm p-12 max-w-[800px] w-full min-h-full prose prose-sm prose-slate">
+                       <div id="docx-scroll-container" class="flex-1 overflow-auto bg-surface-100 p-8 flex justify-center scroll-smooth">
+                         <div id="docx-render-area" class="bg-white shadow-xl rounded-sm p-12 md:p-16 max-w-[800px] w-full min-h-full prose prose-sm prose-slate">
                            ${result.value || '<p class="text-surface-400 italic">Empty document</p>'}
                          </div>
                        </div>
@@ -94,7 +106,6 @@
                   </div>
                 `);
 
-                // Generate ToC
                 const renderArea = document.getElementById('docx-render-area');
                 const headings = renderArea.querySelectorAll('h1, h2, h3');
                 const tocContainer = document.getElementById('docx-toc');
@@ -102,30 +113,60 @@
                 
                 if (headings.length > 0) {
                    tocContainer.classList.remove('hidden');
-                   headings.forEach((h, i) => {
+                   headings.forEach((heading, i) => {
                       const id = `heading-${i}`;
-                      h.id = id;
+                      heading.id = id;
                       const link = document.createElement('a');
                       link.href = `#${id}`;
-                      link.className = `block text-xs font-medium text-surface-600 hover:text-brand-600 transition-colors ${h.tagName === 'H1' ? 'pl-0' : h.tagName === 'H2' ? 'pl-2' : 'pl-4'}`;
-                      link.textContent = h.textContent;
+                      link.className = `block text-xs font-medium text-surface-600 hover:text-brand-600 transition-colors ${heading.tagName === 'H1' ? 'pl-0' : heading.tagName === 'H2' ? 'pl-2' : 'pl-4'}`;
+                      link.textContent = heading.textContent;
                       link.onclick = (e) => {
                          e.preventDefault();
-                         h.scrollIntoView({ behavior: 'smooth' });
+                         heading.scrollIntoView({ behavior: 'smooth' });
                       };
                       tocList.appendChild(link);
                    });
                 }
+
+                // Search Implementation
+                const searchInput = document.getElementById('docx-search');
+                let originalHtml = renderArea.innerHTML;
+
+                searchInput.addEventListener('input', () => {
+                  const query = searchInput.value.trim();
+                  if (!query || query.length < 2) {
+                    renderArea.innerHTML = originalHtml;
+                    return;
+                  }
+
+                  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                  
+                  // Simple text-based replacement for highlighting
+                  // Note: This is a bit naive as it can break HTML tags if query matches tag names
+                  // But for DOCX content it's usually okay.
+                  const walker = document.createTreeWalker(renderArea, NodeFilter.SHOW_TEXT, null, false);
+                  const nodes = [];
+                  let node;
+                  while(node = walker.nextNode()) nodes.push(node);
+
+                  nodes.forEach(textNode => {
+                    const parent = textNode.parentNode;
+                    if (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE') return;
+                    
+                    const text = textNode.nodeValue;
+                    if (regex.test(text)) {
+                      const span = document.createElement('span');
+                      span.innerHTML = text.replace(regex, '<mark class="bg-yellow-200 text-black rounded-sm px-0.5">$1</mark>');
+                      parent.replaceChild(span, textNode);
+                    }
+                  });
+                });
              });
           })
           .catch(err => {
-            h.render(`<div class="p-12 text-center text-surface-400">
-              <p class="text-2xl mb-2">📄</p>
-              <p>Unable to open this document. It might be empty or invalid.</p>
-            </div>`);
+            h.showError('Conversion Error', err.message);
           });
       }
     });
   };
 })();
-

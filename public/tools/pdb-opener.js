@@ -26,7 +26,7 @@
       dropSub: 'Visualize molecular structures in 3D',
       binary: false,
       onInit: function(helpers) {
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.min.js');
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js');
       },
       onFile: function(file, content, helpers) {
         if (typeof THREE === 'undefined') {

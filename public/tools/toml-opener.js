@@ -35,14 +35,13 @@
       onInit: function (helpers) {
         helpers.loadCSS('https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css');
         // Load libraries in sequence to handle dependencies
-        helpers.loadScripts([
-          'https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js'
-        ]).then(() => {
-          helpers.loadScripts([
-            'https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-toml.min.js',
-            'https://cdn.jsdelivr.net/npm/toml-j0.4@1.1.1/dist/toml-j0.4.min.js'
-          ]);
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js', function() {
+          helpers.loadScript('https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-toml.min.js');
         });
+        // Load TOML parser as ES module (widely supported in modern browsers)
+        import('https://cdn.jsdelivr.net/npm/@iarna/toml@2.2.5/+esm').then(function(mod) {
+          window.toml = { parse: function(s) { return (mod.default || mod).parse(s); } };
+        }).catch(function() {});
       },
       onFile: function (file, content, helpers) {
         if (!content || content.trim() === '') {
