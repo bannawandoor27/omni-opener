@@ -1899,6 +1899,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/vpk-opener.js"
+    },
+    {
+      "slug": "pcd-opener",
+      "title": "PCD Opener",
+      "h1": "Open & View .pcd Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .pcd files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".pcd"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/pcd-opener.js"
     }
   ]
 }
