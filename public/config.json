@@ -1647,6 +1647,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/ply-opener.js"
+    },
+    {
+      "slug": "3ds-opener",
+      "title": "3DS Opener",
+      "h1": "Open & View .3ds Files Online — Free & Private",
+      "meta_description": "Open, view, and explore .3ds (3D Studio) files in your browser. No uploads, no software needed — 100% private, runs entirely client-side.",
+      "formats": [
+        ".3ds"
+      ],
+      "category": "3d",
+      "icon": "🧊",
+      "script_url": "/tools/3ds-opener.js"
     }
   ]
 }
