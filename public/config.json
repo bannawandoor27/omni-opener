@@ -1503,6 +1503,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/fits-opener.js"
+    },
+    {
+      "slug": "nc-opener",
+      "title": "NetCDF Opener",
+      "h1": "Open & View .nc NetCDF Files Online — Free & Private",
+      "meta_description": "Open, view, and explore .nc (NetCDF) files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".nc"
+      ],
+      "category": "general",
+      "icon": "🌍",
+      "script_url": "/tools/nc-opener.js"
     }
   ]
 }
