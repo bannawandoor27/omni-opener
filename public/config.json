@@ -1923,6 +1923,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/dot-opener.js"
+    },
+    {
+      "slug": "ged-opener",
+      "title": "GED Opener",
+      "h1": "Open & View .ged Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .ged files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".ged"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/ged-opener.js"
     }
   ]
 }
