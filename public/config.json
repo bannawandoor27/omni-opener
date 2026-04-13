@@ -1827,6 +1827,18 @@
       "category": "general",
       "icon": "📁",
       "script_url": "/tools/msgpack-opener.js"
+    },
+    {
+      "slug": "cbor-opener",
+      "title": "CBOR Opener",
+      "h1": "Open & View .cbor Files Online — Free & Private",
+      "meta_description": "Open, view, and convert .cbor (Concise Binary Object Representation) files in your browser. No uploads, no installs — 100% private, runs entirely client-side.",
+      "formats": [
+        ".cbor"
+      ],
+      "category": "general",
+      "icon": "📁",
+      "script_url": "/tools/cbor-opener.js"
     }
   ]
 }
