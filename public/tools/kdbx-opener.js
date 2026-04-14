@@ -51,7 +51,7 @@
 
       onInit: function (h) {
         if (typeof kdbxweb === 'undefined') {
-          h.loadScript('https://cdn.jsdelivr.net/npm/kdbxweb@4.0.5/dist/kdbxweb.min.js');
+          h.loadScript('https://cdn.jsdelivr.net/npm/kdbxweb@2.1.1/dist/kdbxweb.min.js');
         }
       },
 

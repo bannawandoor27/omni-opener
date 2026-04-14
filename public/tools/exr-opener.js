@@ -5,12 +5,6 @@
 (function () {
   'use strict';
 
-  const SCRIPTS = [
-    'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js',
-    'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/fflate.module.min.js', // Often needed for EXR
-    'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/EXRLoader.js'
-  ];
-
   function formatBytes(bytes, decimals = 2) {
     if (!+bytes) return '0 Bytes';
     const k = 1024;
