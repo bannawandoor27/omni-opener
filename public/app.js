@@ -438,9 +438,7 @@
         '<span class="font-medium truncate">' + esc(t.title) + '</span></a>';
     }).join('');
 
-    $navLinks.querySelectorAll('.nav-link').forEach(function (a) {
-      a.addEventListener('click', function (e) { e.preventDefault(); navigateTo(a.dataset.slug); });
-    });
+    // Nav links use natural <a href> navigation so nginx serves pre-rendered HTML
   }
 
   // ── Grid ───────────────────────────────────────────────
@@ -463,9 +461,7 @@
         '<p class="text-xs text-surface-400 mt-0.5 truncate">' + (t.formats || []).join(', ') + '</p></div></a>';
     }).join('');
 
-    $g.querySelectorAll('.tool-card').forEach(function (c) {
-      c.addEventListener('click', function (e) { e.preventDefault(); navigateTo(c.dataset.slug); });
-    });
+    // Tool cards use natural <a href> navigation so nginx serves pre-rendered HTML
   }
 
   // ── Search ─────────────────────────────────────────────
@@ -582,7 +578,7 @@
         if (!window.confirm('This file is ' + mb + 'MB. Large files may be slow or crash the tab. Continue?')) return;
       }
       window.__droppedFile = file;
-      navigateTo(tool.slug);
+      navigateTo(tool.slug); // SPA nav needed — file object lives in current window only
     } else {
       showUnsupportedFormat(file, ext, zone);
     }
@@ -617,7 +613,7 @@
     if (zone) {
       zone.innerHTML = html;
       zone.querySelectorAll('.sugg-tool').forEach(function (btn) {
-        btn.addEventListener('click', function () { navigateTo(btn.dataset.slug); });
+        btn.addEventListener('click', function () { window.location.href = '/tools/' + btn.dataset.slug; });
       });
       var backBtn = document.getElementById('sugg-back');
       if (backBtn) backBtn.addEventListener('click', function () { navigateHome(); });
