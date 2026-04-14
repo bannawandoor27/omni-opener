@@ -268,7 +268,12 @@
       reader.onload = function (e) {
         state.content = e.target.result;
         try {
-          if (opts.onFile) opts.onFile(file, state.content, helpers);
+          var result = opts.onFile ? opts.onFile(file, state.content, helpers) : null;
+          if (result && typeof result.then === 'function') {
+            result.catch(function (err) {
+              helpers.showError('Processing Issue', err.message);
+            });
+          }
         } catch (err) {
           helpers.showError('Processing Issue', err.message);
         }

@@ -128,6 +128,8 @@
             textDivs: []
           });
           highlightSearchInPage(helpers);
+        }).catch(function() {
+          pageRendering = false;
         });
         
         // Toolbar Events
@@ -137,16 +139,16 @@
         document.getElementById('zoom-out').onclick = () => { if (scale > 0.5) { scale -= 0.25; renderPage(pageNum, helpers); } };
         document.getElementById('rotate-page').onclick = () => { rotation = (rotation + 90) % 360; renderPage(pageNum, helpers); };
         document.getElementById('download-pdf').onclick = () => helpers.download(helpers.getFile().name, helpers.getContent());
-        document.getElementById('copy-text').onclick = (btn) => copyPageText(page, helpers, btn.target);
-        document.getElementById('extract-text').onclick = () => extractAllText(helpers);
+        document.getElementById('copy-text').onclick = (btn) => copyPageText(page, helpers, btn.target).catch(() => {});
+        document.getElementById('extract-text').onclick = () => extractAllText(helpers).catch(err => helpers.showError('Extraction failed', err.message));
         
         const searchInput = document.getElementById('pdf-search-input');
-        searchInput.onkeydown = (e) => { if (e.key === 'Enter') performSearch(searchInput.value, helpers); };
+        searchInput.onkeydown = (e) => { if (e.key === 'Enter') performSearch(searchInput.value, helpers).catch(() => {}); };
 
         const sidebar = document.getElementById('pdf-sidebar');
         document.getElementById('toggle-sidebar').onclick = () => {
           sidebar.classList.toggle('hidden');
-          if (!sidebar.classList.contains('hidden')) renderThumbnails(helpers);
+          if (!sidebar.classList.contains('hidden')) renderThumbnails(helpers).catch(() => {});
         };
 
         document.getElementById('sidebar-thumb-view').onclick = () => showSidebarView('thumbs');
@@ -270,6 +272,7 @@
         fullText += `--- PAGE ${i} ---\n${pageText}\n\n`;
       }
       helpers.download(helpers.getFile().name.replace(/\.pdf$/i, '.txt'), fullText, 'text/plain');
+      renderPage(pageNum, helpers);
     }
 
     function onPrevPage(helpers) {

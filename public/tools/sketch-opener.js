@@ -50,6 +50,8 @@
                   </div>
                 `);
                 document.getElementById('btn-dl-png').onclick = () => h.download(`${file.name}.png`, blob, 'image/png');
+             }).catch(() => {
+                h.render(`<div class="p-12 text-center text-surface-400">Could not extract preview from this Sketch file.</div>`);
              });
           } else {
              h.render(`

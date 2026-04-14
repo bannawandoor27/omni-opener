@@ -161,6 +161,8 @@
                     }
                   });
                 });
+             }).catch(err => {
+               console.warn('Text extraction failed:', err.message);
              });
           })
           .catch(err => {

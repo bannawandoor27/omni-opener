@@ -362,8 +362,15 @@
               helpers.setState({ mp4Url, mp4Blob, isConverted: true });
 
               btn.innerHTML = '✅ Converted';
-              helpers.showLoading(null);
-              
+              renderBase();
+              const restoredVideo = document.getElementById('main-player');
+              if (restoredVideo) {
+                restoredVideo.src = mp4Url;
+                restoredVideo.classList.remove('hidden');
+                const restoredNotice = document.getElementById('playback-notice');
+                if (restoredNotice) restoredNotice.classList.add('hidden');
+              }
+
               setTimeout(cleanup, 3000);
 
             } catch (err) {

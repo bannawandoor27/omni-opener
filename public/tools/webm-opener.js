@@ -202,7 +202,7 @@
                 const originalLabel = btn.innerText;
                 btn.innerText = '✅ Copied!';
                 setTimeout(() => btn.innerText = originalLabel, 2000);
-              });
+              }).catch(() => {});
             }
           }
         }

@@ -260,20 +260,18 @@
             video.onloadedmetadata = () => {
               const dur = video.duration ? `${Math.floor(video.duration / 60)}m ${Math.floor(video.duration % 60)}s` : 'Unknown';
               const res = `${video.videoWidth} × ${video.videoHeight}`;
-              
-              helpers.setState({ 
+
+              helpers.setState({
                 meta: { ...helpers.getState().meta, duration: dur, resolution: res }
               });
 
               document.getElementById('td-duration').textContent = dur;
               document.getElementById('td-resolution').textContent = res;
-              helpers.showLoading(null);
             };
 
             video.onerror = () => {
               overlay.classList.remove('hidden');
               overlay.classList.add('flex');
-              helpers.showLoading(null);
             };
 
             if (convertOverlayBtn) {
@@ -385,8 +383,8 @@
               }
 
               btn.innerHTML = '✅ Done';
-              helpers.showLoading(null);
-              
+              renderUI();
+
               setTimeout(() => {
                 btn.disabled = false;
                 btn.innerHTML = originalLabel;
@@ -397,7 +395,6 @@
               helpers.showError('Conversion Failed', 'Your browser might have run out of memory or the file is corrupted. Try a smaller file.');
               btn.disabled = false;
               btn.innerHTML = originalLabel;
-              helpers.showLoading(null);
             }
           }
         },
