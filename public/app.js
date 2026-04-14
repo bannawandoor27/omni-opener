@@ -201,10 +201,10 @@
   // ── Show Landing ───────────────────────────────────────
   function showLanding() {
     currentSlug = null;
-    document.title = 'OmniOpener \u2014 Open Any File in Your Browser';
-    setMeta('description', '144+ browser-based file tools. No uploads, no installs. Open, view, and convert files entirely client-side.');
-    setMeta('og:title', 'OmniOpener \u2014 Open Any File in Your Browser');
-    setMeta('og:description', '144+ browser-based file tools. No uploads, no installs. 100% private and client-side.');
+    document.title = 'OmniOpener \u2014 Free Online File Viewer for 150+ Formats';
+    setMeta('description', 'Open, view, and convert 150+ file formats free in your browser \u2014 PDF, DOCX, CSV, MP3, ZIP, STL, and more. No uploads, no installs, 100% private.');
+    setMeta('og:title', 'OmniOpener \u2014 Free Online File Viewer for 150+ Formats');
+    setMeta('og:description', 'Open, view, and convert 150+ file formats free in your browser. No uploads, no installs \u2014 100% private and client-side.');
     setMeta('og:url', 'https://omniopener.dev');
     setLink('canonical', 'https://omniopener.dev');
     var toolLd = document.getElementById('tool-ld-json');
@@ -226,8 +226,10 @@
     return '<div id="landing" class="fade-in"><div class="max-w-4xl mx-auto text-center py-12">' +
       '<h1 class="text-5xl sm:text-6xl font-extrabold tracking-tight mb-6">' +
         'Open <span class="bg-gradient-to-r from-brand-500 to-purple-600 bg-clip-text text-transparent">any file</span><br>in your browser</h1>' +
-      '<p class="text-lg text-surface-500 mb-4 max-w-xl mx-auto leading-relaxed">' +
-        'No uploads. No installs. No sign-ups. Drop a file and work with it instantly \u2014 everything runs <strong class="text-surface-700">100% client-side</strong>.</p>' +
+      '<p class="text-lg text-surface-500 mb-2 max-w-xl mx-auto leading-relaxed">' +
+        'Free online file viewer for <strong class="text-surface-700">150+ formats</strong> \u2014 PDF, Word, Excel, CSV, MP3, ZIP, STL, and more. Drop a file and open it instantly.</p>' +
+      '<p class="text-sm text-surface-400 mb-6 max-w-xl mx-auto">' +
+        'No uploads. No installs. No sign-ups. Everything runs <strong class="text-surface-600">100% client-side</strong> \u2014 your files never leave your device.</p>' +
       '<div class="flex flex-wrap justify-center gap-4 mb-10 text-sm text-surface-500">' +
         '<span class="flex items-center gap-1.5"><svg class="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg> 100% Private</span>' +
         '<span class="flex items-center gap-1.5"><svg class="w-4 h-4 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Instant</span>' +
