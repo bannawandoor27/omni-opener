@@ -182,6 +182,9 @@
       }).from(element).save().then(function () {
         btn.textContent = '📥 Export PDF';
         btn.disabled = false;
+      }).catch(function () {
+        btn.textContent = '📥 Export PDF';
+        btn.disabled = false;
       });
     }
 

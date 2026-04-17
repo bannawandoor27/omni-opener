@@ -22,10 +22,10 @@
         h.loadScript('https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.min.js');
       },
 
-      onFile: function (file, content, h) {
+      onFile: function _onFileFn(file, content, h) {
         if (typeof UTIF === 'undefined') {
           h.showLoading('Loading TIFF engine...');
-          setTimeout(() => this.onFile(file, content, h), 500);
+          setTimeout(() => _onFileFn(file, content, h), 500);
           return;
         }
 

@@ -17,6 +17,7 @@
     let animationId = null;
     let loopEnabled = false;
     let loopRegion = null;
+    let currentAudioUrl = null;
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.mp3',
@@ -29,15 +30,19 @@
         h.loadScript('https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js');
       },
 
-      onFile: function (file, content, h) {
+      onFile: function onFileImpl(file, content, h) {
         if (typeof WaveSurfer === 'undefined' || typeof jsmediatags === 'undefined' || typeof WaveSurfer.Regions === 'undefined') {
           h.showLoading('Loading audio engines...');
-          setTimeout(() => this.onFile(file, content, h), 500);
+          setTimeout(function() { onFileImpl(file, content, h); }, 500);
           return;
         }
 
+        // Cleanup previous URL
+        if (currentAudioUrl) { URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; }
+
         const blob = new Blob([content], { type: 'audio/mpeg' });
         const url = URL.createObjectURL(blob);
+        currentAudioUrl = url;
         
         h.render(`
           <div class="flex flex-col h-[75vh] border border-surface-200 rounded-2xl overflow-hidden bg-white shadow-lg">
@@ -83,10 +88,10 @@
                     <div class="flex items-center bg-surface-50 rounded-lg p-1 border border-surface-200">
                       <button id="btn-loop" class="px-3 py-1 text-xs font-bold text-surface-400 hover:text-surface-600 transition-colors">🔁 Loop Off</button>
                     </div>
-                    <div class="flex items-center gap-1">
+                    <div class="flex items-center gap-1" id="speed-btns">
                       <span class="text-[10px] font-bold text-surface-400 uppercase mr-2">Speed</span>
                       ${[0.5, 1, 1.5, 2].map(s => `
-                        <button onclick="window.ws.setPlaybackRate(${s}); this.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('bg-brand-600', 'text-white')); this.classList.add('bg-brand-600', 'text-white')" class="px-2 py-1 text-[10px] font-bold rounded border border-surface-200 hover:border-brand-300 transition-colors ${s === 1 ? 'bg-brand-600 text-white' : 'text-surface-600'}">${s}x</button>
+                        <button data-rate="${s}" class="speed-btn px-2 py-1 text-[10px] font-bold rounded border border-surface-200 hover:border-brand-300 transition-colors ${s === 1 ? 'bg-brand-600 text-white' : 'text-surface-600'}">${s}x</button>
                       `).join('')}
                     </div>
                   </div>
@@ -125,7 +130,6 @@
 
         const wsRegions = wavesurfer.registerPlugin(WaveSurfer.Regions.create());
 
-        window.ws = wavesurfer;
 
         const canvas = document.getElementById('visualizer');
         const ctx = canvas.getContext('2d');
@@ -191,6 +195,20 @@
         
         volumeInput.oninput = (e) => wavesurfer.setVolume(e.target.value);
 
+        // Speed buttons — use event listeners instead of inline onclick
+        document.querySelectorAll('.speed-btn').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            const rate = parseFloat(btn.getAttribute('data-rate'));
+            wavesurfer.setPlaybackRate(rate);
+            document.querySelectorAll('.speed-btn').forEach(function(b) {
+              b.classList.remove('bg-brand-600', 'text-white');
+              b.classList.add('text-surface-600');
+            });
+            btn.classList.add('bg-brand-600', 'text-white');
+            btn.classList.remove('text-surface-600');
+          });
+        });
+
         loopBtn.onclick = () => {
           loopEnabled = !loopEnabled;
           if (loopEnabled) {
@@ -255,8 +273,9 @@
         };
       },
       onDestroy: function() {
-        if (animationId) cancelAnimationFrame(animationId);
-        if (wavesurfer) wavesurfer.destroy();
+        if (animationId) { cancelAnimationFrame(animationId); animationId = null; }
+        if (wavesurfer) { try { wavesurfer.destroy(); } catch(e) {} wavesurfer = null; }
+        if (currentAudioUrl) { URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; }
       }
     });
   };

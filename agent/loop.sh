@@ -322,19 +322,32 @@ update_config() {
 # ── Git Commit & Push ─────────────────────────────────────
 commit_and_push() {
   local format="$1"
+  local message="${2:-feat: add ${format}-opener tool [automated]}"
   cd "$ROOT"
+
   git add -A
-  git commit -m "feat: add ${format}-opener tool [automated]" || true
-  git push origin main 2>&1 || git push origin master 2>&1
-  # Regenerate sitemap and pre-render tool pages after deploy
+  git commit -m "$message" || true
+
+  # Rebase on top of any remote changes before pushing (avoid conflicts with local dev)
+  git pull --rebase origin main 2>/dev/null || git pull --rebase origin master 2>/dev/null || warn "Could not rebase before push"
+
+  git push origin main 2>&1 || git push origin master 2>&1 || warn "Push failed — will retry next cycle"
+
+  # Regenerate sitemap and pre-rendered pages (also updates index.html static links)
   if [[ -f "$ROOT/scripts/generate-sitemap.js" ]]; then
     node "$ROOT/scripts/generate-sitemap.js" 2>/dev/null || true
   fi
   if [[ -f "$ROOT/scripts/prerender.js" ]]; then
     node "$ROOT/scripts/prerender.js" 2>/dev/null || true
   fi
-  git add public/sitemap.xml public/tools/*/index.html 2>/dev/null
-  git diff --cached --quiet || git commit -m "chore: update sitemap and pre-rendered pages [automated]" && git push origin main 2>/dev/null || true
+
+  # Commit and push the regenerated SEO assets if anything changed
+  git add public/sitemap.xml public/index.html "public/tools/*/index.html" 2>/dev/null || true
+  if ! git diff --cached --quiet; then
+    git commit -m "chore: regenerate sitemap and pre-rendered pages [automated]"
+    git push origin main 2>/dev/null || git push origin master 2>/dev/null || true
+  fi
+
   ok "Pushed to GitHub"
 }
 
@@ -458,6 +471,10 @@ main() {
 
   # Continuous loop mode
   while true; do
+    # Sync with remote first — picks up manual bug fixes, updated prompts, config changes
+    cd "$ROOT"
+    git pull --rebase origin main 2>/dev/null || warn "Could not sync with remote — continuing on local state"
+
     check_instructions
 
     # Read next format from queue
@@ -488,24 +505,26 @@ main() {
         perfect_tool "$reperfect_format"
         if validate_tool "$reperfect_format"; then
           mark_reperfected "$reperfect_format"
-          commit_and_push "$reperfect_format"
+          commit_and_push "$reperfect_format" "fix: perfect ${reperfect_format}-opener [automated]"
           ok "✅ Re-perfected and deployed: $reperfect_format"
         else
           warn "Re-perfection broke $reperfect_format — running improve and marking done anyway"
           improve_tool "$reperfect_format"
           mark_reperfected "$reperfect_format"
-          commit_and_push "$reperfect_format"
+          commit_and_push "$reperfect_format" "fix: improve ${reperfect_format}-opener [automated]"
         fi
         sleep $SLEEP_BETWEEN
         continue
       fi
 
-      ok "🎉 All formats built and re-perfected!"
+      ok "🎉 All tools perfected — resetting cycle to continue improving..."
       # Retry any formats that previously failed
       retry_failed
-      # Ask Gemini to discover new formats and add to queue
-      discover_formats
-      log "😴 Sleeping 5 minutes before next discovery cycle..."
+      # Reset the reperfected list so we cycle through all tools again indefinitely
+      # (Do NOT discover new formats — focus is on perfecting existing tools)
+      local tmp; tmp=$(mktemp)
+      jq '.reperfected = []' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
+      log "😴 Sleeping 5 minutes before next perfection cycle..."
       sleep 300
       continue
     fi

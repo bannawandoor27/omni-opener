@@ -11,10 +11,10 @@
         helpers.loadCSS('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css');
         helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js');
       },
-      onFile: function (file, arrayBuffer, helpers) {
+      onFile: function _onFileFn(file, arrayBuffer, helpers) {
         if (typeof hljs === 'undefined') {
           helpers.showLoading('Loading highlighter...');
-          helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js', () => this.onFile(file, arrayBuffer, helpers));
+          helpers.loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js', () => _onFileFn(file, arrayBuffer, helpers));
           return;
         }
 

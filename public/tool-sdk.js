@@ -159,36 +159,38 @@
           state[key] = val;
         }
       },
-      /** Dynamically load a script from CDN */
+      /** Dynamically load a script from CDN. Returns a Promise AND calls cb. */
       loadScript: function (src, cb) {
-        if (document.querySelector('script[src="' + src + '"]')) {
+        var self = this;
+        var existing = document.querySelector('script[src="' + src + '"]');
+        if (existing) {
           if (cb) cb();
-          return;
+          return Promise.resolve();
         }
-        var s = document.createElement('script');
-        s.src = src;
-        // Support ESM modules if URL contains /esm/ or ends with .mjs or .module.js or from certain providers
-        if (src.indexOf('/esm/') !== -1 || src.indexOf('.mjs') !== -1 || src.indexOf('.module.js') !== -1 || src.indexOf('pdf.min.mjs') !== -1) {
-          s.type = 'module';
-        }
-        s.crossOrigin = 'anonymous'; // Essential for ESM and better error reports
-        s.onload = function () { if (cb) cb(); };
-        s.onerror = function () { helpers.showError('Failed to load dependency', src); };
-        document.head.appendChild(s);
+        return new Promise(function (resolve, reject) {
+          var s = document.createElement('script');
+          s.src = src;
+          // Support ESM modules if URL contains /esm/ or ends with .mjs or .module.js or +esm
+          if (src.indexOf('/esm/') !== -1 || src.indexOf('.mjs') !== -1 || src.indexOf('.module.js') !== -1 || src.indexOf('pdf.min.mjs') !== -1 || src.indexOf('+esm') !== -1) {
+            s.type = 'module';
+          }
+          s.crossOrigin = 'anonymous';
+          s.onload = function () { if (cb) cb(); resolve(); };
+          s.onerror = function () {
+            helpers.showError('Failed to load dependency', src);
+            reject(new Error('Script load failed: ' + src));
+          };
+          document.head.appendChild(s);
+        });
       },
-      /** Dynamically load multiple scripts in order */
+      /** Dynamically load multiple scripts in order. Returns a Promise AND calls cb. */
       loadScripts: function (scripts, cb) {
         var self = this;
-        function loadNext(index) {
-          if (index >= scripts.length) {
-            if (cb) cb();
-            return;
-          }
-          self.loadScript(scripts[index], function () {
-            loadNext(index + 1);
-          });
-        }
-        loadNext(0);
+        var promise = scripts.reduce(function (p, src) {
+          return p.then(function () { return self.loadScript(src); });
+        }, Promise.resolve());
+        if (cb) promise.then(cb).catch(function () {});
+        return promise;
       },
       /** Dynamically load a CSS file */
       loadCSS: function (href) {
@@ -266,7 +268,12 @@
       reader.onload = function (e) {
         state.content = e.target.result;
         try {
-          if (opts.onFile) opts.onFile(file, state.content, helpers);
+          var result = opts.onFile ? opts.onFile(file, state.content, helpers) : null;
+          if (result && typeof result.then === 'function') {
+            result.catch(function (err) {
+              helpers.showError('Processing Issue', err.message);
+            });
+          }
         } catch (err) {
           helpers.showError('Processing Issue', err.message);
         }

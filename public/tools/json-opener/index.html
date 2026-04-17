@@ -3,25 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JSON Opener — OmniOpener</title>
-  <meta name="description" content="View and work with .json files directly in your browser. Free, private, no upload required.">
+  <title>JSON Viewer Online — Pretty Print &amp; Validate JSON — OmniOpener</title>
+  <meta name="description" content="View and pretty-print JSON files with syntax highlighting, tree view, and search. Validate JSON structure instantly in your browser. Free.">
   <link rel="canonical" href="https://omniopener.dev/tools/json-opener">
 
   <meta property="og:type" content="website">
-  <meta property="og:title" content="JSON Opener — OmniOpener">
-  <meta property="og:description" content="View and work with .json files directly in your browser. Free, private, no upload required.">
+  <meta property="og:title" content="JSON Viewer Online — Pretty Print &amp; Validate JSON — OmniOpener">
+  <meta property="og:description" content="View and pretty-print JSON files with syntax highlighting, tree view, and search. Validate JSON structure instantly in your browser. Free.">
   <meta property="og:url" content="https://omniopener.dev/tools/json-opener">
   <meta property="og:site_name" content="OmniOpener">
 
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="JSON Opener — OmniOpener">
-  <meta name="twitter:description" content="View and work with .json files directly in your browser. Free, private, no upload required.">
+  <meta name="twitter:title" content="JSON Viewer Online — Pretty Print &amp; Validate JSON — OmniOpener">
+  <meta name="twitter:description" content="View and pretty-print JSON files with syntax highlighting, tree view, and search. Validate JSON structure instantly in your browser. Free.">
 
   <meta name="theme-color" content="#4f46e5">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/favicon.ico">
 
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"JSON Opener","url":"https://omniopener.dev/tools/json-opener","description":"View and work with .json files directly in your browser. Free, private, no upload required.","applicationCategory":"UtilitiesApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"featureList":"Open .json files in browser, No file upload required, 100% private and client-side","isPartOf":{"@type":"WebApplication","name":"OmniOpener","url":"https://omniopener.dev"}}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"JSON Viewer Online — Pretty Print & Validate JSON","url":"https://omniopener.dev/tools/json-opener","description":"View and pretty-print JSON files with syntax highlighting, tree view, and search. Validate JSON structure instantly in your browser. Free.","applicationCategory":"UtilitiesApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"featureList":"Open .json files in browser, No file upload required, 100% private and client-side","isPartOf":{"@type":"WebApplication","name":"OmniOpener","url":"https://omniopener.dev"}}</script>
 
   <script>
     const originalWarn = console.warn;
@@ -40,7 +40,7 @@
         fontFamily: { sans: ['Inter','system-ui','sans-serif'] },
         colors: {
           brand: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81' },
-          surface: { 50:'#f8fafc',100:'#f1f5f9',200:'#e2e8f0',300:'#cbd5e1',400:'#94a3b8',500:'#64748b',700:'#334155',800:'#1e293b',900:'#0f172a' }
+          surface: { 50:'#f8fafc',100:'#f1f5f9',200:'#e2e8f0',300:'#cbd5e1',400:'#94a3b8',500:'#64748b',600:'#475569',700:'#334155',800:'#1e293b',900:'#0f172a',950:'#020617' }
         }
       }}
     }
@@ -79,8 +79,8 @@
       <div class="flex items-start gap-4 mb-4">
         <div class="text-4xl shrink-0 mt-1">📁</div>
         <div>
-          <h1 class="text-3xl font-extrabold text-surface-900 leading-tight">Open &amp; View .json Files Online</h1>
-          <p class="text-surface-500 mt-2 text-base leading-relaxed">View and work with .json files directly in your browser. Free, private, no upload required.</p>
+          <h1 class="text-3xl font-extrabold text-surface-900 leading-tight">Open, View &amp; Validate .json Files Online</h1>
+          <p class="text-surface-500 mt-2 text-base leading-relaxed">View and pretty-print JSON files with syntax highlighting, tree view, and search. Validate JSON structure instantly in your browser. Free.</p>
         </div>
       </div>
 
@@ -123,9 +123,9 @@
       </div>
 
       <div class="mt-8 bg-white rounded-xl p-6 border border-surface-200">
-        <h2 class="font-semibold text-surface-800 mb-2">About JSON Opener</h2>
+        <h2 class="font-semibold text-surface-800 mb-2">About JSON Viewer Online — Pretty Print &amp; Validate JSON</h2>
         <p class="text-surface-500 text-sm leading-relaxed">
-          Open &amp; View .json Files Online. This tool runs entirely in your web browser using modern JavaScript APIs.
+          Open, View &amp; Validate .json Files Online. This tool runs entirely in your web browser using modern JavaScript APIs.
           Simply drop your .json file onto the tool above, or click to browse for a file.
           Your data stays on your device at all times — we never see or store your files.
         </p>
@@ -145,7 +145,7 @@
 
   <!-- Boot tool directly — no SPA routing -->
   <script>
-    window.__TOOL_CONFIG__ = {"slug":"json-opener","title":"JSON Opener","h1":"Open & View .json Files Online","meta_description":"View and work with .json files directly in your browser. Free, private, no upload required.","formats":[".json"],"category":"general","icon":"📁","script_url":"/tools/json-opener.js"};
+    window.__TOOL_CONFIG__ = {"slug":"json-opener","title":"JSON Viewer Online — Pretty Print & Validate JSON","h1":"Open, View & Validate .json Files Online","meta_description":"View and pretty-print JSON files with syntax highlighting, tree view, and search. Validate JSON structure instantly in your browser. Free.","formats":[".json"],"category":"general","icon":"📁","script_url":"/tools/json-opener.js"};
   </script>
   <script src="/tool-sdk.js"></script>
   <script src="/tools/json-opener.js"></script>

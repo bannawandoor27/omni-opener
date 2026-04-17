@@ -3,25 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OBJ Opener — OmniOpener</title>
-  <meta name="description" content="Open, view, and convert .obj files in your browser. No uploads, no installs — 100% private, runs entirely client-side.">
+  <title>OBJ Viewer Online — Open 3D Model Files in Browser — OmniOpener</title>
+  <meta name="description" content="View Wavefront OBJ 3D model files in your browser with interactive 3D preview, lighting, and material support. Free, private, no upload.">
   <link rel="canonical" href="https://omniopener.dev/tools/obj-opener">
 
   <meta property="og:type" content="website">
-  <meta property="og:title" content="OBJ Opener — OmniOpener">
-  <meta property="og:description" content="Open, view, and convert .obj files in your browser. No uploads, no installs — 100% private, runs entirely client-side.">
+  <meta property="og:title" content="OBJ Viewer Online — Open 3D Model Files in Browser — OmniOpener">
+  <meta property="og:description" content="View Wavefront OBJ 3D model files in your browser with interactive 3D preview, lighting, and material support. Free, private, no upload.">
   <meta property="og:url" content="https://omniopener.dev/tools/obj-opener">
   <meta property="og:site_name" content="OmniOpener">
 
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="OBJ Opener — OmniOpener">
-  <meta name="twitter:description" content="Open, view, and convert .obj files in your browser. No uploads, no installs — 100% private, runs entirely client-side.">
+  <meta name="twitter:title" content="OBJ Viewer Online — Open 3D Model Files in Browser — OmniOpener">
+  <meta name="twitter:description" content="View Wavefront OBJ 3D model files in your browser with interactive 3D preview, lighting, and material support. Free, private, no upload.">
 
   <meta name="theme-color" content="#4f46e5">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/favicon.ico">
 
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"OBJ Opener","url":"https://omniopener.dev/tools/obj-opener","description":"Open, view, and convert .obj files in your browser. No uploads, no installs — 100% private, runs entirely client-side.","applicationCategory":"UtilitiesApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"featureList":"Open .obj files in browser, No file upload required, 100% private and client-side","isPartOf":{"@type":"WebApplication","name":"OmniOpener","url":"https://omniopener.dev"}}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"OBJ Viewer Online — Open 3D Model Files in Browser","url":"https://omniopener.dev/tools/obj-opener","description":"View Wavefront OBJ 3D model files in your browser with interactive 3D preview, lighting, and material support. Free, private, no upload.","applicationCategory":"UtilitiesApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"featureList":"Open .obj files in browser, No file upload required, 100% private and client-side","isPartOf":{"@type":"WebApplication","name":"OmniOpener","url":"https://omniopener.dev"}}</script>
 
   <script>
     const originalWarn = console.warn;
@@ -40,7 +40,7 @@
         fontFamily: { sans: ['Inter','system-ui','sans-serif'] },
         colors: {
           brand: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81' },
-          surface: { 50:'#f8fafc',100:'#f1f5f9',200:'#e2e8f0',300:'#cbd5e1',400:'#94a3b8',500:'#64748b',700:'#334155',800:'#1e293b',900:'#0f172a' }
+          surface: { 50:'#f8fafc',100:'#f1f5f9',200:'#e2e8f0',300:'#cbd5e1',400:'#94a3b8',500:'#64748b',600:'#475569',700:'#334155',800:'#1e293b',900:'#0f172a',950:'#020617' }
         }
       }}
     }
@@ -79,8 +79,8 @@
       <div class="flex items-start gap-4 mb-4">
         <div class="text-4xl shrink-0 mt-1">🧊</div>
         <div>
-          <h1 class="text-3xl font-extrabold text-surface-900 leading-tight">Open &amp; View .obj Files Online — Free &amp; Private</h1>
-          <p class="text-surface-500 mt-2 text-base leading-relaxed">Open, view, and convert .obj files in your browser. No uploads, no installs — 100% private, runs entirely client-side.</p>
+          <h1 class="text-3xl font-extrabold text-surface-900 leading-tight">Open &amp; View .obj 3D Model Files in Your Browser</h1>
+          <p class="text-surface-500 mt-2 text-base leading-relaxed">View Wavefront OBJ 3D model files in your browser with interactive 3D preview, lighting, and material support. Free, private, no upload.</p>
         </div>
       </div>
 
@@ -123,9 +123,9 @@
       </div>
 
       <div class="mt-8 bg-white rounded-xl p-6 border border-surface-200">
-        <h2 class="font-semibold text-surface-800 mb-2">About OBJ Opener</h2>
+        <h2 class="font-semibold text-surface-800 mb-2">About OBJ Viewer Online — Open 3D Model Files in Browser</h2>
         <p class="text-surface-500 text-sm leading-relaxed">
-          Open &amp; View .obj Files Online — Free &amp; Private. This tool runs entirely in your web browser using modern JavaScript APIs.
+          Open &amp; View .obj 3D Model Files in Your Browser. This tool runs entirely in your web browser using modern JavaScript APIs.
           Simply drop your .obj file onto the tool above, or click to browse for a file.
           Your data stays on your device at all times — we never see or store your files.
         </p>
@@ -145,7 +145,7 @@
 
   <!-- Boot tool directly — no SPA routing -->
   <script>
-    window.__TOOL_CONFIG__ = {"slug":"obj-opener","title":"OBJ Opener","h1":"Open & View .obj Files Online — Free & Private","meta_description":"Open, view, and convert .obj files in your browser. No uploads, no installs — 100% private, runs entirely client-side.","formats":[".obj"],"category":"3d","icon":"🧊","script_url":"/tools/obj-opener.js"};
+    window.__TOOL_CONFIG__ = {"slug":"obj-opener","title":"OBJ Viewer Online — Open 3D Model Files in Browser","h1":"Open & View .obj 3D Model Files in Your Browser","meta_description":"View Wavefront OBJ 3D model files in your browser with interactive 3D preview, lighting, and material support. Free, private, no upload.","formats":[".obj"],"category":"3d","icon":"🧊","script_url":"/tools/obj-opener.js"};
   </script>
   <script src="/tool-sdk.js"></script>
   <script src="/tools/obj-opener.js"></script>

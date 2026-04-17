@@ -27,12 +27,12 @@
         const ctx = canvas.getContext('2d');
         canvas.height = viewport.height;
         canvas.width = viewport.width;
-        
+
         page.render({ canvasContext: ctx, viewport: viewport }).promise.then(() => {
            h.hideLoading();
            document.getElementById('page-info').textContent = `${num} / ${pdfDoc.numPages}`;
-        });
-      });
+        }).catch(() => h.showError('Render failed', 'Could not render page ' + num));
+      }).catch(() => h.showError('Page load failed', 'Could not load page ' + num));
     }
 
     OmniTool.create(mountEl, toolConfig, {
@@ -46,10 +46,10 @@
         });
       },
 
-      onFile: function (file, content, h) {
+      onFile: function _onFileFn(file, content, h) {
         if (typeof pdfjsLib === 'undefined') {
           h.showLoading('Loading AI engine...');
-          setTimeout(() => this.onFile(file, content, h), 500);
+          setTimeout(() => _onFileFn(file, content, h), 500);
           return;
         }
 

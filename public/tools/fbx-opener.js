@@ -29,10 +29,10 @@
           });
         });
       },
-      onFile: function(file, content, helpers) {
+      onFile: function _onFileFn(file, content, helpers) {
         if (!window.THREE || !THREE.FBXLoader || !THREE.OrbitControls) {
           helpers.showLoading('Initializing 3D engine...');
-          setTimeout(() => this.onFile(file, content, helpers), 500);
+          setTimeout(() => _onFileFn(file, content, helpers), 500);
           return;
         }
 

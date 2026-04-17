@@ -22,10 +22,10 @@
         h.loadScript('https://cdn.jsdelivr.net/npm/dxf-parser@1.1.2/dist/dxf-parser.min.js');
       },
 
-      onFile: function (file, content, h) {
+      onFile: function _onFileFn(file, content, h) {
         if (typeof DxfParser === 'undefined') {
           h.showLoading('Loading DXF engine...');
-          setTimeout(() => this.onFile(file, content, h), 500);
+          setTimeout(() => _onFileFn(file, content, h), 500);
           return;
         }
 

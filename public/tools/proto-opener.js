@@ -37,10 +37,10 @@
         }
       ],
 
-      onFile: function (file, content, helpers) {
+      onFile: function _onFileFn(file, content, helpers) {
         if (typeof hljs === 'undefined') {
           helpers.showLoading('Loading highlighter...');
-          setTimeout(() => this.onFile(file, content, helpers), 500);
+          setTimeout(() => _onFileFn(file, content, helpers), 500);
           return;
         }
 

@@ -10,10 +10,10 @@
       onInit: function(helpers) {
         helpers.loadScript(PSD_LIB_URL);
       },
-      onFile: function(file, content, helpers) {
+      onFile: function _onFileFn(file, content, helpers) {
         if (typeof window.PSD === 'undefined') {
           helpers.showLoading('Loading PSD engine...');
-          helpers.loadScript(PSD_LIB_URL, () => this.onFile(file, content, helpers));
+          helpers.loadScript(PSD_LIB_URL, () => _onFileFn(file, content, helpers));
           return;
         }
 

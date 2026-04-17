@@ -105,7 +105,7 @@ function buildPage(tool) {
         fontFamily: { sans: ['Inter','system-ui','sans-serif'] },
         colors: {
           brand: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81' },
-          surface: { 50:'#f8fafc',100:'#f1f5f9',200:'#e2e8f0',300:'#cbd5e1',400:'#94a3b8',500:'#64748b',700:'#334155',800:'#1e293b',900:'#0f172a' }
+          surface: { 50:'#f8fafc',100:'#f1f5f9',200:'#e2e8f0',300:'#cbd5e1',400:'#94a3b8',500:'#64748b',600:'#475569',700:'#334155',800:'#1e293b',900:'#0f172a',950:'#020617' }
         }
       }}
     }
@@ -222,7 +222,7 @@ function buildPage(tool) {
 </html>`;
 }
 
-// Generate pages
+// Generate tool pages
 let count = 0;
 for (const tool of CONFIG.tools) {
   const dir = path.join(TOOLS_DIR, tool.slug);
@@ -237,3 +237,20 @@ for (const tool of CONFIG.tools) {
 }
 
 console.log(`Pre-rendered ${count} tool pages → public/tools/{slug}/index.html`);
+
+// Inject static tool links into index.html for SEO (crawlers see links without JS)
+const INDEX_HTML = path.join(ROOT, 'public', 'index.html');
+const staticLinks = CONFIG.tools.map(t =>
+  `<a href="/tools/${t.slug}" data-slug="${t.slug}" class="tool-card group flex items-center gap-4 p-4 rounded-xl border border-surface-200 bg-white hover:border-brand-300 text-left transition-all hover:shadow-sm">` +
+  `<div class="w-12 h-12 rounded-xl bg-gradient-to-br from-brand-50 to-brand-100 flex items-center justify-center text-2xl shrink-0">${t.icon || '📁'}</div>` +
+  `<div class="min-w-0"><p class="font-semibold text-surface-800 truncate">${esc(t.title)}</p>` +
+  `<p class="text-xs text-surface-400 mt-0.5 truncate">${(t.formats || []).join(', ')}</p></div></a>`
+).join('');
+
+let indexHtml = fs.readFileSync(INDEX_HTML, 'utf8');
+indexHtml = indexHtml.replace(
+  /<!-- TOOL_GRID_START -->[\s\S]*?<!-- TOOL_GRID_END -->/,
+  `<!-- TOOL_GRID_START -->${staticLinks}<!-- TOOL_GRID_END -->`
+);
+fs.writeFileSync(INDEX_HTML, indexHtml, 'utf8');
+console.log(`Injected ${CONFIG.tools.length} static tool links into index.html for SEO`);
