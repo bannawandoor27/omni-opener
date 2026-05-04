@@ -1,125 +1,174 @@
+/**
+ * OmniOpener — Python Egg Opener
+ * Browser-based viewer and extractor for .egg files (ZIP archives).
+ */
 (function () {
   'use strict';
+
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
-      onFile: async function (file, content, h) {
-        h.showLoading('Analyzing Python Egg...');
+      accept: '.egg',
+      infoHtml: '<strong>Note:</strong> Python .egg files are specialized ZIP archives. This tool allows you to browse and extract their contents entirely in your browser.',
 
-        const buffer = content;
-        
-        // 1. Compute Hash
-        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-        // 2. Magic Bytes
-        const magicBytes = Array.from(new Uint8Array(buffer.slice(0, 16)))
-          .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-          .join(' ');
-
-        // 3. Egg Analysis (Zip)
-        let isZip = false;
-        const view = new Uint8Array(buffer);
-        if (view.length >= 4) {
-          if (view[0] === 0x50 && view[1] === 0x4B && view[2] === 0x03 && view[3] === 0x04) {
-            isZip = true;
+      actions: [
+        {
+          label: '📋 Copy SHA-256',
+          id: 'copy-hash',
+          onClick: async function (h, btn) {
+            const content = h.getContent();
+            const hashBuffer = await crypto.subtle.digest('SHA-256', content);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            h.copyToClipboard(hashHex, btn);
+          }
+        },
+        {
+          label: '📥 Download .zip',
+          id: 'dl-zip',
+          onClick: function (h) {
+            const file = h.getFile();
+            const name = file.name.replace(/\.egg$/i, '') + '.zip';
+            h.download(name, h.getContent(), 'application/zip');
           }
         }
+      ],
 
-        // 4. Entropy Calculation
-        const entropy = calculateEntropy(new Uint8Array(buffer));
+      onInit: function (h) {
+        h.loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+      },
 
-        // 5. Hex Dump (first 4KB)
-        const hexDump = generateHexDump(buffer.slice(0, 4096));
+      onFile: async function (file, content, h) {
+        h.showLoading('Reading Egg archive...');
 
-        // Render UI
-        h.render(`
-          <div class="p-6 space-y-6 font-sans">
-            <div class="flex items-center justify-between border-b border-surface-200 pb-4">
-              <div>
-                <h3 class="text-xl font-bold text-surface-900">${file.name}</h3>
-                <p class="text-sm text-surface-500">${(file.size / 1024).toFixed(2)} KB • Python Egg Package</p>
-              </div>
-              <div class="flex gap-2">
-                <button id="btn-copy-hash" class="px-3 py-1 text-xs font-medium border border-surface-200 rounded hover:bg-surface-50 transition-colors">Copy SHA-256</button>
-                <button id="btn-dl" class="px-3 py-1 text-xs font-medium bg-brand-600 text-white rounded hover:bg-brand-700 transition-colors">Download</button>
-              </div>
-            </div>
+        try {
+          // Wait for JSZip if it's still loading
+          if (typeof JSZip === 'undefined') {
+            await new Promise(resolve => {
+              const check = setInterval(() => {
+                if (typeof JSZip !== 'undefined') {
+                  clearInterval(check);
+                  resolve();
+                }
+              }, 50);
+            });
+          }
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <!-- Metadata Card -->
-              <div class="bg-surface-50 rounded-xl p-4 border border-surface-200">
-                <h4 class="text-sm font-bold text-surface-700 mb-3 uppercase tracking-wider">File Analysis</h4>
-                <div class="space-y-2 text-sm">
-                  <div class="flex justify-between"><span class="text-surface-500">Magic Bytes:</span> <span class="font-mono text-xs">${magicBytes.slice(0, 23)}...</span></div>
-                  <div class="flex justify-between"><span class="text-surface-500">SHA-256:</span> <span class="font-mono text-[10px] break-all ml-4">${hashHex}</span></div>
-                  <div class="flex justify-between"><span class="text-surface-500">Entropy:</span> <span>${entropy.toFixed(4)} bits/byte</span></div>
-                </div>
-              </div>
+          const zip = new JSZip();
+          const zipContent = await zip.loadAsync(content);
+          
+          const files = [];
+          zipContent.forEach((relativePath, zipEntry) => {
+            files.push({
+              name: relativePath,
+              size: zipEntry._data.uncompressedSize,
+              dir: zipEntry.dir,
+              date: zipEntry.date
+            });
+          });
 
-              <!-- Egg Info Card -->
-              <div class="bg-surface-50 rounded-xl p-4 border border-surface-200">
-                <h4 class="text-sm font-bold text-surface-700 mb-3 uppercase tracking-wider">Format Info</h4>
-                ${isZip ? `
-                  <div class="text-sm text-surface-600">
-                    <p>Verified <strong>ZIP</strong> archive (standard for .egg files).</p>
-                    <p class="mt-2 text-xs">Python Eggs are Zip-compressed archives containing Python code and metadata.</p>
-                  </div>
-                ` : `
-                  <div class="text-sm text-surface-400 italic">No Zip signature detected.</div>
-                `}
-              </div>
-            </div>
+          // Sort: Directories first, then alphabetical
+          files.sort((a, b) => {
+            if (a.dir !== b.dir) return a.dir ? -1 : 1;
+            return a.name.localeCompare(b.name);
+          });
 
-            <!-- Hex Viewer -->
-            <div class="border border-surface-200 rounded-xl overflow-hidden">
-              <div class="bg-surface-100 px-4 py-2 border-b border-surface-200 flex justify-between items-center">
-                <span class="text-xs font-bold text-surface-700 uppercase">Hex Viewer (First 4KB)</span>
-              </div>
-              <pre class="p-4 font-mono text-[11px] leading-tight overflow-auto max-h-96 bg-white text-surface-800">${hexDump}</pre>
-            </div>
-          </div>
-        `);
-
-        document.getElementById('btn-dl').onclick = () => h.download(file.name, content);
-        document.getElementById('btn-copy-hash').onclick = (e) => h.copyToClipboard(hashHex, e.target);
+          renderFileList(file, files, h, zipContent);
+        } catch (err) {
+          h.showError('Failed to open Egg file', 'Ensure this is a valid Python Egg (ZIP-formatted) archive. ' + err.message);
+        }
       }
     });
-
-    // Helper functions
-    function calculateEntropy(data) {
-      const freq = new Array(256).fill(0);
-      for (let i = 0; i < data.length; i++) freq[data[i]]++;
-      let entropy = 0;
-      for (let i = 0; i < 256; i++) {
-        if (freq[i] > 0) {
-          const p = freq[i] / data.length;
-          entropy -= p * Math.log2(p);
-        }
-      }
-      return entropy;
-    }
-
-    function generateHexDump(buffer) {
-      const bytes = new Uint8Array(buffer);
-      let out = '';
-      for (let i = 0; i < bytes.length; i += 16) {
-        let line = i.toString(16).padStart(8, '0') + '  ';
-        let ascii = '';
-        for (let j = 0; j < 16; j++) {
-          if (i + j < bytes.length) {
-            const b = bytes[i + j];
-            line += b.toString(16).padStart(2, '0') + ' ';
-            ascii += (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.';
-          } else {
-            line += '   ';
-          }
-          if (j === 7) line += ' ';
-        }
-        out += line + ' |' + ascii + '|\n';
-      }
-      return out;
-    }
   };
+
+  function renderFileList(file, files, h, zipContent) {
+    const totalSize = files.reduce((acc, f) => acc + f.size, 0);
+    
+    let html = `
+      <div class="p-6 space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-surface-200 pb-4">
+          <div>
+            <h3 class="text-xl font-bold text-surface-900">${esc(file.name)}</h3>
+            <p class="text-sm text-surface-500">${files.length} items • ${formatSize(totalSize)} uncompressed</p>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto border border-surface-200 rounded-xl">
+          <table class="w-full text-left border-collapse text-sm">
+            <thead class="bg-surface-50 text-surface-600 font-medium border-b border-surface-200">
+              <tr>
+                <th class="px-4 py-2">Name</th>
+                <th class="px-4 py-2 text-right">Size</th>
+                <th class="px-4 py-2 text-right">Modified</th>
+                <th class="px-4 py-2 text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-100">
+    `;
+
+    files.forEach((f, idx) => {
+      const icon = f.dir ? '📁' : getFileIcon(f.name);
+      html += `
+        <tr class="hover:bg-surface-50 transition-colors">
+          <td class="px-4 py-2 truncate max-w-md font-mono text-xs">
+            <span class="mr-2">${icon}</span>${esc(f.name)}
+          </td>
+          <td class="px-4 py-2 text-right text-surface-500">${f.dir ? '-' : formatSize(f.size)}</td>
+          <td class="px-4 py-2 text-right text-surface-500">${f.date.toLocaleDateString()}</td>
+          <td class="px-4 py-2 text-center">
+            ${f.dir ? '' : `<button class="dl-entry-btn text-brand-600 hover:text-brand-700 font-medium" data-name="${esc(f.name)}">Download</button>`}
+          </td>
+        </tr>
+      `;
+    });
+
+    html += `
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    h.render(html);
+
+    // Bind individual download buttons
+    h.getRenderEl().querySelectorAll('.dl-entry-btn').forEach(btn => {
+      btn.onclick = async function() {
+        const name = this.getAttribute('data-name');
+        const originalText = this.innerText;
+        this.innerText = '...';
+        try {
+          const blob = await zipContent.file(name).async('blob');
+          h.download(name.split('/').pop(), blob);
+        } catch (e) {
+          alert('Failed to extract file: ' + e.message);
+        } finally {
+          this.innerText = originalText;
+        }
+      };
+    });
+  }
+
+  function formatSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  function getFileIcon(name) {
+    const ext = name.split('.').pop().toLowerCase();
+    if (['py', 'pyc', 'pyo'].includes(ext)) return '🐍';
+    if (['txt', 'md', 'rst'].includes(ext)) return '📄';
+    if (['json', 'yaml', 'yml', 'xml'].includes(ext)) return '⚙️';
+    return '📄';
+  }
+
+  function esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
 })();
