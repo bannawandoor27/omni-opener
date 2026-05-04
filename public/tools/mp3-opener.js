@@ -5,7 +5,6 @@
 (function () {
   'use strict';
 
-  // Helper for human-readable file size
   function formatBytes(bytes, decimals = 2) {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -15,14 +14,12 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   }
 
-  // Helper for time formatting
   function formatTime(seconds) {
     const min = Math.floor(seconds / 60);
     const sec = Math.floor(seconds % 60);
     return `${min}:${sec.toString().padStart(2, '0')}`;
   }
 
-  // Simple escaping
   function esc(str) {
     const d = document.createElement('div');
     d.textContent = str;
@@ -34,6 +31,13 @@
     let analyzer = null;
     let animationId = null;
     let currentAudioUrl = null;
+
+    function cleanup() {
+      if (animationId) { cancelAnimationFrame(animationId); animationId = null; }
+      if (wavesurfer) { try { wavesurfer.destroy(); } catch(e) {} wavesurfer = null; }
+      if (currentAudioUrl) { URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; }
+      analyzer = null;
+    }
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.mp3',
@@ -52,6 +56,14 @@
           }
         },
         {
+          label: '📄 Export JSON',
+          id: 'export-json',
+          onClick: function (h) {
+            const meta = h.getState().metadata || {};
+            h.download('metadata.json', JSON.stringify(meta, null, 2), 'application/json');
+          }
+        },
+        {
           label: '📥 Download MP3',
           id: 'download',
           onClick: function (h) {
@@ -61,12 +73,14 @@
       ],
 
       onInit: function (h) {
-        h.loadScript('https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js');
-        h.loadScript('https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js');
+        cleanup();
+        h.loadScripts([
+          'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js',
+          'https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js'
+        ]);
       },
 
       onFile: function _onFile(file, content, h) {
-        // Ensure libraries are loaded
         if (typeof WaveSurfer === 'undefined' || typeof jsmediatags === 'undefined') {
           h.showLoading('Initializing audio engines...');
           setTimeout(function() { _onFile(file, content, h); }, 500);
@@ -78,12 +92,7 @@
           return;
         }
 
-        // Cleanup previous resources
-        if (currentAudioUrl) { URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; }
-        if (animationId) { cancelAnimationFrame(animationId); animationId = null; }
-        if (wavesurfer) { try { wavesurfer.destroy(); } catch(e) {} wavesurfer = null; }
-
-        h.showLoading('Analyzing audio spectrum...');
+        cleanup();
 
         const blob = new Blob([content], { type: 'audio/mpeg' });
         currentAudioUrl = URL.createObjectURL(blob);
@@ -142,7 +151,7 @@
 
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-4">
-                      <button id="play-pause" class="w-14 h-14 rounded-full bg-brand-600 text-white flex items-center justify-center shadow-lg hover:bg-brand-700 transition-all">
+                      <button id="play-pause" class="w-14 h-14 rounded-full bg-brand-600 text-white flex items-center justify-center shadow-lg hover:bg-brand-700 transition-all focus:outline-none">
                         <span id="play-icon" class="text-2xl ml-1">▶</span>
                       </button>
                       
@@ -167,7 +176,6 @@
           </div>
         `);
 
-        // Initialize WaveSurfer
         wavesurfer = WaveSurfer.create({
           container: '#ws-mount',
           waveColor: '#94a3b8',
@@ -221,7 +229,6 @@
           };
         });
 
-        // Real-time Visualizer
         const initVisualizer = () => {
           if (analyzer) return;
           try {
@@ -256,11 +263,12 @@
           } catch (e) { console.warn('Visualizer init failed', e); }
         };
 
-        // Metadata Extraction
         jsmediatags.read(blob, {
           onSuccess: function (tag) {
             const { title, artist, album, picture } = tag.tags;
-            h.setState('metadata', { title: title || file.name, artist: artist || 'Unknown Artist', album: album || '—' });
+            const meta = { title: title || file.name, artist: artist || 'Unknown Artist', album: album || '—' };
+            h.setState('metadata', meta);
+            
             if (title) document.getElementById('meta-title').textContent = title;
             if (artist) document.getElementById('meta-artist').textContent = artist;
             if (album) document.getElementById('meta-album').textContent = album;
@@ -273,15 +281,14 @@
               artImg.style.backgroundImage = `url(${url})`;
               artImg.classList.remove('hidden');
               document.getElementById('art-placeholder').classList.add('hidden');
+              h.setState('picture', url);
             }
           }
         });
       },
 
       onDestroy: function () {
-        if (animationId) cancelAnimationFrame(animationId);
-        if (wavesurfer) { try { wavesurfer.destroy(); } catch(e) {} }
-        if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
+        cleanup();
       }
     });
   };
