@@ -1,91 +1,193 @@
 /**
  * OmniOpener — WebP Opener Tool
- * Uses OmniTool SDK. Displays WebP images with zoom, rotate, and metadata.
+ * Uses OmniTool SDK. A browser-based WebP viewer and converter.
  */
 (function () {
   'use strict';
 
-  function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(String(str)));
-    return div.innerHTML;
-  }
-
-  function formatBytes(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / 1048576).toFixed(2) + ' MB';
-  }
-
   window.initTool = function (toolConfig, mountEl) {
-    let previewUrl = null;
-
     OmniTool.create(mountEl, toolConfig, {
       accept: '.webp',
       binary: true,
-      infoHtml: '<strong>WebP Opener:</strong> View WebP images with zoom and rotation controls. All processing is 100% local.',
+      infoHtml: '<strong>WebP Opener:</strong> View, zoom, rotate, and convert WebP images. All processing is 100% local in your browser.',
 
-      onFile: function (file, content, h) {
-        if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
-
-        const mimeType = 'image/webp';
-        const blob = new Blob([content], { type: mimeType });
-        previewUrl = URL.createObjectURL(blob);
-
-        const img = new Image();
-        img.onload = function() {
-          const width = img.width;
-          const height = img.height;
-          let scale = 1;
-          let rotation = 0;
-
-          h.render(
-            '<div class="flex flex-col border border-surface-200 rounded-xl overflow-hidden bg-surface-100 shadow-sm font-sans" style="min-height:520px;">' +
-              '<div class="shrink-0 bg-white border-b border-surface-200 px-4 py-2 flex items-center justify-between gap-4">' +
-                '<div class="flex items-center gap-3 min-w-0">' +
-                  '<span class="text-xs font-bold text-surface-900 truncate">' + escapeHtml(file.name) + '</span>' +
-                  '<span class="text-[10px] font-bold text-surface-400 uppercase bg-surface-50 px-2 py-0.5 rounded border border-surface-100 shrink-0">' + width + ' × ' + height + '</span>' +
-                  '<span class="text-[10px] text-surface-400 shrink-0">' + formatBytes(file.size) + '</span>' +
-                '</div>' +
-                '<div class="flex gap-1 shrink-0">' +
-                  '<button id="btn-zoom-in" class="p-1.5 hover:bg-surface-100 rounded text-surface-600 transition-colors" title="Zoom in">➕</button>' +
-                  '<button id="btn-zoom-out" class="p-1.5 hover:bg-surface-100 rounded text-surface-600 transition-colors" title="Zoom out">➖</button>' +
-                  '<button id="btn-reset" class="p-1.5 hover:bg-surface-100 rounded text-surface-600 transition-colors" title="Reset">⊙</button>' +
-                  '<button id="btn-rotate" class="p-1.5 hover:bg-surface-100 rounded text-surface-600 transition-colors" title="Rotate 90°">🔄</button>' +
-                  '<button id="btn-dl" class="px-3 py-1 bg-brand-600 text-white rounded text-[10px] font-bold shadow-sm hover:bg-brand-700 ml-1">📥 Download</button>' +
-                '</div>' +
-              '</div>' +
-              '<div class="flex-1 overflow-auto p-8 flex justify-center items-center" style="min-height:400px;background-image:url(\'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAAAAAA6mKC9AAAAGElEQVQYV2N4DwX/oYBhgDE8BOn4S8VfWAMA6as8f9zEAn8AAAAASUVORK5CYII=\')">' +
-                '<img id="img-preview" src="' + previewUrl + '" class="max-w-full h-auto shadow-2xl rounded transition-all duration-200 ease-out" style="transform:scale(1) rotate(0deg)" />' +
-              '</div>' +
-              '<div class="shrink-0 bg-white border-t border-surface-100 px-4 py-2 flex gap-6 text-xs text-surface-400">' +
-                '<span><strong>Dimensions:</strong> ' + width + ' × ' + height + ' px</span>' +
-                '<span><strong>Megapixels:</strong> ' + (width * height / 1000000).toFixed(2) + ' MP</span>' +
-              '</div>' +
-            '</div>'
-          );
-
-          function update() {
-            var el = document.getElementById('img-preview');
-            if (el) el.style.transform = 'scale(' + scale + ') rotate(' + rotation + 'deg)';
+      actions: [
+        {
+          label: '➕ Zoom In',
+          id: 'zoom-in',
+          onClick: function (h) {
+            const s = h.getState();
+            const newZoom = Math.min((s.zoom || 1) + 0.25, 5);
+            h.setState('zoom', newZoom);
+            applyTransform(h);
           }
+        },
+        {
+          label: '➖ Zoom Out',
+          id: 'zoom-out',
+          onClick: function (h) {
+            const s = h.getState();
+            const newZoom = Math.max((s.zoom || 1) - 0.25, 0.1);
+            h.setState('zoom', newZoom);
+            applyTransform(h);
+          }
+        },
+        {
+          label: '🔄 Rotate',
+          id: 'rotate',
+          onClick: function (h) {
+            const s = h.getState();
+            const newRotate = ((s.rotate || 0) + 90) % 360;
+            h.setState('rotate', newRotate);
+            applyTransform(h);
+          }
+        },
+        {
+          label: '⊞ Fit',
+          id: 'fit',
+          onClick: function (h) {
+            h.setState({ zoom: 1, rotate: 0 });
+            applyTransform(h);
+          }
+        },
+        {
+          label: '📋 Copy Metadata',
+          id: 'copy-meta',
+          onClick: function (h, btn) {
+            const s = h.getState();
+            if (s.metadata) h.copyToClipboard(JSON.stringify(s.metadata, null, 2), btn);
+            else h.copyToClipboard('No metadata found in this image.', btn);
+          }
+        },
+        {
+          label: '🖼️ Save PNG',
+          id: 'save-png',
+          onClick: function (h) { exportAs(h, 'image/png', 'png'); }
+        },
+        {
+          label: '📷 Save JPG',
+          id: 'save-jpg',
+          onClick: function (h) { exportAs(h, 'image/jpeg', 'jpg'); }
+        },
+        {
+          label: '📥 Original WebP',
+          id: 'dl-webp',
+          onClick: function (h) { h.download(h.getState().filename, h.getContent(), 'image/webp'); }
+        }
+      ],
 
-          document.getElementById('btn-zoom-in').onclick = function() { scale = Math.min(scale + 0.25, 10); update(); };
-          document.getElementById('btn-zoom-out').onclick = function() { scale = Math.max(scale - 0.25, 0.1); update(); };
-          document.getElementById('btn-reset').onclick = function() { scale = 1; rotation = 0; update(); };
-          document.getElementById('btn-rotate').onclick = function() { rotation = (rotation + 90) % 360; update(); };
-          document.getElementById('btn-dl').onclick = function() { h.download(file.name, content, mimeType); };
-        };
-        img.onerror = function() {
-          h.showError('Failed to load image', 'The file may be corrupted or not a valid WebP image.');
-        };
-        img.src = previewUrl;
+      onInit: function (h) {
+        h.loadScript('https://cdn.jsdelivr.net/npm/exif-js');
       },
 
-      onDestroy: function() {
-        if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
+      onFile: function (file, content, h) {
+        h.showLoading('Loading WebP image...');
+        
+        const s = h.getState();
+        if (s.previewUrl) URL.revokeObjectURL(s.previewUrl);
+
+        const blob = new Blob([content], { type: 'image/webp' });
+        const url = URL.createObjectURL(blob);
+
+        h.setState({
+          previewUrl: url,
+          zoom: 1,
+          rotate: 0,
+          filename: file.name,
+          metadata: null
+        });
+
+        const img = new Image();
+        img.onload = function () {
+          h.setState({ width: img.width, height: img.height });
+          if (window.EXIF) {
+            EXIF.getData(img, function () {
+              const tags = EXIF.getAllTags(this);
+              if (tags && Object.keys(tags).length > 0) h.setState('metadata', tags);
+              renderUI(h);
+            });
+          } else {
+            renderUI(h);
+          }
+        };
+        img.onerror = function () {
+          h.showError('Load Error', 'The file is either corrupted or not a valid WebP image.');
+        };
+        img.src = url;
       }
     });
   };
+
+  function renderUI(h) {
+    const s = h.getState();
+    const metaHtml = s.metadata ? 
+      '<div class="mt-8 w-full border-t border-surface-100 pt-6 text-left">' +
+        '<h3 class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-3">Image Metadata</h3>' +
+        '<div class="bg-surface-50 rounded-xl p-4 text-[11px] font-mono text-surface-600 overflow-auto max-h-60 shadow-inner">' +
+          formatMeta(s.metadata) +
+        '</div>' +
+      '</div>' : '';
+
+    h.render(
+      '<div class="flex flex-col items-center p-6 md:p-10">' +
+        '<div class="flex flex-wrap justify-center gap-3 mb-8 text-[11px]">' +
+          '<div class="px-3 py-1.5 bg-white border border-surface-200 rounded-lg shadow-sm text-surface-600 font-medium"><strong>File:</strong> ' + esc(s.filename) + '</div>' +
+          '<div class="px-3 py-1.5 bg-white border border-surface-200 rounded-lg shadow-sm text-surface-600 font-medium"><strong>Size:</strong> ' + s.width + ' × ' + s.height + ' px</div>' +
+          '<div class="px-3 py-1.5 bg-white border border-surface-200 rounded-lg shadow-sm text-surface-600 font-medium"><strong>Format:</strong> WebP</div>' +
+        '</div>' +
+        '<div class="relative w-full flex justify-center bg-[url(\'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAAAAAA6mKC9AAAAGElEQVQYV2N4DwX/oYBhgDE8BOn4S8VfWAMA6as8f9zEAn8AAAAASUVORK5CYII=\')] rounded-2xl shadow-xl border border-surface-200 overflow-hidden" style="min-height: 360px;">' +
+          '<img id="webp-preview-img" src="' + s.previewUrl + '" ' +
+            'style="display: block; max-width: 100%; height: auto; transform: scale(1) rotate(0deg); transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0 10px 25px rgba(0,0,0,0.1));" ' +
+            'class="m-auto">' +
+        '</div>' +
+        metaHtml +
+      '</div>'
+    );
+  }
+
+  function applyTransform(h) {
+    const s = h.getState();
+    const el = h.getRenderEl().querySelector('#webp-preview-img');
+    if (el) {
+      el.style.transform = 'scale(' + (s.zoom || 1) + ') rotate(' + (s.rotate || 0) + 'deg)';
+    }
+  }
+
+  function exportAs(h, mime, ext) {
+    const s = h.getState();
+    const img = new Image();
+    img.onload = function () {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const dataUrl = canvas.toDataURL(mime, 0.92);
+      const name = s.filename.replace(/\.[^/.]+$/, "") + "." + ext;
+      h.download(name, dataUrl, mime);
+    };
+    img.src = s.previewUrl;
+  }
+
+  function formatMeta(meta) {
+    const lines = [];
+    for (const key in meta) {
+      if (Object.prototype.hasOwnProperty.call(meta, key)) {
+        const val = meta[key];
+        if (typeof val !== 'function' && typeof val !== 'object') {
+          lines.push('<div class="flex justify-between py-1 border-b border-surface-100 last:border-0 hover:bg-white transition-colors px-1">' +
+                     '<span class="font-bold text-surface-400">' + esc(key) + '</span>' +
+                     '<span class="text-surface-700">' + esc(val) + '</span>' +
+                   '</div>');
+        }
+      }
+    }
+    return lines.join('') || '<p class="text-surface-400 italic">No viewable metadata tags found.</p>';
+  }
+
+  function esc(str) {
+    const d = document.createElement('div');
+    d.textContent = String(str);
+    return d.innerHTML;
+  }
 })();
