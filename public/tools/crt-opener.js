@@ -14,35 +14,41 @@
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
-      accept: '.pem,.crt,.key,.pub',
+      accept: '.pem,.crt,.key,.pub,.der',
       dropLabel: 'Drop a certificate or key file here',
       binary: false,
-      infoHtml: '<strong>Security Toolkit:</strong> Professional certificate decoder with expiry analysis, fingerprints, and public key extraction.',
+      infoHtml: '<strong>Security Toolkit:</strong> Professional certificate decoder with expiry analysis, fingerprints, and public key extraction. All processing happens locally.',
       
       onInit: function(h) {
-        h.loadScript('https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js');
+        return h.loadScript('https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js');
       },
 
       actions: [
         {
-          label: '📋 Copy PEM',
+          label: '📋 Copy Content',
           id: 'copy',
           onClick: function (h, btn) {
             h.copyToClipboard(h.getContent(), btn);
           }
+        },
+        {
+          label: '📥 Download File',
+          id: 'download',
+          onClick: function (h) {
+            h.download(h.getFile().name, h.getContent());
+          }
         }
       ],
 
-      onFile: function _onFileFn(file, content, h) {
+      onFile: function (file, content, h) {
         if (typeof forge === 'undefined') {
           h.showLoading('Loading Security engine...');
-          setTimeout(() => _onFileFn(file, content, h), 500);
+          setTimeout(() => this.onFile(file, content, h), 500);
           return;
         }
 
         let type = "Unknown PEM";
         let infoHtml = "";
-        let pubKeyPem = null;
         
         try {
            if (content.includes('BEGIN CERTIFICATE')) {
@@ -59,7 +65,7 @@
               const sha1 = forge.md.sha1.create().update(der).digest().toHex().match(/.{2}/g).join(':');
               const sha256 = forge.md.sha256.create().update(der).digest().toHex().match(/.{2}/g).join(':');
 
-              pubKeyPem = forge.pki.publicKeyToPem(cert.publicKey);
+              const pubKeyPem = forge.pki.publicKeyToPem(cert.publicKey);
 
               infoHtml = `
                 <div class="space-y-6">
@@ -80,45 +86,75 @@
                    <div class="space-y-4">
                       <div class="flex flex-col"><span class="text-[10px] font-bold text-surface-400 uppercase">Subject</span><span class="text-xs font-bold text-surface-900 break-all">${escapeHtml(subject)}</span></div>
                       <div class="flex flex-col"><span class="text-[10px] font-bold text-surface-400 uppercase">Issuer</span><span class="text-xs text-surface-600 break-all">${escapeHtml(issuer)}</span></div>
+                      <div class="flex flex-col"><span class="text-[10px] font-bold text-surface-400 uppercase">Validity</span><span class="text-xs text-surface-600">From: ${cert.validity.notBefore}<br>To: ${cert.validity.notAfter}</span></div>
                    </div>
                    <div class="p-4 rounded-xl bg-surface-900 text-brand-300 font-mono text-[10px] space-y-2">
                       <p><span class="text-surface-500 uppercase mr-2">MD5:</span> ${md5}</p>
                       <p><span class="text-surface-500 uppercase mr-2">SHA1:</span> ${sha1}</p>
                       <p><span class="text-surface-500 uppercase mr-2">SHA256:</span> ${sha256}</p>
                    </div>
-                   <button id="btn-extract-pub" class="w-full py-2 bg-brand-600 text-white font-bold rounded-lg text-xs hover:bg-brand-700 transition-all">📥 Download Public Key</button>
+                   <div class="flex gap-2">
+                      <button id="btn-extract-pub" class="flex-1 py-2 bg-brand-600 text-white font-bold rounded-lg text-xs hover:bg-brand-700 transition-all">📥 Download Public Key</button>
+                      <button id="btn-copy-pub" class="flex-1 py-2 bg-surface-100 text-surface-700 font-bold rounded-lg text-xs hover:bg-surface-200 transition-all">📋 Copy Public Key</button>
+                   </div>
                 </div>
               `;
-           } else if (content.includes('BEGIN PRIVATE KEY')) {
-              type = "Private Key";
-              infoHtml = `<div class="p-6 bg-red-50 border border-red-100 rounded-xl text-red-700 text-sm leading-relaxed">🔒 <strong>Private Key Detected.</strong> This file contains sensitive cryptographic material. Ensure you handle it securely.</div>`;
-           }
-
-           h.render(`
-             <div class="flex flex-col h-[85vh] border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm font-sans">
-               <div class="shrink-0 bg-surface-50 border-b border-surface-200 px-6 py-4 flex justify-between items-center">
-                  <div><h3 class="text-lg font-bold text-surface-900">${escapeHtml(file.name)}</h3><span class="text-[9px] font-bold uppercase bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${type}</span></div>
-                  <span class="text-[10px] font-mono text-surface-400">${(content.length/1024).toFixed(1)} KB</span>
-               </div>
-               <div class="flex-1 overflow-auto p-8 space-y-8">
-                  ${infoHtml}
-                  <div class="flex flex-col">
-                     <span class="text-[10px] font-bold text-surface-400 uppercase mb-3">Raw PEM Source</span>
-                     <pre class="bg-surface-900 text-surface-100 p-6 rounded-xl font-mono text-[11px] overflow-auto shadow-inner leading-relaxed"><code>${escapeHtml(content)}</code></pre>
+              
+              h.render(`
+                <div class="p-6 space-y-6 font-sans">
+                  <div class="flex justify-between items-start border-b border-surface-100 pb-4">
+                    <div>
+                      <h3 class="text-lg font-bold text-surface-900">${escapeHtml(file.name)}</h3>
+                      <span class="text-[10px] font-bold uppercase bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${type}</span>
+                    </div>
+                    <span class="text-xs font-mono text-surface-400">${(content.length/1024).toFixed(1)} KB</span>
                   </div>
-               </div>
-            </div>
-           `);
+                  ${infoHtml}
+                  <div class="space-y-2">
+                    <span class="text-[10px] font-bold text-surface-400 uppercase">Raw PEM Source</span>
+                    <pre class="bg-surface-50 text-surface-700 p-4 rounded-xl font-mono text-[10px] overflow-auto border border-surface-100 max-h-48"><code>${escapeHtml(content)}</code></pre>
+                  </div>
+                </div>
+              `);
 
-           if (pubKeyPem) {
               document.getElementById('btn-extract-pub').onclick = () => h.download('public_key.pem', pubKeyPem);
-           }
+              document.getElementById('btn-copy-pub').onclick = (e) => h.copyToClipboard(pubKeyPem, e.target);
 
+           } else if (content.includes('BEGIN PRIVATE KEY') || content.includes('BEGIN RSA PRIVATE KEY')) {
+              type = "Private Key";
+              h.render(`
+                <div class="p-8 space-y-6">
+                  <div class="flex justify-between items-center border-b border-surface-100 pb-4">
+                    <h3 class="text-lg font-bold text-surface-900">${escapeHtml(file.name)}</h3>
+                    <span class="text-[10px] font-bold uppercase bg-red-100 text-red-700 px-2 py-0.5 rounded-full">${type}</span>
+                  </div>
+                  <div class="p-6 bg-red-50 border border-red-100 rounded-xl text-red-700 text-sm leading-relaxed">
+                    🔒 <strong>Private Key Detected.</strong> This file contains sensitive cryptographic material. It has been detected but for security reasons, only the raw content is shown. Ensure you handle it securely.
+                  </div>
+                  <pre class="bg-surface-900 text-surface-100 p-6 rounded-xl font-mono text-[11px] overflow-auto shadow-inner leading-relaxed"><code>${escapeHtml(content)}</code></pre>
+                </div>
+              `);
+           } else if (content.includes('BEGIN PUBLIC KEY') || content.includes('BEGIN RSA PUBLIC KEY')) {
+              type = "Public Key";
+              h.render(`
+                <div class="p-8 space-y-6">
+                  <div class="flex justify-between items-center border-b border-surface-100 pb-4">
+                    <h3 class="text-lg font-bold text-surface-900">${escapeHtml(file.name)}</h3>
+                    <span class="text-[10px] font-bold uppercase bg-green-100 text-green-700 px-2 py-0.5 rounded-full">${type}</span>
+                  </div>
+                  <div class="p-6 bg-green-50 border border-green-100 rounded-xl text-green-700 text-sm leading-relaxed">
+                    🔑 <strong>Public Key Detected.</strong> This is a standard PEM-encoded public key.
+                  </div>
+                  <pre class="bg-surface-900 text-surface-100 p-6 rounded-xl font-mono text-[11px] overflow-auto shadow-inner leading-relaxed"><code>${escapeHtml(content)}</code></pre>
+                </div>
+              `);
+           } else {
+              throw new Error("Unsupported or unrecognized PEM format.");
+           }
         } catch (err) {
-           h.render(`<div class="p-12 text-center text-surface-400">Failed to decode PEM. Invalid or corrupted data.</div>`);
+           h.showError("Decoding Error", err.message || "Failed to parse certificate. Ensure it is a valid PEM format.");
         }
       }
     });
   };
 })();
-
