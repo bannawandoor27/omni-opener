@@ -1,4 +1,4 @@
-(function() {
+(function () {
   'use strict';
 
   function esc(str) {
@@ -23,7 +23,6 @@
     const files = [];
     let offset = 0;
     let nextFileName = null;
-
     const decoder = new TextDecoder();
 
     while (offset + 512 <= bytes.length) {
@@ -72,53 +71,102 @@
     return files;
   }
 
-  window.initTool = function(toolConfig, mountEl) {
+  window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
-      accept: '.tar',
-      dropLabel: 'Drop a .tar file here',
+      accept: '.tar,.tar.gz,.tgz',
       binary: true,
-      onFile: function(file, content, helpers) {
-        helpers.showLoading('Parsing tar archive...');
-        try {
-          const files = parseTar(content);
-          let totalUncompressedSize = 0;
-          files.forEach(f => { if (!f.isDir) totalUncompressedSize += f.size; });
+      dropLabel: 'Drop a .tar or .tar.gz file here',
+      infoHtml: '<strong>Privacy:</strong> All extraction and viewing happens directly in your browser using pako and fflate. No data is uploaded.',
 
-          files.sort((a, b) => {
-            if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-            return a.name.localeCompare(b.name);
-          });
-
-          helpers.setState({
-            tarFiles: files,
-            fileName: file.name,
-            fileSize: file.size,
-            totalUncompressedSize: totalUncompressedSize,
-            searchTerm: ''
-          });
-
-          renderTar(helpers);
-        } catch (e) {
-          helpers.showError('Could not parse tar file', e.message);
-        }
+      onInit: function (h) {
+        h.loadScripts([
+          'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js',
+          'https://cdn.jsdelivr.net/npm/fflate@0.8.2/lib/browser.min.js'
+        ]);
       },
+
+      onFile: function (file, content, h) {
+        h.showLoading('Reading archive...');
+        
+        // Use timeout to allow dependencies to load and UI to update
+        setTimeout(() => {
+          let data = new Uint8Array(content);
+          
+          // Check for GZIP magic number (0x1f 0x8b)
+          if (data[0] === 0x1f && data[1] === 0x8b) {
+            try {
+              if (typeof pako === 'undefined') throw new Error('pako library not loaded');
+              data = pako.ungzip(data);
+            } catch (e) {
+              return h.showError('Decompression failed', e.message || 'Could not decompress GZIP content.');
+            }
+          }
+
+          try {
+            const files = parseTar(data.buffer);
+            let totalUncompressedSize = 0;
+            files.forEach(f => { if (!f.isDir) totalUncompressedSize += f.size; });
+
+            files.sort((a, b) => {
+              if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+              return a.name.localeCompare(b.name);
+            });
+
+            h.setState({
+              tarFiles: files,
+              fileName: file.name,
+              fileSize: file.size,
+              totalUncompressedSize: totalUncompressedSize,
+              searchTerm: ''
+            });
+
+            renderTar(h);
+          } catch (e) {
+            h.showError('Could not parse tar file', e.message);
+          }
+        }, 50);
+      },
+
       actions: [
         {
           label: '📋 Copy File List',
           id: 'copy-list',
-          onClick: function(helpers, btn) {
-            const files = helpers.getState().tarFiles;
-            if (!files) return;
-            const list = files.map(f => f.name).join('\n');
-            helpers.copyToClipboard(list, btn);
+          onClick: function (h, btn) {
+            const state = h.getState();
+            if (!state.tarFiles) return;
+            const list = state.tarFiles.map(f => f.name).join('\n');
+            h.copyToClipboard(list, btn);
+          }
+        },
+        {
+          label: '📦 Convert to ZIP',
+          id: 'convert-zip',
+          onClick: function (h, btn) {
+            const state = h.getState();
+            if (!state.tarFiles || typeof fflate === 'undefined') return;
+            
+            const zipData = {};
+            state.tarFiles.forEach(f => {
+              if (!f.isDir && f.data) {
+                zipData[f.name] = f.data;
+              }
+            });
+
+            try {
+              const zipped = fflate.zipSync(zipData);
+              const zipName = state.fileName.replace(/\.tar(\.gz)?$/i, '') + '.zip';
+              h.download(zipName, zipped, 'application/zip');
+            } catch (e) {
+              h.showError('ZIP creation failed', e.message);
+            }
           }
         }
       ]
     });
   };
 
-  function renderTar(helpers) {
-    const state = helpers.getState();
+  function renderTar(h) {
+    const state = h.getState();
     const files = state.tarFiles;
     const searchTerm = (state.searchTerm || '').toLowerCase();
     const filteredFiles = searchTerm ? files.filter(f => f.name.toLowerCase().includes(searchTerm)) : files;
@@ -159,7 +207,7 @@
                 </tr>
               </thead>
               <tbody class="divide-y divide-surface-100">
-                ${filteredFiles.map((f, i) => `
+                ${filteredFiles.map((f) => `
                   <tr class="hover:bg-surface-50 transition-colors cursor-pointer file-row" data-name="${esc(f.name)}">
                     <td class="px-4 py-2 font-mono text-xs text-surface-600 truncate max-w-md" title="${esc(f.name)}">
                       <span class="mr-2">${f.isDir ? '📁' : getFileIcon(f.name)}</span>
@@ -204,44 +252,53 @@
       </div>
     `;
 
-    helpers.render(html);
+    h.render(html);
 
     const searchInput = document.getElementById('tar-search');
-    searchInput.addEventListener('input', (e) => {
-      helpers.setState('searchTerm', e.target.value);
-      renderTar(helpers);
-      const input = document.getElementById('tar-search');
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-    });
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        h.setState('searchTerm', e.target.value);
+        renderTar(h);
+        const input = document.getElementById('tar-search');
+        if (input) {
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+        }
+      });
+    }
 
-    helpers.getRenderEl().querySelectorAll('.dl-btn').forEach(btn => {
+    h.getRenderEl().querySelectorAll('.dl-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        downloadFile(btn.dataset.name, helpers);
+        const file = files.find(f => f.name === btn.dataset.name);
+        if (file) h.download(file.name.split('/').pop(), new Blob([file.data]));
       });
     });
 
-    helpers.getRenderEl().querySelectorAll('.preview-btn, .file-row').forEach(el => {
+    h.getRenderEl().querySelectorAll('.preview-btn, .file-row').forEach(el => {
       el.addEventListener('click', () => {
         const file = files.find(f => f.name === el.dataset.name);
-        if (file && !file.isDir) showPreview(file, helpers);
+        if (file && !file.isDir) showPreview(file, h);
       });
     });
 
-    document.getElementById('preview-close-btn').onclick = hidePreview;
-    document.getElementById('tar-preview-modal').onclick = (e) => { if (e.target.id === 'tar-preview-modal') hidePreview(); };
+    const closeBtn = document.getElementById('preview-close-btn');
+    if (closeBtn) closeBtn.onclick = hidePreview;
+    const modal = document.getElementById('tar-preview-modal');
+    if (modal) modal.onclick = (e) => { if (e.target.id === 'tar-preview-modal') hidePreview(); };
   }
 
-  var _tarLastPreviewUrl = null;
+  let _tarLastPreviewUrl = null;
 
-  function showPreview(file, helpers) {
+  function showPreview(file, h) {
     const modal = document.getElementById('tar-preview-modal');
     const contentEl = document.getElementById('preview-content');
     const filenameEl = document.getElementById('preview-filename');
     const metaEl = document.getElementById('preview-meta');
     const iconEl = document.getElementById('preview-icon');
     const copyBtn = document.getElementById('preview-copy-btn');
+
+    if (!modal || !contentEl || !filenameEl) return;
 
     modal.classList.remove('hidden');
     filenameEl.textContent = file.name;
@@ -266,21 +323,17 @@
       } else {
         contentEl.innerHTML = `<pre class="text-xs font-mono whitespace-pre-wrap break-all text-surface-800">${esc(text)}</pre>`;
         copyBtn.style.display = 'block';
-        copyBtn.onclick = (e) => helpers.copyToClipboard(text, e.target);
+        copyBtn.onclick = (e) => h.copyToClipboard(text, e.target);
       }
     }
   }
 
   function hidePreview() {
     if (_tarLastPreviewUrl) { URL.revokeObjectURL(_tarLastPreviewUrl); _tarLastPreviewUrl = null; }
-    document.getElementById('tar-preview-modal').classList.add('hidden');
-    document.getElementById('preview-content').innerHTML = '';
-  }
-
-  function downloadFile(name, helpers) {
-    const file = helpers.getState().tarFiles.find(f => f.name === name);
-    if (!file) return;
-    helpers.download(name.split('/').pop(), new Blob([file.data]));
+    const modal = document.getElementById('tar-preview-modal');
+    if (modal) modal.classList.add('hidden');
+    const content = document.getElementById('preview-content');
+    if (content) content.innerHTML = '';
   }
 
   function getFileIcon(name) {
@@ -312,7 +365,7 @@
       }
       out += line + ' |' + ascii + '|\n';
     }
-    if (buffer.byteLength > 8192) out += '\n... (truncated)';
+    if (bytes.length > 8192) out += '\n... (truncated)';
     return out;
   }
 })();
