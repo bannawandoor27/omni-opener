@@ -1,14 +1,12 @@
-/**
- * OmniOpener — Security (PEM/CRT/KEY) Toolkit
- * Professional certificate decoder with expiry analysis and key extraction.
- */
 (function () {
   'use strict';
 
   /**
-   * Simple HTML escaping to prevent XSS.
+   * OmniOpener — PEM / Certificate / Key Security Toolkit
+   * Production-grade decoder with chain support, expiry analysis, and key extraction.
    */
-  function escape(str) {
+
+  function escapeHTML(str) {
     if (!str) return '';
     return String(str)
       .replace(/&/g, '&amp;')
@@ -18,10 +16,7 @@
       .replace(/'/g, '&#039;');
   }
 
-  /**
-   * Human-readable file size.
-   */
-  function formatSize(bytes) {
+  function formatBytes(bytes) {
     if (bytes === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
@@ -30,286 +25,348 @@
   }
 
   window.initTool = function (toolConfig, mountEl) {
-    // Closure variables for cleanup
-    let forgeLoaded = false;
+    let forgeLibraryLoaded = false;
 
     OmniTool.create(mountEl, toolConfig, {
-      accept: '.pem,.crt,.cer,.key,.pub,.der',
-      dropLabel: 'Drop a certificate, public key, or private key file',
+      accept: '.pem,.crt,.cer,.key,.pub,.der,.p7b,.p7c',
+      dropLabel: 'Drop PEM certificates, private keys, or public keys',
       binary: false,
-      infoHtml: '<strong>Security Toolkit:</strong> Decode X.509 certificates, analyze expiry dates, calculate fingerprints, and extract public keys from PEM files.',
-      
+      infoHtml: '<strong>Security Toolkit:</strong> Decode X.509 certificates, analyze validity chains, calculate fingerprints, and safely inspect public/private key metadata.',
+
       onInit: function (h) {
         h.loadScript('https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js', () => {
-          forgeLoaded = true;
+          forgeLibraryLoaded = true;
         });
       },
 
-      onDestroy: function (h) {
-        // Cleanup if necessary
+      onDestroy: function () {
+        // No persistent resources to clean up
       },
 
       actions: [
         {
-          label: '📋 Copy PEM',
-          id: 'copy-pem',
+          label: '📋 Copy All',
+          id: 'copy-all',
           onClick: function (h, btn) {
             h.copyToClipboard(h.getContent(), btn);
+          }
+        },
+        {
+          label: '📥 Download JSON',
+          id: 'dl-json',
+          onClick: function (h) {
+            const data = h.getState('parsedData');
+            if (data) {
+              h.download('certificate-info.json', JSON.stringify(data, null, 2));
+            } else {
+              h.showError('No data', 'Parse a valid certificate first to export as JSON.');
+            }
           }
         }
       ],
 
       onFile: function _onFileFn(file, content, h) {
-        // Handle empty file
         if (!content || content.trim().length === 0) {
           h.render(`
             <div class="flex flex-col items-center justify-center p-12 text-center">
-              <div class="w-16 h-16 bg-surface-100 rounded-full flex items-center justify-center mb-4">
-                <svg class="w-8 h-8 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+              <div class="w-16 h-16 bg-surface-100 rounded-full flex items-center justify-center mb-4 text-surface-400">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
               </div>
               <h3 class="text-lg font-semibold text-surface-900">Empty File</h3>
-              <p class="text-surface-500 max-w-xs mx-auto">This file appears to have no content. Please upload a valid PEM certificate or key.</p>
+              <p class="text-surface-500 max-w-xs mx-auto">This file has no text content. Please provide a valid PEM-encoded certificate or key.</p>
             </div>
           `);
           return;
         }
 
-        // Wait for library
-        if (!forgeLoaded || typeof forge === 'undefined') {
-          h.showLoading('Initializing Security Engine...');
-          setTimeout(function() { _onFileFn(file, content, h); }, 300);
+        if (!forgeLibraryLoaded || typeof forge === 'undefined') {
+          h.showLoading('Loading Security Engine...');
+          setTimeout(function() { _onFileFn(file, content, h); }, 200);
           return;
         }
 
-        h.showLoading('Decoding security object...');
+        h.showLoading('Analyzing security objects...');
 
         try {
-          const isCert = content.includes('BEGIN CERTIFICATE');
-          const isPrivKey = content.includes('BEGIN PRIVATE KEY') || content.includes('BEGIN RSA PRIVATE KEY');
-          const isPubKey = content.includes('BEGIN PUBLIC KEY') || (content.includes('BEGIN RSA PUBLIC KEY') && !isCert);
+          // Identify blocks
+          const certMatches = content.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [];
+          const privKeyMatches = content.match(/-----BEGIN (RSA |EC |)PRIVATE KEY-----[\s\S]+?-----END (RSA |EC |)PRIVATE KEY-----/g) || [];
+          const pubKeyMatches = content.match(/-----BEGIN (RSA |)PUBLIC KEY-----[\s\S]+?-----END (RSA |)PUBLIC KEY-----/g) || [];
 
-          let typeLabel = "Unknown PEM";
-          let detailsHtml = "";
-          let extractedPubKey = null;
+          const parsedData = {
+            certificates: [],
+            privateKeysCount: privKeyMatches.length,
+            publicKeysCount: pubKeyMatches.length,
+            fileName: file.name,
+            fileSize: file.size
+          };
 
-          // Common File Info Bar
-          const infoBar = `
-            <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">
-              <span class="font-semibold text-surface-800">${escape(file.name)}</span>
-              <span class="text-surface-300">|</span>
-              <span>${formatSize(file.size)}</span>
-              <span class="text-surface-300">|</span>
-              <span class="text-surface-500">Security PEM File</span>
-            </div>
+          // Parse Certificates
+          certMatches.forEach((pem, index) => {
+            try {
+              const cert = forge.pki.certificateFromPem(pem);
+              const der = forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes();
+              
+              const certInfo = {
+                index,
+                subject: parseAttributes(cert.subject.attributes),
+                issuer: parseAttributes(cert.issuer.attributes),
+                serial: cert.serialNumber,
+                version: cert.version + 1,
+                validFrom: cert.validity.notBefore,
+                validTo: cert.validity.notAfter,
+                signatureAlgorithm: cert.signatureOid,
+                publicKey: {
+                  algorithm: cert.publicKey.n ? 'RSA' : 'ECC',
+                  bits: cert.publicKey.n ? cert.publicKey.n.bitLength() : 'N/A'
+                },
+                fingerprints: {
+                  sha1: forge.md.sha1.create().update(der).digest().toHex().toUpperCase().match(/.{2}/g).join(':'),
+                  sha256: forge.md.sha256.create().update(der).digest().toHex().toUpperCase().match(/.{2}/g).join(':')
+                },
+                extensions: parseExtensions(cert.extensions),
+                pem: pem
+              };
+              parsedData.certificates.push(certInfo);
+            } catch (e) {
+              console.warn('Failed to parse cert index ' + index, e);
+            }
+          });
+
+          h.setState('parsedData', parsedData);
+
+          // Build UI
+          let html = `
+            <div class="max-w-6xl mx-auto">
+              <!-- U1: File Info Bar -->
+              <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100">
+                <span class="font-semibold text-surface-800">${escapeHTML(file.name)}</span>
+                <span class="text-surface-300">|</span>
+                <span>${formatBytes(file.size)}</span>
+                <span class="text-surface-300">|</span>
+                <span class="px-2 py-0.5 bg-brand-100 text-brand-700 rounded text-[10px] font-bold uppercase tracking-tight">PEM / X.509</span>
+              </div>
           `;
 
-          if (isCert) {
-            typeLabel = "X.509 Certificate";
-            const cert = forge.pki.certificateFromPem(content);
-            
-            // Validity Analysis
-            const validFrom = cert.validity.notBefore;
-            const validTo = cert.validity.notAfter;
-            const now = new Date();
-            const totalDuration = validTo - validFrom;
-            const elapsed = now - validFrom;
-            const progress = Math.min(100, Math.max(0, (elapsed / totalDuration) * 100));
-            const daysLeft = Math.ceil((validTo - now) / (1000 * 60 * 60 * 24));
-            
-            let statusColor = "text-green-600";
-            let statusBg = "bg-green-100";
-            let statusDot = "bg-green-500";
-            let statusText = "Valid";
-
-            if (daysLeft < 0) {
-              statusColor = "text-red-600";
-              statusBg = "bg-red-100";
-              statusDot = "bg-red-500";
-              statusText = "Expired";
-            } else if (daysLeft < 30) {
-              statusColor = "text-amber-600";
-              statusBg = "bg-amber-100";
-              statusDot = "bg-amber-500";
-              statusText = "Expiring Soon";
-            }
-
-            // Fingerprints
-            const der = forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes();
-            const fingerprints = {
-              md5: forge.md.md5.create().update(der).digest().toHex().match(/.{2}/g).join(':').toUpperCase(),
-              sha1: forge.md.sha1.create().update(der).digest().toHex().match(/.{2}/g).join(':').toUpperCase(),
-              sha256: forge.md.sha256.create().update(der).digest().toHex().match(/.{2}/g).join(':').toUpperCase()
-            };
-
-            // Subject / Issuer
-            const formatAttr = (attrs) => attrs.map(a => `<span class="inline-block bg-surface-100 px-1.5 py-0.5 rounded text-[10px] font-mono mr-1 mb-1">${escape(a.shortName || a.name)}=${escape(a.value)}</span>`).join('');
-            
-            extractedPubKey = forge.pki.publicKeyToPem(cert.publicKey);
-
-            detailsHtml = `
-              <div class="space-y-6">
-                <!-- Status Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div class="p-4 rounded-xl border border-surface-200 bg-white shadow-sm">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-2">Status</div>
-                    <div class="flex items-center gap-2">
-                      <span class="w-2.5 h-2.5 rounded-full ${statusDot} animate-pulse"></span>
-                      <span class="font-bold ${statusColor}">${statusText}</span>
-                    </div>
-                    <div class="mt-1 text-xs text-surface-500">${daysLeft < 0 ? Math.abs(daysLeft) + ' days ago' : daysLeft + ' days remaining'}</div>
-                  </div>
-                  
-                  <div class="p-4 rounded-xl border border-surface-200 bg-white shadow-sm">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-2">Public Key</div>
-                    <div class="font-bold text-surface-900">${cert.publicKey.n ? 'RSA' : 'ECC'}</div>
-                    <div class="mt-1 text-xs text-surface-500">${cert.publicKey.n ? cert.publicKey.n.bitLength() + ' bits' : 'Elliptic Curve'}</div>
-                  </div>
-
-                  <div class="p-4 rounded-xl border border-surface-200 bg-white shadow-sm">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-2">Serial Number</div>
-                    <div class="font-mono text-xs text-surface-700 break-all">${cert.serialNumber}</div>
-                  </div>
-                </div>
-
-                <!-- Identity -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div class="space-y-3">
-                    <h3 class="font-semibold text-surface-800 flex items-center gap-2">
-                      <svg class="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                      Subject
-                    </h3>
-                    <div class="p-4 rounded-xl border border-surface-200 bg-surface-50/50">
-                      ${formatAttr(cert.subject.attributes)}
-                    </div>
-                  </div>
-                  <div class="space-y-3">
-                    <h3 class="font-semibold text-surface-800 flex items-center gap-2">
-                      <svg class="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
-                      Issuer
-                    </h3>
-                    <div class="p-4 rounded-xl border border-surface-200 bg-surface-50/50">
-                      ${formatAttr(cert.issuer.attributes)}
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Validity Timeline -->
-                <div class="space-y-3">
-                  <div class="flex items-center justify-between">
-                    <h3 class="font-semibold text-surface-800">Validity Period</h3>
-                    <span class="text-[10px] font-mono text-surface-400">${validFrom.toLocaleDateString()} — ${validTo.toLocaleDateString()}</span>
-                  </div>
-                  <div class="h-2 w-full bg-surface-100 rounded-full overflow-hidden">
-                    <div class="h-full ${statusDot}" style="width: ${progress}%"></div>
-                  </div>
-                </div>
-
-                <!-- Fingerprints -->
-                <div class="space-y-3">
-                  <h3 class="font-semibold text-surface-800">Fingerprints</h3>
-                  <div class="rounded-xl border border-surface-200 overflow-hidden">
-                    <table class="min-w-full text-xs font-mono">
-                      <tr class="border-b border-surface-100">
-                        <td class="px-4 py-2 bg-surface-50 font-bold text-surface-500 w-24">MD5</td>
-                        <td class="px-4 py-2 text-surface-700 break-all">${fingerprints.md5}</td>
-                      </tr>
-                      <tr class="border-b border-surface-100">
-                        <td class="px-4 py-2 bg-surface-50 font-bold text-surface-500 w-24">SHA-1</td>
-                        <td class="px-4 py-2 text-surface-700 break-all">${fingerprints.sha1}</td>
-                      </tr>
-                      <tr>
-                        <td class="px-4 py-2 bg-surface-50 font-bold text-surface-500 w-24">SHA-256</td>
-                        <td class="px-4 py-2 text-surface-700 break-all">${fingerprints.sha256}</td>
-                      </tr>
-                    </table>
-                  </div>
-                </div>
-
-                <!-- Actions -->
-                <div class="flex flex-wrap gap-3">
-                  <button id="btn-dl-pub" class="inline-flex items-center px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    Download Public Key (.pem)
-                  </button>
-                </div>
+          if (parsedData.certificates.length === 0 && parsedData.privateKeysCount === 0 && parsedData.publicKeysCount === 0) {
+            html += `
+              <div class="p-8 text-center bg-surface-50 rounded-2xl border-2 border-dashed border-surface-200">
+                <p class="text-surface-600">No standard PEM blocks (BEGIN CERTIFICATE/KEY) were found in this file.</p>
               </div>
             `;
-          } else if (isPrivKey) {
-            typeLabel = "Private Key";
-            detailsHtml = `
-              <div class="p-6 bg-red-50 border border-red-100 rounded-xl flex items-start gap-4">
-                <div class="p-2 bg-red-100 rounded-lg text-red-600">
-                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 00-2 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+          }
+
+          if (parsedData.privateKeysCount > 0) {
+            html += `
+              <div class="mb-8 p-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-4">
+                <div class="flex-shrink-0 w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center text-red-600">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                 </div>
-                <div class="space-y-1">
+                <div>
                   <h3 class="font-bold text-red-800">Sensitive Material Detected</h3>
                   <p class="text-sm text-red-700 leading-relaxed">
-                    This file contains a <strong>Private Key</strong>. Private keys should never be shared or uploaded to untrusted systems. 
-                    Parsing is disabled for security.
-                  </p>
-                </div>
-              </div>
-            `;
-          } else if (isPubKey) {
-            typeLabel = "Public Key";
-            detailsHtml = `
-              <div class="p-6 bg-brand-50 border border-brand-100 rounded-xl flex items-start gap-4">
-                <div class="p-2 bg-brand-100 rounded-lg text-brand-600">
-                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
-                </div>
-                <div class="space-y-1">
-                  <h3 class="font-bold text-brand-800">Public Key Detected</h3>
-                  <p class="text-sm text-brand-700 leading-relaxed">
-                    This is a standalone public key file. You can use it for encryption or signature verification.
+                    This file contains <strong>${parsedData.privateKeysCount} Private Key(s)</strong>. 
+                    Private keys are extremely sensitive. Do not share them. We only show metadata and avoid parsing the secret bits.
                   </p>
                 </div>
               </div>
             `;
           }
 
-          h.render(`
-            <div class="max-w-5xl mx-auto">
-              ${infoBar}
+          if (parsedData.certificates.length > 0) {
+            html += `
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="font-bold text-surface-900 text-lg">Certificates Found</h3>
+                <span class="text-xs bg-brand-100 text-brand-700 px-2.5 py-1 rounded-full font-bold">${parsedData.certificates.length} item${parsedData.certificates.length > 1 ? 's' : ''}</span>
+              </div>
+              <div class="space-y-8">
+            `;
 
-              <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
-                <!-- Left: Analysis -->
-                <div class="xl:col-span-2 space-y-8">
-                  <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-xl font-bold text-surface-900">${typeLabel}</h2>
-                    <span class="px-2.5 py-1 bg-brand-100 text-brand-700 rounded-full text-xs font-bold uppercase tracking-wider">${typeLabel}</span>
-                  </div>
-                  
-                  ${detailsHtml}
-                </div>
+            parsedData.certificates.forEach((cert, i) => {
+              const now = new Date();
+              const isExpired = now > cert.validTo;
+              const isExpiringSoon = !isExpired && (cert.validTo - now) < (30 * 24 * 60 * 60 * 1000);
+              
+              let statusClass = "bg-green-100 text-green-700";
+              let statusLabel = "Valid";
+              let progressColor = "bg-green-500";
 
-                <!-- Right: Raw Content -->
-                <div class="space-y-4">
-                  <div class="flex items-center justify-between">
-                    <h3 class="font-semibold text-surface-800">Raw PEM Source</h3>
-                    <button id="btn-copy-mini" class="text-xs text-brand-600 hover:text-brand-700 font-medium">Copy</button>
+              if (isExpired) {
+                statusClass = "bg-red-100 text-red-700";
+                statusLabel = "Expired";
+                progressColor = "bg-red-500";
+              } else if (isExpiringSoon) {
+                statusClass = "bg-amber-100 text-amber-700";
+                statusLabel = "Expiring Soon";
+                progressColor = "bg-amber-500";
+              }
+
+              const totalLife = cert.validTo - cert.validFrom;
+              const elapsed = now - cert.validFrom;
+              const percent = Math.min(100, Math.max(0, (elapsed / totalLife) * 100));
+
+              html += `
+                <div class="bg-white rounded-2xl border border-surface-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                  <div class="p-6 border-b border-surface-100 bg-surface-50/30">
+                    <div class="flex flex-wrap justify-between items-start gap-4 mb-4">
+                      <div>
+                        <div class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-1">Common Name</div>
+                        <h4 class="text-xl font-bold text-surface-900 break-all">${escapeHTML(cert.subject.CN || 'Unnamed')}</h4>
+                      </div>
+                      <span class="px-3 py-1 rounded-full text-xs font-bold ${statusClass}">${statusLabel}</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div>
+                        <div class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-1">Validity</div>
+                        <div class="text-sm text-surface-700 font-medium">
+                          <span class="${isExpired ? 'text-red-600 font-bold' : ''}">${cert.validTo.toLocaleDateString()}</span>
+                          <span class="text-surface-300 mx-1">/</span>
+                          <span class="text-xs text-surface-500">Exp. in ${Math.ceil((cert.validTo - now) / (86400000))} days</span>
+                        </div>
+                      </div>
+                      <div>
+                        <div class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-1">Key Type</div>
+                        <div class="text-sm text-surface-700 font-medium">${cert.publicKey.algorithm} <span class="text-xs text-surface-400">(${cert.publicKey.bits} bits)</span></div>
+                      </div>
+                      <div>
+                        <div class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-1">Serial</div>
+                        <div class="text-[10px] font-mono text-surface-500 break-all">${cert.serial}</div>
+                      </div>
+                    </div>
+
+                    <div class="mt-6">
+                      <div class="flex justify-between text-[10px] font-mono text-surface-400 mb-1.5">
+                        <span>ISSUED: ${cert.validFrom.toLocaleDateString()}</span>
+                        <span>EXPIRES: ${cert.validTo.toLocaleDateString()}</span>
+                      </div>
+                      <div class="h-2 w-full bg-surface-100 rounded-full overflow-hidden">
+                        <div class="h-full ${progressColor} transition-all duration-1000" style="width: ${percent}%"></div>
+                      </div>
+                    </div>
                   </div>
-                  <div class="rounded-xl overflow-hidden border border-surface-200">
-                    <pre class="p-4 text-[10px] font-mono bg-gray-950 text-gray-300 overflow-x-auto leading-relaxed max-h-[600px] scrollbar-thin scrollbar-thumb-gray-800"><code>${escape(content)}</code></pre>
+
+                  <div class="p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="space-y-6">
+                      <div>
+                        <h5 class="text-xs font-bold text-surface-800 mb-3 flex items-center gap-2">
+                          <svg class="w-3.5 h-3.5 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                          Subject Information
+                        </h5>
+                        <div class="overflow-hidden rounded-xl border border-surface-100">
+                          <table class="min-w-full text-xs">
+                            ${Object.entries(cert.subject).map(([k, v]) => `
+                              <tr class="border-b border-surface-50 last:border-0 hover:bg-surface-50">
+                                <td class="px-3 py-2 font-bold text-surface-500 bg-surface-50/50 w-24">${escapeHTML(k)}</td>
+                                <td class="px-3 py-2 text-surface-700 break-all">${escapeHTML(v)}</td>
+                              </tr>
+                            `).join('')}
+                          </table>
+                        </div>
+                      </div>
+                      <div>
+                        <h5 class="text-xs font-bold text-surface-800 mb-3 flex items-center gap-2">
+                          <svg class="w-3.5 h-3.5 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                          Issuer Information
+                        </h5>
+                        <div class="overflow-hidden rounded-xl border border-surface-100">
+                          <table class="min-w-full text-xs">
+                            ${Object.entries(cert.issuer).map(([k, v]) => `
+                              <tr class="border-b border-surface-50 last:border-0 hover:bg-surface-50">
+                                <td class="px-3 py-2 font-bold text-surface-500 bg-surface-50/50 w-24">${escapeHTML(k)}</td>
+                                <td class="px-3 py-2 text-surface-700 break-all">${escapeHTML(v)}</td>
+                              </tr>
+                            `).join('')}
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="space-y-6">
+                      <div>
+                        <h5 class="text-xs font-bold text-surface-800 mb-3">Fingerprints</h5>
+                        <div class="space-y-3">
+                          <div class="p-3 bg-surface-50 rounded-xl border border-surface-100">
+                            <div class="text-[9px] font-bold text-surface-400 uppercase tracking-tight mb-1">SHA-256</div>
+                            <div class="text-[10px] font-mono text-surface-600 break-all">${cert.fingerprints.sha256}</div>
+                          </div>
+                          <div class="p-3 bg-surface-50 rounded-xl border border-surface-100">
+                            <div class="text-[9px] font-bold text-surface-400 uppercase tracking-tight mb-1">SHA-1</div>
+                            <div class="text-[10px] font-mono text-surface-600 break-all">${cert.fingerprints.sha1}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      ${cert.extensions.length > 0 ? `
+                        <div>
+                          <h5 class="text-xs font-bold text-surface-800 mb-3">Extensions & SANs</h5>
+                          <div class="flex flex-wrap gap-2">
+                            ${cert.extensions.map(ext => `
+                              <div class="group relative px-2 py-1 bg-surface-100 hover:bg-brand-50 rounded text-[10px] font-mono text-surface-600 border border-surface-200" title="${escapeHTML(ext.name)}">
+                                <span class="font-bold text-surface-800">${escapeHTML(ext.name)}</span>
+                              </div>
+                            `).join('')}
+                          </div>
+                        </div>
+                      ` : ''}
+
+                      <div class="pt-4 flex gap-3">
+                         <button data-copy-index="${i}" class="btn-copy-cert flex-1 py-2 text-xs font-bold text-brand-600 bg-brand-50 hover:bg-brand-100 rounded-lg transition-colors border border-brand-200">
+                            Copy This PEM
+                         </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
+              `;
+            });
+
+            html += `</div>`;
+          }
+
+          html += `
+            <div class="mt-12 space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="font-bold text-surface-800">Raw PEM Source</h3>
+                <span class="text-xs text-surface-400">${content.length} characters</span>
+              </div>
+              <div class="rounded-xl overflow-hidden border border-surface-200">
+                <pre class="p-4 text-[11px] font-mono bg-gray-950 text-gray-300 overflow-x-auto leading-relaxed max-h-[400px]"><code>${escapeHTML(content)}</code></pre>
               </div>
             </div>
-          `);
+          </div>`;
 
-          // Event Listeners
-          const dlBtn = document.getElementById('btn-dl-pub');
-          if (dlBtn && extractedPubKey) {
-            dlBtn.onclick = () => h.download('public_key.pem', extractedPubKey);
-          }
+          h.render(html);
 
-          const copyMiniBtn = document.getElementById('btn-copy-mini');
-          if (copyMiniBtn) {
-            copyMiniBtn.onclick = (e) => h.copyToClipboard(content, e.target);
-          }
+          // Add event listeners after render
+          mountEl.querySelectorAll('.btn-copy-cert').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const idx = btn.getAttribute('data-copy-index');
+              const pem = parsedData.certificates[idx]?.pem;
+              if (pem) h.copyToClipboard(pem, btn);
+            });
+          });
 
         } catch (err) {
           console.error(err);
-          h.showError('Parsing Failed', 'The PEM content could not be decoded. Ensure it is a valid X.509 certificate or key in text format.');
+          h.showError('Parsing Error', 'The PEM content could not be fully decoded. Ensure it is a valid base64-encoded X.509 certificate.');
+        }
+
+        function parseAttributes(attrs) {
+          const obj = {};
+          attrs.forEach(a => {
+            const key = a.shortName || a.name || a.type;
+            obj[key] = a.value;
+          });
+          return obj;
+        }
+
+        function parseExtensions(exts) {
+          return exts.map(e => ({
+            name: e.name || e.id,
+            critical: e.critical,
+            value: e.value
+          }));
         }
       }
     });
