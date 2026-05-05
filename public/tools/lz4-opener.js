@@ -5,11 +5,28 @@
 (function () {
   'use strict';
 
-  function escapeHtml(str) {
+  /**
+   * Escapes HTML to prevent XSS (B6)
+   */
+  function escape(str) {
     if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  /**
+   * Format bytes to human readable string
+   */
+  function formatSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
   window.initTool = function (toolConfig, mountEl) {
@@ -24,18 +41,20 @@
           id: 'download-extracted',
           onClick: function (h) {
             const state = h.getState();
-            if (state.decompressed) {
+            if (state && state.decompressed) {
               h.download(state.originalName || 'extracted_file', state.decompressed);
             }
           }
         },
         {
-          label: '📋 Copy Text',
+          label: '📋 Copy Content',
           id: 'copy-text',
           onClick: function (h, btn) {
             const state = h.getState();
-            if (state.isText && state.decompressedText) {
-              h.copyToClipboard(state.decompressedText, btn);
+            if (!state) return;
+            
+            if (state.isText && state.fullText) {
+              h.copyToClipboard(state.fullText, btn);
             } else if (state.decompressed) {
               try {
                 const text = new TextDecoder().decode(state.decompressed);
@@ -52,37 +71,53 @@
         h.loadScript('https://cdn.jsdelivr.net/npm/lz4js@0.2.0/lz4js.min.js');
       },
 
-      onFile: function (file, content, h) {
-        const self = this;
+      onDestroy: function (h) {
+        // Clean up any state or URLs if needed
+      },
+
+      onFile: function _onFileFn(file, content, h) {
+        // B8: Use named function to avoid 'this' context issues
+        
+        // B1: Check if lz4js is loaded
         if (typeof lz4js === 'undefined') {
-          h.showLoading('Loading LZ4 decompressor...');
-          setTimeout(function () {
-            if (typeof lz4js !== 'undefined') self.onFile(file, content, h);
-            else h.showError('Dependency Error', 'Failed to load lz4js library.');
-          }, 1000);
+          h.showLoading('Loading decompressor...');
+          setTimeout(function() {
+            _onFileFn(file, content, h);
+          }, 200);
           return;
         }
 
         h.showLoading('Decompressing LZ4 archive...');
-        
-        // Small delay to ensure UI updates
+
+        // Delay slightly to let the loading spinner show up
         setTimeout(function () {
           try {
             const uint8 = new Uint8Array(content);
             const decompressed = lz4js.decompress(uint8);
-            const originalName = file.name.replace(/\.lz4$/i, '');
+            const originalName = file.name.replace(/\.lz4$/i, '') || 'extracted_file';
             
             let isText = true;
-            let decompressedText = '';
+            let previewText = '';
+            let fullText = '';
+            
             try {
+              // B2: Handle binary correctly
               const decoder = new TextDecoder('utf-8', { fatal: true });
-              // Try to decode a sample to check if it's text
-              decoder.decode(decompressed.slice(0, 8192));
-              // If successful, decode the whole thing (if not too large)
-              if (decompressed.length < 5 * 1024 * 1024) {
-                decompressedText = new TextDecoder().decode(decompressed);
+              
+              // Sample check
+              decoder.decode(decompressed.slice(0, 4096));
+              
+              // B7: Handle large files
+              const MAX_PREVIEW = 100 * 1024; // 100KB preview
+              if (decompressed.length > MAX_PREVIEW) {
+                previewText = new TextDecoder().decode(decompressed.slice(0, MAX_PREVIEW));
+                // Only store full text if it's reasonable (e.g. < 5MB)
+                if (decompressed.length < 5 * 1024 * 1024) {
+                  fullText = new TextDecoder().decode(decompressed);
+                }
               } else {
-                decompressedText = new TextDecoder().decode(decompressed.slice(0, 100000)) + '\n\n... [Content truncated for preview] ...';
+                fullText = new TextDecoder().decode(decompressed);
+                previewText = fullText;
               }
             } catch (e) {
               isText = false;
@@ -90,65 +125,122 @@
 
             h.setState({
               decompressed: decompressed,
-              decompressedText: decompressedText,
+              fullText: fullText,
+              previewText: previewText,
               isText: isText,
-              originalName: originalName
+              originalName: originalName,
+              filter: ''
             });
 
             const ratio = (decompressed.length / file.size).toFixed(2);
-            
-            h.render(`
-              <div class="p-6 space-y-6 font-sans">
-                <div class="flex items-center justify-between border-b border-surface-200 pb-4">
-                  <div>
-                    <h3 class="text-xl font-bold text-surface-900">${escapeHtml(file.name)}</h3>
-                    <p class="text-sm text-surface-500">${(file.size / 1024).toFixed(2)} KB • LZ4 Archive</p>
-                  </div>
-                </div>
+            const sizeStr = formatSize(file.size);
+            const unpackedStr = formatSize(decompressed.length);
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div class="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Compressed</div>
-                    <div class="text-lg font-mono font-bold text-surface-700">${(file.size / 1024).toFixed(1)} KB</div>
-                  </div>
-                  <div class="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Unpacked</div>
-                    <div class="text-lg font-mono font-bold text-brand-600">${(decompressed.length / 1024).toFixed(1)} KB</div>
-                  </div>
-                  <div class="bg-surface-50 rounded-xl p-4 border border-surface-200 text-center">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Ratio</div>
-                    <div class="text-lg font-mono font-bold text-surface-700">${ratio}x</div>
-                  </div>
-                </div>
+            const renderUI = (state) => {
+              const { isText, previewText, filter } = state;
+              
+              let displayContent = previewText;
+              if (isText && filter) {
+                const lines = previewText.split('\n');
+                const filtered = lines.filter(line => line.toLowerCase().includes(filter.toLowerCase()));
+                displayContent = filtered.join('\n');
+                if (filtered.length === 0) displayContent = 'No matches found for "' + filter + '"';
+              }
 
-                <div class="border border-surface-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                  <div class="bg-surface-50 px-4 py-2 border-b border-surface-200 flex justify-between items-center">
-                    <span class="text-xs font-bold text-surface-700 uppercase tracking-wider">
-                      ${isText ? '📄 Text Preview' : '📦 Binary Data'}
+              h.render(`
+                <div class="p-4 md:p-6 max-w-5xl mx-auto">
+                  <!-- U1: File Info Bar -->
+                  <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">
+                    <span class="font-semibold text-surface-800">${escape(file.name)}</span>
+                    <span class="text-surface-300">|</span>
+                    <span>${sizeStr}</span>
+                    <span class="text-surface-300">|</span>
+                    <span class="text-surface-500">LZ4 Archive</span>
+                    <span class="ml-auto text-xs font-medium px-2 py-0.5 bg-brand-50 text-brand-700 rounded-full">
+                      ${ratio}x ratio
                     </span>
                   </div>
-                  <div class="p-0">
-                    ${isText ? `
-                      <pre class="p-6 font-mono text-[13px] leading-relaxed text-surface-800 bg-white overflow-auto max-h-[500px] whitespace-pre-wrap">${escapeHtml(decompressedText)}</pre>
-                    ` : `
-                      <div class="p-20 text-center space-y-4">
-                        <div class="text-5xl">💾</div>
-                        <div>
-                          <p class="text-surface-700 font-bold text-lg">Binary File Detected</p>
-                          <p class="text-surface-500 text-sm mt-1">This archive contains binary data that cannot be previewed as text.</p>
-                        </div>
-                        <button onclick="document.getElementById('omni-action-download-extracted').click()" class="px-6 py-2 bg-brand-600 text-white rounded-lg font-bold text-sm shadow-md hover:bg-brand-700 transition-colors">
-                          Extract and Save File
-                        </button>
+
+                  <!-- Statistics Cards -->
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                    <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm flex items-center gap-4">
+                      <div class="w-12 h-12 rounded-lg bg-surface-100 flex items-center justify-center text-2xl">📦</div>
+                      <div>
+                        <div class="text-xs font-bold text-surface-400 uppercase tracking-wider">Compressed Size</div>
+                        <div class="text-xl font-mono font-bold text-surface-800">${sizeStr}</div>
                       </div>
-                    `}
+                    </div>
+                    <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm flex items-center gap-4 border-l-4 border-l-brand-500">
+                      <div class="w-12 h-12 rounded-lg bg-brand-50 flex items-center justify-center text-2xl text-brand-500">📤</div>
+                      <div>
+                        <div class="text-xs font-bold text-surface-400 uppercase tracking-wider">Unpacked Size</div>
+                        <div class="text-xl font-mono font-bold text-brand-600">${unpackedStr}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Content Area -->
+                  <div class="space-y-4">
+                    <div class="flex items-center justify-between">
+                      <h3 class="font-semibold text-surface-800 flex items-center gap-2">
+                        ${isText ? '📄 Text Content' : '📦 Binary Data'}
+                        ${decompressed.length > MAX_PREVIEW ? '<span class="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded italic">Showing first 100KB</span>' : ''}
+                      </h3>
+                      
+                      ${isText ? `
+                        <div class="relative w-64">
+                          <input type="text" 
+                                 id="lz4-search"
+                                 placeholder="Search content..." 
+                                 value="${escape(filter || '')}"
+                                 class="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-surface-200 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all"
+                          />
+                          <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-surface-400">🔍</span>
+                        </div>
+                      ` : ''}
+                    </div>
+
+                    <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm bg-gray-950">
+                      ${isText ? `
+                        <pre class="p-4 text-[13px] font-mono text-gray-100 overflow-x-auto leading-relaxed max-h-[600px] scrollbar-thin scrollbar-thumb-surface-700">${escape(displayContent)}</pre>
+                      ` : `
+                        <div class="p-12 text-center">
+                          <div class="text-6xl mb-6">💾</div>
+                          <h4 class="text-white font-bold text-lg mb-2">Binary File Detected</h4>
+                          <p class="text-gray-400 text-sm mb-8 max-w-md mx-auto">
+                            The decompressed content is binary data and cannot be displayed as text. 
+                            You can download the extracted file using the button below.
+                          </p>
+                          <button onclick="document.getElementById('omni-action-download-extracted').click()" 
+                                  class="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold text-sm shadow-lg transition-all transform hover:scale-105 active:scale-95">
+                            Extract and Save File
+                          </button>
+                        </div>
+                      `}
+                    </div>
                   </div>
                 </div>
-              </div>
-            `);
+              `);
+
+              // Add search listener
+              const searchInput = document.getElementById('lz4-search');
+              if (searchInput) {
+                searchInput.addEventListener('input', (e) => {
+                  const newFilter = e.target.value;
+                  const newState = { ...h.getState(), filter: newFilter };
+                  h.setState(newState);
+                  renderUI(newState);
+                });
+                // Maintain focus
+                if (filter) searchInput.focus();
+                searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
+              }
+            };
+
+            renderUI(h.getState());
 
           } catch (err) {
-            h.showError('Decompression Failed', 'The LZ4 archive might be corrupted or in an unsupported format: ' + err.message);
+            h.showError('Decompression Failed', 'The LZ4 archive might be corrupted or in an unsupported format. Error: ' + err.message);
           }
         }, 50);
       }
