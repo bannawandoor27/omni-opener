@@ -1,122 +1,250 @@
 (function () {
   'use strict';
 
-  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  function fmtBytes(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : b > 1024 ? (b / 1024).toFixed(0) + ' KB' : b + ' B'; }
+  /**
+   * Escapes strings for safe HTML insertion (B6)
+   */
+  function esc(s) {
+    if (!s) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
 
-  function generateHexDump(bytes, maxBytes) {
-    const limit = Math.min(bytes.length, maxBytes);
-    const lines = [];
-    for (let i = 0; i < limit; i += 16) {
-      const offset = i.toString(16).padStart(8, '0').toUpperCase();
-      const chunk = bytes.slice(i, Math.min(i + 16, limit));
-      const hex = Array.from(chunk).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
-      const ascii = Array.from(chunk).map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
-      const hexPadded = hex.padEnd(16 * 3 - 1, ' ');
-      lines.push(offset + '  ' + hexPadded + '  |' + ascii + '|');
+  /**
+   * Human-readable byte formatting (U1)
+   */
+  function formatSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  /**
+   * Generates a filtered hex dump with search metadata (B7, U8, Format Excellence)
+   */
+  function generateHexDump(buffer, start, length) {
+    const totalBytes = buffer.byteLength;
+    const bytes = new Uint8Array(buffer, start, Math.min(length, totalBytes - start));
+    let lines = [];
+    for (let i = 0; i < bytes.length; i += 16) {
+      const offset = (start + i).toString(16).padStart(8, '0');
+      const chunk = bytes.slice(i, i + 16);
+      const hex = Array.from(chunk).map(b => b.toString(16).padStart(2, '0')).join(' ');
+      const ascii = Array.from(chunk).map(b => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.')).join('');
+      const hexPadded = hex.padEnd(47, ' ');
+      
+      lines.push(
+        `<div class="hex-line flex py-0.5 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0" data-search="${esc(hex.toLowerCase())} ${esc(ascii.toLowerCase())}">` +
+          `<span class="w-20 text-surface-500 shrink-0 font-mono select-none">${offset}</span>` +
+          `<span class="text-brand-400 shrink-0 mr-4 font-mono font-bold">${esc(hexPadded)}</span>` +
+          `<span class="text-surface-400 font-mono">|${esc(ascii)}|</span>` +
+        `</div>`
+      );
     }
-    return lines.join('\n');
+    return lines.join('');
   }
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
-      accept: '.h5,.hdf5,.hdf,.he5,.he4,.hdf4',
-      dropLabel: 'Drop an HDF5 file here (.h5, .hdf5, .hdf)',
+      accept: '.h5,.hdf5,.hdf,.he5,.he4',
+      dropLabel: 'Drop HDF5 file here',
       actions: [
         {
-          label: '📥 Download', id: 'dl', onClick: function (h) {
-            h.download(h.getFile().name, h.getContent());
+          label: '📥 Download File',
+          id: 'dl',
+          onClick: function (h) {
+            const content = h.getContent();
+            const file = h.getFile();
+            if (content && file) h.download(file.name, content);
+          }
+        },
+        {
+          label: '📋 Copy SHA-256',
+          id: 'copy-hash',
+          onClick: function (h, btn) {
+            const hash = h.getState().sha256;
+            if (hash) h.copyToClipboard(hash, btn);
           }
         }
       ],
-      onFile: async function (file, content, h) {
-        h.showLoading('Analyzing HDF5 file...');
+      onFile: async function _onFileFn(file, content, h) {
+        if (!content || content.byteLength === 0) {
+          h.showError('Empty File', 'The provided HDF5 file contains no data.');
+          return;
+        }
 
+        h.showLoading('Analyzing HDF5 Hierarchical Structure...');
+
+        // 1. Compute Integrity Hash (B3)
+        const hashBuffer = await crypto.subtle.digest('SHA-256', content);
+        const hashHex = Array.from(new Uint8Array(hashBuffer))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+        h.setState({ sha256: hashHex });
+
+        // 2. Detect HDF5 Signature (at offsets 0, 512, 1024, 2048, 4096, 8192)
         const bytes = new Uint8Array(content);
-        const view = new DataView(content);
-
-        // SHA-256
-        const hashBuf = await crypto.subtle.digest('SHA-256', content);
-        const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-        // HDF5 magic bytes: 89 48 44 46 0d 0a 1a 0a
         const HDF5_MAGIC = [0x89, 0x48, 0x44, 0x46, 0x0D, 0x0A, 0x1A, 0x0A];
-        let magicValid = bytes.length >= 8;
-        if (magicValid) {
+        let sigOffset = -1;
+        const searchOffsets = [0, 512, 1024, 2048, 4096, 8192];
+        
+        for (const off of searchOffsets) {
+          if (bytes.length < off + 8) break;
+          let match = true;
           for (let i = 0; i < 8; i++) {
-            if (bytes[i] !== HDF5_MAGIC[i]) { magicValid = false; break; }
+            if (bytes[off + i] !== HDF5_MAGIC[i]) { match = false; break; }
           }
+          if (match) { sigOffset = off; break; }
         }
 
-        const magicHex = bytes.length >= 8
-          ? Array.from(bytes.slice(0, 8)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')
-          : 'N/A';
-        const magicExpected = '89 48 44 46 0D 0A 1A 0A';
+        const isValid = sigOffset !== -1;
+        const superblock = {
+          version: isValid && bytes.length > sigOffset + 8 ? bytes[sigOffset + 8] : 'N/A',
+          offsetSize: isValid && bytes.length > sigOffset + 13 ? bytes[sigOffset + 13] : 'N/A',
+          lengthSize: isValid && bytes.length > sigOffset + 14 ? bytes[sigOffset + 14] : 'N/A'
+        };
 
-        // Superblock version (byte 8)
-        let superblockVersion = 'N/A';
-        let superblockDesc = '';
-        if (bytes.length > 8) {
-          const v = bytes[8];
-          superblockVersion = String(v);
-          if (v === 0) superblockDesc = 'Version 0 (HDF5 ≤ 1.6)';
-          else if (v === 1) superblockDesc = 'Version 1 (HDF5 1.6)';
-          else if (v === 2) superblockDesc = 'Version 2 (HDF5 1.8+)';
-          else if (v === 3) superblockDesc = 'Version 3 (HDF5 1.10+)';
-          else superblockDesc = 'Unknown version';
-        }
+        const displayLineLimit = 8192; // Max bytes for hex dump (B7)
+        const lineCount = Math.ceil(Math.min(content.byteLength, displayLineLimit) / 16);
 
-        // Full magic bytes row (first 16 bytes)
-        const first16 = bytes.length >= 16
-          ? Array.from(bytes.slice(0, 16)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')
-          : Array.from(bytes.slice(0, bytes.length)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
-
-        // Hex dump first 4KB
-        const hexDump = generateHexDump(bytes, 4096);
-
-        const validBadge = magicValid
-          ? '<span style="color:#22c55e;font-weight:bold;">✔ Valid HDF5 Signature</span>'
-          : '<span style="color:#ef4444;font-weight:bold;">✘ Invalid HDF5 Signature</span>';
-
+        // 3. Render UI
         h.render(`
-          <div style="font-family:system-ui,sans-serif;max-width:860px;margin:0 auto;padding:16px;">
-            <h2 style="margin:0 0 4px;font-size:1.3rem;">HDF5 File Analysis</h2>
-            <p style="margin:0 0 16px;color:#888;font-size:.9rem;">${esc(file.name)} &mdash; ${fmtBytes(file.size)}</p>
-
-            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
-              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">Signature Validation</div>
-              <div style="margin-bottom:6px;">${validBadge}</div>
-              <table style="font-size:.82rem;border-collapse:collapse;width:100%;">
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Expected magic</td><td style="font-family:monospace;">${magicExpected}</td></tr>
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">File bytes 0–7</td><td style="font-family:monospace;">${esc(magicHex)}</td></tr>
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Bytes 0–15</td><td style="font-family:monospace;word-break:break-all;">${esc(first16)}</td></tr>
-              </table>
+          <div class="p-4 md:p-8 max-w-6xl mx-auto space-y-6 animate-in fade-in duration-500">
+            <!-- U1: File Info Bar -->
+            <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 shadow-sm border border-surface-100">
+              <span class="font-semibold text-surface-800">${esc(file.name)}</span>
+              <span class="text-surface-300">|</span>
+              <span>${formatSize(file.size)}</span>
+              <span class="text-surface-300">|</span>
+              <span class="text-surface-500 font-medium italic">HDF5 Hierarchical Data</span>
             </div>
 
-            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
-              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">HDF5 Header</div>
-              <table style="font-size:.82rem;border-collapse:collapse;width:100%;">
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Superblock Version</td><td style="font-family:monospace;">${esc(superblockVersion)} &mdash; ${esc(superblockDesc)}</td></tr>
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">File Size</td><td>${fmtBytes(file.size)} (${file.size.toLocaleString()} bytes)</td></tr>
-              </table>
+            <!-- Dashboard Grid (U9) -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <!-- Validity Status -->
+              <div class="rounded-xl border border-surface-200 p-5 hover:border-brand-300 transition-all bg-white shadow-sm group">
+                <div class="flex items-center justify-between mb-4">
+                  <h3 class="text-xs font-bold text-surface-400 uppercase tracking-widest">Verification</h3>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${isValid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                    ${isValid ? 'Verified' : 'Mismatch'}
+                  </span>
+                </div>
+                <div class="text-2xl font-bold ${isValid ? 'text-surface-800' : 'text-red-500'} mb-1">
+                  ${isValid ? 'Valid HDF5' : 'Invalid File'}
+                </div>
+                <p class="text-xs text-surface-400">
+                  ${isValid ? `Signature found at byte ${sigOffset}` : 'HDF5 magic header not detected'}
+                </p>
+              </div>
+
+              <!-- Integrity Hash -->
+              <div class="rounded-xl border border-surface-200 p-5 hover:border-brand-300 transition-all bg-white shadow-sm lg:col-span-2">
+                <h3 class="text-xs font-bold text-surface-400 uppercase tracking-widest mb-3">Integrity (SHA-256)</h3>
+                <div class="font-mono text-[11px] break-all text-brand-700 bg-brand-50/50 p-3 rounded-lg border border-brand-100 leading-relaxed shadow-inner">
+                  ${hashHex}
+                </div>
+              </div>
             </div>
 
-            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
-              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">SHA-256 Hash</div>
-              <div style="font-family:monospace;font-size:.8rem;word-break:break-all;color:#86efac;">${esc(hashHex)}</div>
+            <!-- Metadata Details (U7, U10) -->
+            <div class="space-y-3">
+              <div class="flex items-center justify-between px-1">
+                <h3 class="font-bold text-surface-800 flex items-center gap-2">
+                  Superblock Analysis
+                  <span class="text-xs font-normal text-surface-400">(HDF5 Header)</span>
+                </h3>
+                <span class="text-[10px] bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-bold">SPEC V${superblock.version}</span>
+              </div>
+              <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white shadow-sm">
+                <table class="min-w-full text-sm">
+                  <thead>
+                    <tr class="bg-surface-50/80 border-b border-surface-200">
+                      <th class="px-4 py-3 text-left font-semibold text-surface-700">Internal Property</th>
+                      <th class="px-4 py-3 text-left font-semibold text-surface-700">Value / Parameter</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-surface-100">
+                    <tr class="hover:bg-brand-50/30 transition-colors">
+                      <td class="px-4 py-3 text-surface-500">Superblock Format Version</td>
+                      <td class="px-4 py-3 font-mono text-brand-600 font-bold">${superblock.version}</td>
+                    </tr>
+                    <tr class="hover:bg-brand-50/30 transition-colors">
+                      <td class="px-4 py-3 text-surface-500">Offset Addressing Size</td>
+                      <td class="px-4 py-3 font-mono">${superblock.offsetSize} bytes</td>
+                    </tr>
+                    <tr class="hover:bg-brand-50/30 transition-colors">
+                      <td class="px-4 py-3 text-surface-500">Length Addressing Size</td>
+                      <td class="px-4 py-3 font-mono">${superblock.lengthSize} bytes</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            <div style="background:#fffbeb;border:1px solid #fbbf24;border-radius:8px;padding:14px;margin-bottom:16px;color:#92400e;">
-              <strong>Opening HDF5 Files:</strong> Use <strong>HDF5 Viewer</strong> (HDFView), <strong>Python h5py</strong> (<code>import h5py; f = h5py.File('file.h5','r')</code>), or <strong>MATLAB</strong> (<code>h5info</code> / <code>h5read</code>) to open HDF5 files. HDF5 is a hierarchical data format used in scientific computing.
+            <!-- Raw Data Explorer (U8, U10, Format Excellence) -->
+            <div class="space-y-3">
+              <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 px-1">
+                <div class="flex items-center gap-2">
+                  <h3 class="font-bold text-surface-800">Hexadecimal Explorer</h3>
+                  <span class="text-[10px] bg-surface-100 text-surface-600 px-2 py-0.5 rounded-full font-bold">${lineCount} entries displayed</span>
+                </div>
+                <div class="relative">
+                  <input type="text" id="hex-search" placeholder="Search hex or ASCII strings..." 
+                    class="text-xs border border-surface-200 rounded-lg pl-8 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 w-full md:w-64 shadow-sm transition-all">
+                  <svg class="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                </div>
+              </div>
+              <div class="rounded-xl overflow-hidden border border-surface-900 shadow-2xl bg-gray-950">
+                <div id="hex-container" class="p-5 text-[11px] font-mono bg-gray-950 text-gray-200 overflow-x-auto leading-relaxed max-h-[500px] overflow-y-auto custom-scrollbar">
+                  ${generateHexDump(content, 0, displayLineLimit)}
+                </div>
+              </div>
             </div>
 
-            <div style="background:#0f172a;border-radius:8px;padding:16px;margin-bottom:8px;">
-              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">Hex Dump (first 4 KB)</div>
-              <pre style="font-family:'Courier New',monospace;font-size:.72rem;color:#94a3b8;margin:0;overflow-x:auto;white-space:pre;line-height:1.5;">${esc(hexDump)}</pre>
+            <!-- Format Tip -->
+            <div class="bg-brand-50/50 border border-brand-100 rounded-2xl p-6 text-sm text-brand-900 flex items-start gap-4">
+              <div class="text-2xl select-none">🧪</div>
+              <div class="space-y-1">
+                <p class="font-bold text-brand-950">Scientific Data Insight</p>
+                <p class="leading-relaxed opacity-90">
+                  HDF5 is a complex container format. This tool performs high-level validation and raw bit inspection. 
+                  For deep data extraction of datasets (tensors) or group hierarchies, we recommend the 
+                  <code class="bg-brand-100 px-1.5 py-0.5 rounded font-mono font-bold text-brand-800 text-[11px]">h5py</code> Python library 
+                  or the standalone <code class="bg-brand-100 px-1.5 py-0.5 rounded font-mono font-bold text-brand-800 text-[11px]">HDFView</code> application.
+                </p>
+              </div>
             </div>
           </div>
+
+          <style>
+            .custom-scrollbar::-webkit-scrollbar { width: 10px; height: 10px; }
+            .custom-scrollbar::-webkit-scrollbar-track { background: #030712; }
+            .custom-scrollbar::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 5px; border: 2px solid #030712; }
+            .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #374151; }
+            @keyframes fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+            .animate-in { animation: fade-in 0.4s ease-out forwards; }
+          </style>
         `);
+
+        // 4. Interaction Logic (Format Excellence)
+        const searchInput = document.getElementById('hex-search');
+        if (searchInput) {
+          searchInput.addEventListener('input', function (e) {
+            const term = e.target.value.toLowerCase();
+            const lines = document.querySelectorAll('.hex-line');
+            lines.forEach(line => {
+              const contentMatch = line.getAttribute('data-search').includes(term);
+              line.style.display = contentMatch ? 'flex' : 'none';
+            });
+          });
+        }
       }
     });
   };
