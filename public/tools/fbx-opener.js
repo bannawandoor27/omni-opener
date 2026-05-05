@@ -1,9 +1,13 @@
 (function() {
   window.initTool = function(toolConfig, mountEl) {
-    let renderer, scene, camera, controls, model, mixer, clock, animationId;
+    let renderer, scene, camera, controls, model, mixer, clock, animationId, resizeObserver;
 
-    function formatSize(b) {
-      return b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : b > 1e3 ? (b / 1024).toFixed(0) + ' KB' : b + ' B';
+    function formatSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     }
 
     function escapeHtml(str) {
@@ -13,235 +17,273 @@
       return div.innerHTML;
     }
 
+    function cleanup() {
+      if (animationId) cancelAnimationFrame(animationId);
+      if (resizeObserver) resizeObserver.disconnect();
+      if (renderer) {
+        renderer.dispose();
+        if (renderer.domElement && renderer.domElement.parentNode) {
+          renderer.domElement.parentNode.removeChild(renderer.domElement);
+        }
+      }
+      if (scene) {
+        scene.traverse(object => {
+          if (object.isMesh) {
+            if (object.geometry) object.geometry.dispose();
+            if (object.material) {
+              if (Array.isArray(object.material)) {
+                object.material.forEach(m => m.dispose());
+              } else {
+                object.material.dispose();
+              }
+            }
+          }
+        });
+      }
+      model = null;
+      mixer = null;
+      scene = null;
+      camera = null;
+      controls = null;
+      renderer = null;
+    }
+
     OmniTool.create(mountEl, toolConfig, {
       accept: '.fbx',
-      dropLabel: 'Drop a .fbx file here',
+      dropLabel: 'Drop an FBX model here',
       binary: true,
       onInit: function(helpers) {
-        // Core Three.js as requested
         helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js', () => {
-          // fflate is required for many binary FBX files (compression)
           helpers.loadScript('https://cdn.jsdelivr.net/npm/fflate@0.8.2/lib/browser.min.js', () => {
-            // Load FBXLoader and OrbitControls from a compatible UMD source
             helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js', () => {
               helpers.loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js');
             });
           });
         });
       },
+      onDestroy: function() {
+        cleanup();
+      },
       onFile: function _onFileFn(file, content, helpers) {
-        if (!window.THREE || !THREE.FBXLoader || !THREE.OrbitControls) {
-          helpers.showLoading('Initializing 3D engine...');
-          setTimeout(() => _onFileFn(file, content, helpers), 500);
+        if (!window.THREE || !THREE.FBXLoader || !THREE.OrbitControls || !window.fflate) {
+          helpers.showLoading('Preparing 3D engine...');
+          setTimeout(function() { _onFileFn(file, content, helpers); }, 300);
           return;
         }
 
+        cleanup();
         helpers.showLoading('Parsing FBX model...');
-        
+
         try {
           const loader = new THREE.FBXLoader();
-          // FBXLoader.parse handles both Binary and ASCII FBX from an ArrayBuffer
           const object = loader.parse(content, '');
+          
+          if (!object || (object.children && object.children.length === 0 && !object.isMesh)) {
+            helpers.showError('Empty Model', 'The FBX file was parsed but contains no visible 3D geometry.');
+            return;
+          }
+
           renderViewer(object, file, helpers);
-        } catch (e) {
-          console.error('[FBX Error]', e);
-          helpers.showError('Could not parse FBX file', e.message || 'The file might be corrupted, or uses an incompatible FBX version.');
+        } catch (err) {
+          console.error('[FBX Error]', err);
+          helpers.showError('Could not open FBX file', 'The file may be corrupted, in an unsupported format version, or uses features not supported by the browser-based loader.');
         }
       },
       actions: [
-        { 
-          label: '📋 Copy Stats', 
-          id: 'copy-stats', 
+        {
+          label: '📋 Copy Stats',
+          id: 'copy-stats',
           onClick: function(helpers, btn) {
             if (!model) return;
             let vertices = 0;
+            let faces = 0;
             let meshes = 0;
             model.traverse(n => {
               if (n.isMesh) {
                 meshes++;
                 vertices += n.geometry.attributes.position.count;
+                faces += n.geometry.index ? n.geometry.index.count / 3 : n.geometry.attributes.position.count / 3;
               }
             });
-            const stats = `File: ${helpers.getFile().name}\nMeshes: ${meshes}\nVertices: ${vertices.toLocaleString()}\nSize: ${formatSize(helpers.getFile().size)}`;
+            const stats = `Model: ${helpers.getFile().name}\nMeshes: ${meshes}\nVertices: ${vertices.toLocaleString()}\nPolygons: ${Math.floor(faces).toLocaleString()}\nSize: ${formatSize(helpers.getFile().size)}`;
             helpers.copyToClipboard(stats, btn);
-          } 
+          }
         },
-        { 
-          label: '📥 Download', 
-          id: 'dl', 
+        {
+          label: '📸 Take Screenshot',
+          id: 'screenshot',
+          onClick: function(helpers) {
+            if (!renderer) return;
+            renderer.render(scene, camera);
+            renderer.domElement.toBlob(blob => {
+              const name = helpers.getFile().name.replace(/\.[^/.]+$/, "") + "-preview.png";
+              helpers.download(name, blob, 'image/png');
+            }, 'image/png');
+          }
+        },
+        {
+          label: '📥 Download Original',
+          id: 'dl',
           onClick: function(helpers) {
             helpers.download(helpers.getFile().name, helpers.getContent());
-          } 
+          }
         }
-      ],
-      infoHtml: '<strong>Privacy:</strong> 100% client-side. Your FBX files are processed entirely in your browser and never leave your device.'
+      ]
     });
 
     function renderViewer(object, file, helpers) {
-      // Cleanup previous instance
-      if (animationId) cancelAnimationFrame(animationId);
-      if (renderer) {
-        renderer.dispose();
-        const oldCanvas = renderer.domElement;
-        if (oldCanvas && oldCanvas.parentNode) oldCanvas.parentNode.removeChild(oldCanvas);
-      }
-
       model = object;
       clock = new THREE.Clock();
 
       let vertices = 0;
+      let meshes = 0;
       model.traverse(n => {
         if (n.isMesh) {
+          meshes++;
           vertices += n.geometry.attributes.position.count;
         }
       });
 
       helpers.render(`
-        <div class="flex flex-col h-[75vh] w-full font-sans">
-          <!-- File Info Bar -->
-          <div class="flex items-center gap-3 p-3 bg-surface-50 rounded-lg text-sm text-surface-600 mb-4 border border-surface-100">
-            <span class="font-bold text-surface-900 truncate max-w-[300px]">${escapeHtml(file.name)}</span>
-            <span class="text-surface-300">·</span>
+        <div class="flex flex-col h-full animate-in fade-in duration-500">
+          <!-- U1. File info bar -->
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-100">
+            <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
+            <span class="text-surface-300">|</span>
             <span>${formatSize(file.size)}</span>
-            <span class="text-surface-300">·</span>
-            <span class="bg-brand-50 text-brand-700 px-2.5 py-0.5 rounded-full text-xs font-semibold">
-              ${vertices.toLocaleString()} vertices
-            </span>
+            <span class="text-surface-300">|</span>
+            <span class="text-surface-500">${meshes} meshes · ${vertices.toLocaleString()} vertices</span>
           </div>
-          
-          <!-- Viewport -->
-          <div class="relative flex-1 bg-slate-950 rounded-2xl overflow-hidden shadow-2xl border border-surface-200 group">
-            <div id="fbx-canvas-container" class="w-full h-full cursor-move"></div>
+
+          <!-- Viewport Container -->
+          <div class="relative flex-1 min-h-[500px] bg-slate-900 rounded-2xl overflow-hidden border border-surface-200 shadow-inner group">
+            <div id="fbx-viewport" class="w-full h-full cursor-move"></div>
             
-            <!-- Viewport Controls -->
-            <div class="absolute bottom-6 right-6 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-              <button id="toggle-wireframe" class="px-4 py-2 bg-slate-900/90 hover:bg-slate-800 backdrop-blur text-white text-[11px] font-bold uppercase tracking-wider rounded-xl border border-slate-700 transition-all shadow-lg min-w-[140px]">
-                Wireframe: Off
-              </button>
-              <button id="toggle-auto-rotate" class="px-4 py-2 bg-slate-900/90 hover:bg-slate-800 backdrop-blur text-white text-[11px] font-bold uppercase tracking-wider rounded-xl border border-slate-700 transition-all shadow-lg min-w-[140px]">
-                Auto-Rotate: Off
-              </button>
-              <button id="reset-view" class="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-[11px] font-bold uppercase tracking-wider rounded-xl transition-all shadow-lg min-w-[140px]">
+            <!-- Floating Controls -->
+            <div class="absolute top-4 right-4 flex flex-col gap-2">
+              <button id="btn-reset" class="p-2 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-lg border border-white/20 transition-all shadow-lg text-xs font-medium flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                 Reset View
               </button>
+              <button id="btn-wireframe" class="p-2 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-lg border border-white/20 transition-all shadow-lg text-xs font-medium flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
+                Wireframe
+              </button>
             </div>
-            
-            <!-- Attribution/Logo if any -->
-            <div class="absolute bottom-6 left-6 text-[10px] text-slate-500 font-mono pointer-events-none">
-              RENDER: WEBGL 2.0
+
+            <!-- Bottom Stats -->
+            <div class="absolute bottom-4 left-4 bg-black/40 backdrop-blur-sm px-3 py-1.5 rounded-lg text-[10px] text-white/70 font-mono pointer-events-none border border-white/10">
+              WebGL 2.0 • FPS: <span id="fps-counter">60</span>
             </div>
           </div>
         </div>
       `);
 
-      const container = document.getElementById('fbx-canvas-container');
+      const container = document.getElementById('fbx-viewport');
       if (!container) return;
 
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      // Renderer setup
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.outputEncoding = THREE.sRGBEncoding;
+      renderer.shadowMap.enabled = true;
       container.appendChild(renderer.domElement);
 
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x020617); // Deep slate background
+      scene.background = new THREE.Color(0x0f172a); // slate-900
 
-      camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100000);
+      camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000000);
       
       controls = new THREE.OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
 
-      // Professional Lighting Setup
-      scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-      
-      const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
-      keyLight.position.set(1, 1, 2);
-      scene.add(keyLight);
+      // Lighting
+      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+      const mainLight = new THREE.DirectionalLight(0xffffff, 1.2);
+      mainLight.position.set(10, 20, 10);
+      mainLight.castShadow = true;
+      scene.add(mainLight);
 
-      const fillLight = new THREE.DirectionalLight(0xffffff, 1.0);
-      fillLight.position.set(-1, 0.5, -1);
-      scene.add(fillLight);
+      const backLight = new THREE.DirectionalLight(0xffffff, 0.5);
+      backLight.position.set(-10, 5, -10);
+      scene.add(backLight);
 
-      const rimLight = new THREE.DirectionalLight(0xffffff, 1.5);
-      rimLight.position.set(0, -1, 0);
-      scene.add(rimLight);
-
-      // Scene content
+      // Add model
       scene.add(model);
 
-      // Animation Setup
-      mixer = new THREE.AnimationMixer(model);
-      if (model.animations && model.animations.length > 0) {
-        const action = mixer.clipAction(model.animations[0]);
-        action.play();
-      }
-
-      // Auto-fit Camera
+      // Auto-center and Scale
       const box = new THREE.Box3().setFromObject(model);
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
-      
       const maxDim = Math.max(size.x, size.y, size.z) || 1;
       const fov = camera.fov * (Math.PI / 180);
       let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-      cameraZ *= 2.5; // Padding factor
+      cameraZ *= 2.2; // Zoom out factor
 
-      camera.position.set(center.x + cameraZ, center.y + cameraZ, center.z + cameraZ);
+      camera.position.set(center.x + cameraZ, center.y + cameraZ * 0.5, center.z + cameraZ);
       camera.lookAt(center);
       controls.target.copy(center);
-      camera.updateProjectionMatrix();
+      controls.update();
 
-      // Viewport Control Logic
-      let wireframe = false;
-      const wfBtn = document.getElementById('toggle-wireframe');
-      wfBtn.onclick = () => {
-        wireframe = !wireframe;
-        model.traverse(n => {
-          if (n.isMesh) {
-            if (Array.isArray(n.material)) {
-              n.material.forEach(m => m.wireframe = wireframe);
+      // Animations
+      mixer = new THREE.AnimationMixer(model);
+      if (model.animations && model.animations.length > 0) {
+        model.animations.forEach(clip => mixer.clipAction(clip).play());
+      }
+
+      // Interaction
+      let isWireframe = false;
+      document.getElementById('btn-wireframe').onclick = () => {
+        isWireframe = !isWireframe;
+        model.traverse(node => {
+          if (node.isMesh) {
+            if (Array.isArray(node.material)) {
+              node.material.forEach(m => m.wireframe = isWireframe);
             } else {
-              n.material.wireframe = wireframe;
+              node.material.wireframe = isWireframe;
             }
           }
         });
-        wfBtn.textContent = `Wireframe: ${wireframe ? 'On' : 'Off'}`;
-        wfBtn.classList.toggle('bg-brand-600', wireframe);
       };
 
-      let autoRotate = false;
-      const arBtn = document.getElementById('toggle-auto-rotate');
-      arBtn.onclick = () => {
-        autoRotate = !autoRotate;
-        controls.autoRotate = autoRotate;
-        arBtn.textContent = `Auto-Rotate: ${autoRotate ? 'On' : 'Off'}`;
-        arBtn.classList.toggle('bg-brand-600', autoRotate);
-      };
-
-      document.getElementById('reset-view').onclick = () => {
-        camera.position.set(center.x + cameraZ, center.y + cameraZ, center.z + cameraZ);
+      document.getElementById('btn-reset').onclick = () => {
+        camera.position.set(center.x + cameraZ, center.y + cameraZ * 0.5, center.z + cameraZ);
         camera.lookAt(center);
         controls.target.copy(center);
         controls.reset();
       };
 
-      // Main Animation Loop
-      function animate() {
-        if (!container.isConnected) return; // Stop loop if unmounted
+      // Loop
+      let lastTime = 0;
+      const fpsEl = document.getElementById('fps-counter');
+      
+      function animate(time) {
+        if (!container.isConnected) return;
         animationId = requestAnimationFrame(animate);
+        
         const delta = clock.getDelta();
         if (mixer) mixer.update(delta);
+        
         controls.update();
         renderer.render(scene, camera);
-      }
-      animate();
 
-      // Responsive Resizing
-      const resizeObserver = new ResizeObserver(() => {
+        if (time - lastTime > 500) {
+          if (fpsEl) fpsEl.textContent = Math.round(1 / delta);
+          lastTime = time;
+        }
+      }
+      animate(0);
+
+      // Resize handling
+      resizeObserver = new ResizeObserver(() => {
         if (!container || !renderer) return;
-        camera.aspect = container.clientWidth / container.clientHeight;
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        camera.aspect = width / height;
         camera.updateProjectionMatrix();
-        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setSize(width, height);
       });
       resizeObserver.observe(container);
     }
