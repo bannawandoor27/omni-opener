@@ -1,106 +1,191 @@
 (function () {
   'use strict';
+
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
+      dropLabel: 'Drop an Apple Disk Image (.dmg) here',
+      infoHtml: '<strong>Privacy:</strong> This tool parses DMG metadata (Koly block and XML Plist) directly in your browser. No data is uploaded to any server.',
+      
+      actions: [
+        {
+          label: '📋 Copy SHA-256',
+          id: 'copy-hash',
+          onClick: function (h, btn) {
+            const hash = h.getState().hashHex;
+            if (hash) h.copyToClipboard(hash, btn);
+          }
+        },
+        {
+          label: '📥 Download DMG',
+          id: 'download',
+          onClick: function (h) {
+            h.download(h.getFile().name, h.getContent());
+          }
+        },
+        {
+          label: '📄 Export Plist',
+          id: 'export-plist',
+          onClick: function (h) {
+            const plistXml = h.getState().plistXml;
+            if (plistXml) {
+              h.download(h.getFile().name + '.plist', plistXml, 'text/xml');
+            } else {
+              alert('No Plist metadata found in this DMG.');
+            }
+          }
+        }
+      ],
+
+      onInit: function (h) {
+        if (typeof plist === 'undefined') {
+          h.loadScript('https://cdn.jsdelivr.net/npm/plist@3.1.0/dist/plist.min.js');
+        }
+      },
+
       onFile: async function (file, content, h) {
         h.showLoading('Analyzing Apple Disk Image...');
 
         const buffer = content;
+        const view = new DataView(buffer);
         
-        // 1. Compute Hash
+        // 1. Compute SHA-256 Hash
         const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
         const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        h.setState('hashHex', hashHex);
 
-        // 2. Magic Bytes
-        const magicBytes = Array.from(new Uint8Array(buffer.slice(0, 16)))
-          .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-          .join(' ');
-
-        // 3. DMG Analysis
+        // 2. Identify DMG (Koly block is at the end)
+        let dmgInfo = null;
+        let plistXml = null;
         let isDMG = false;
+
         if (buffer.byteLength >= 512) {
-          const footer = new TextDecoder().decode(buffer.slice(buffer.byteLength - 512, buffer.byteLength));
-          if (footer.includes('koly')) {
+          const kolyOffset = buffer.byteLength - 512;
+          const kolySignature = new TextDecoder().decode(buffer.slice(kolyOffset, kolyOffset + 4));
+          
+          if (kolySignature === 'koly') {
             isDMG = true;
+            // Parse Koly block
+            // XML Offset is at 0x140 (320 bytes) into the koly block
+            // XML Length is at 0x148 (328 bytes) into the koly block
+            // Use BigInt for 64-bit offsets
+            const xmlOffset = view.getBigUint64(kolyOffset + 320, false); // false for big-endian
+            const xmlLength = view.getBigUint64(kolyOffset + 328, false);
+            
+            if (xmlOffset > 0n && xmlLength > 0n && (xmlOffset + xmlLength) <= BigInt(buffer.byteLength)) {
+              const xmlBuffer = buffer.slice(Number(xmlOffset), Number(xmlOffset + xmlLength));
+              plistXml = new TextDecoder().decode(xmlBuffer);
+              h.setState('plistXml', plistXml);
+              
+              if (typeof plist !== 'undefined') {
+                try {
+                  dmgInfo = plist.parse(plistXml);
+                } catch (e) {
+                  console.error('Failed to parse Plist', e);
+                }
+              }
+            }
           }
         }
 
-        // 4. Entropy Calculation
-        const entropy = calculateEntropy(new Uint8Array(buffer));
-
-        // 5. Hex Dump (first 4KB)
-        const hexDump = generateHexDump(buffer.slice(0, 4096));
+        // 3. Hex Dump (first 2KB)
+        const hexDump = generateHexDump(buffer.slice(0, 2048));
 
         // Render UI
         h.render(`
           <div class="p-6 space-y-6 font-sans">
-            <div class="flex items-center justify-between border-b border-surface-200 pb-4">
+            <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-surface-200 pb-4 gap-4">
               <div>
                 <h3 class="text-xl font-bold text-surface-900">${file.name}</h3>
-                <p class="text-sm text-surface-500">${(file.size / 1024).toFixed(2)} KB • Apple Disk Image</p>
+                <p class="text-sm text-surface-500">${formatBytes(file.size)} • Apple Disk Image</p>
               </div>
-              <div class="flex gap-2">
-                <button id="btn-copy-hash" class="px-3 py-1 text-xs font-medium border border-surface-200 rounded hover:bg-surface-50 transition-colors">Copy SHA-256</button>
-                <button id="btn-dl" class="px-3 py-1 text-xs font-medium bg-brand-600 text-white rounded hover:bg-brand-700 transition-colors">Download</button>
+              <div class="flex items-center gap-2">
+                ${isDMG ? '<span class="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded">VALID DMG</span>' : '<span class="px-2 py-1 bg-red-100 text-red-700 text-xs font-bold rounded">INVALID OR FLAT IMAGE</span>'}
               </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <!-- Metadata Card -->
-              <div class="bg-surface-50 rounded-xl p-4 border border-surface-200">
-                <h4 class="text-sm font-bold text-surface-700 mb-3 uppercase tracking-wider">File Analysis</h4>
-                <div class="space-y-2 text-sm">
-                  <div class="flex justify-between"><span class="text-surface-500">Magic Bytes:</span> <span class="font-mono text-xs">${magicBytes.slice(0, 23)}...</span></div>
-                  <div class="flex justify-between"><span class="text-surface-500">SHA-256:</span> <span class="font-mono text-[10px] break-all ml-4">${hashHex}</span></div>
-                  <div class="flex justify-between"><span class="text-surface-500">Entropy:</span> <span>${entropy.toFixed(4)} bits/byte</span></div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <!-- Metadata Column -->
+              <div class="lg:col-span-1 space-y-6">
+                <div class="bg-surface-50 rounded-xl p-4 border border-surface-200">
+                  <h4 class="text-xs font-bold text-surface-400 mb-3 uppercase tracking-wider">File Hash</h4>
+                  <div class="font-mono text-[10px] break-all p-2 bg-white border border-surface-100 rounded text-surface-600">
+                    ${hashHex}
+                  </div>
+                </div>
+
+                <div class="bg-surface-50 rounded-xl p-4 border border-surface-200">
+                  <h4 class="text-xs font-bold text-surface-400 mb-3 uppercase tracking-wider">DMG Properties</h4>
+                  <div class="space-y-2 text-sm">
+                    <div class="flex justify-between"><span class="text-surface-500">Koly Signature:</span> <span class="font-mono">${isDMG ? 'koly' : 'None'}</span></div>
+                    ${dmgInfo ? `
+                      <div class="flex justify-between"><span class="text-surface-500">Partitions:</span> <span>${dmgInfo['resource-fork']?.['blkx']?.length || 0}</span></div>
+                    ` : ''}
+                  </div>
                 </div>
               </div>
 
-              <!-- DMG Info Card -->
-              <div class="bg-surface-50 rounded-xl p-4 border border-surface-200">
-                <h4 class="text-sm font-bold text-surface-700 mb-3 uppercase tracking-wider">Format Info</h4>
-                ${isDMG ? `
-                  <div class="text-sm text-surface-600">
-                    <p>Verified <strong>UDIF (Apple Disk Image)</strong> format.</p>
-                    <p class="mt-2 text-xs">Footer signature 'koly' detected at end of file.</p>
+              <!-- Main Info Column -->
+              <div class="lg:col-span-2 space-y-6">
+                ${dmgInfo && dmgInfo['resource-fork'] && dmgInfo['resource-fork']['blkx'] ? `
+                  <div class="bg-white rounded-xl border border-surface-200 overflow-hidden">
+                    <div class="bg-surface-50 px-4 py-2 border-b border-surface-200">
+                      <h4 class="text-xs font-bold text-surface-700 uppercase">Partitions / Blocks</h4>
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="w-full text-left text-sm">
+                        <thead class="bg-surface-50 text-surface-500 text-xs uppercase">
+                          <tr>
+                            <th class="px-4 py-2">Name</th>
+                            <th class="px-4 py-2">Type</th>
+                            <th class="px-4 py-2">Attributes</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-surface-100">
+                          ${dmgInfo['resource-fork']['blkx'].map(block => `
+                            <tr>
+                              <td class="px-4 py-2 font-medium">${block.Name || 'Untitled'}</td>
+                              <td class="px-4 py-2 text-surface-500 font-mono text-xs">${block.CFName || 'Unknown'}</td>
+                              <td class="px-4 py-2 text-surface-400 text-xs italic">${block.Attributes || '-'}</td>
+                            </tr>
+                          `).join('')}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 ` : `
-                  <div class="text-sm text-surface-400 italic">No 'koly' signature detected. Some DMG files may use different structures (e.g. flat images).</div>
+                  <div class="bg-surface-50 rounded-xl p-8 border border-surface-200 text-center">
+                    <p class="text-surface-500 italic">
+                      ${isDMG ? 'DMG header detected but no block data found in Plist.' : 'This file does not appear to be a standard UDIF (Apple Disk Image).'}
+                    </p>
+                  </div>
                 `}
-              </div>
-            </div>
 
-            <!-- Hex Viewer -->
-            <div class="border border-surface-200 rounded-xl overflow-hidden">
-              <div class="bg-surface-100 px-4 py-2 border-b border-surface-200 flex justify-between items-center">
-                <span class="text-xs font-bold text-surface-700 uppercase">Hex Viewer (First 4KB)</span>
+                <!-- Hex Viewer -->
+                <div class="border border-surface-200 rounded-xl overflow-hidden">
+                  <div class="bg-surface-50 px-4 py-2 border-b border-surface-200 flex justify-between items-center">
+                    <span class="text-xs font-bold text-surface-700 uppercase">Hex Preview (Header)</span>
+                  </div>
+                  <pre class="p-4 font-mono text-[10px] leading-tight overflow-auto max-h-64 bg-white text-surface-800">${hexDump}</pre>
+                </div>
               </div>
-              <pre class="p-4 font-mono text-[11px] leading-tight overflow-auto max-h-96 bg-white text-surface-800">${hexDump}</pre>
             </div>
           </div>
         `);
-
-        document.getElementById('btn-dl').onclick = () => h.download(file.name, content);
-        document.getElementById('btn-copy-hash').onclick = (e) => h.copyToClipboard(hashHex, e.target);
       }
     });
 
-    // Helper functions
-    function calculateEntropy(data) {
-      const freq = new Array(256).fill(0);
-      for (let i = 0; i < data.length; i++) freq[data[i]]++;
-      let entropy = 0;
-      for (let i = 0; i < 256; i++) {
-        if (freq[i] > 0) {
-          const p = freq[i] / data.length;
-          entropy -= p * Math.log2(p);
-        }
-      }
-      return entropy;
+    // Helper: Format bytes
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
+    // Helper: Generate Hex Dump
     function generateHexDump(buffer) {
       const bytes = new Uint8Array(buffer);
       let out = '';
