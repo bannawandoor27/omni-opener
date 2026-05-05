@@ -4,6 +4,225 @@
   function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function fmtBytes(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : b > 1024 ? (b / 1024).toFixed(0) + ' KB' : b + ' B'; }
 
+  window.initTool = function (toolConfig, mountEl) {
+    let currentDoc = null;
+    let currentPage = 1;
+    let currentTab = 'preview';
+
+    OmniTool.create(mountEl, toolConfig, {
+      binary: true,
+      accept: '.djvu,.djv',
+      dropLabel: 'Drop a DjVu file here',
+      infoHtml: '<strong>Privacy:</strong> All DjVu processing happens 100% in your browser. No data is uploaded.',
+
+      onInit: function (h) {
+        h.loadScript('https://cdn.jsdelivr.net/gh/RussCoder/djvujs@0.5.4/dist/djvu.js');
+      },
+
+      onFile: async function (file, content, h) {
+        h.showLoading('Analyzing DjVu...');
+
+        // Structural Analysis (Native)
+        const bytes = new Uint8Array(content);
+        const view = new DataView(content);
+        const isDjVu = bytes.length >= 8 &&
+                       bytes[0] === 0x41 && bytes[1] === 0x54 && bytes[2] === 0x26 && bytes[3] === 0x54 && 
+                       bytes[4] === 0x46 && bytes[5] === 0x4F && bytes[6] === 0x52 && bytes[7] === 0x4D;
+
+        const chunks = [];
+        if (isDjVu) {
+          let offset = 16;
+          while (offset + 8 <= bytes.length && chunks.length < 100) {
+            const id = String.fromCharCode(bytes[offset], bytes[offset+1], bytes[offset+2], bytes[offset+3]);
+            const size = view.getUint32(offset + 4, false);
+            chunks.push({ id, size, offset });
+            offset += 8 + size + (size % 2);
+          }
+        }
+
+        // Library Parsing
+        try {
+          if (typeof DjVu === 'undefined') {
+            await new Promise((resolve) => {
+              const check = () => {
+                if (typeof DjVu !== 'undefined') resolve();
+                else setTimeout(check, 100);
+              };
+              check();
+            });
+          }
+          currentDoc = new DjVu.Document(content);
+          currentPage = 1;
+        } catch (e) {
+          console.error('DjVu.js Error:', e);
+          // Fallback to structural only if library fails
+        }
+
+        renderMain(h, chunks, isDjVu, bytes);
+      },
+
+      actions: [
+        {
+          label: '📥 Download Original',
+          id: 'dl',
+          onClick: function (h) {
+            h.download(h.getFile().name, h.getContent());
+          }
+        },
+        {
+          label: '🖼️ Save Page as PNG',
+          id: 'save-png',
+          onClick: function (h) {
+            const canvas = document.getElementById('djvu-canvas');
+            if (canvas) {
+              const url = canvas.toDataURL('image/png');
+              h.download(`page-${currentPage}.png`, url, 'image/png');
+            }
+          }
+        }
+      ]
+    });
+
+    function renderMain(h, chunks, isDjVu, bytes) {
+      const file = h.getFile();
+      const pagesCount = currentDoc ? currentDoc.pagesCount : 0;
+
+      const html = `
+        <div class="bg-white min-h-full font-sans">
+          <!-- Header -->
+          <div class="p-6 border-b border-surface-100 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+              <div class="w-12 h-12 rounded-xl bg-brand-50 flex items-center justify-center text-2xl shadow-sm border border-brand-100">📖</div>
+              <div>
+                <h2 class="text-lg font-bold text-surface-900 leading-tight">${esc(file.name)}</h2>
+                <p class="text-xs text-surface-400 font-medium">${fmtBytes(file.size)} • DjVu Document • ${pagesCount} Page${pagesCount === 1 ? '' : 's'}</p>
+              </div>
+            </div>
+            <div class="flex bg-surface-100 p-1 rounded-lg">
+              <button id="tab-preview" class="px-4 py-1.5 text-xs font-bold rounded-md transition-all ${currentTab === 'preview' ? 'bg-white shadow-sm text-brand-600' : 'text-surface-500 hover:text-surface-700'}">PREVIEW</button>
+              <button id="tab-structure" class="px-4 py-1.5 text-xs font-bold rounded-md transition-all ${currentTab === 'structure' ? 'bg-white shadow-sm text-brand-600' : 'text-surface-500 hover:text-surface-700'}">STRUCTURE</button>
+              <button id="tab-hex" class="px-4 py-1.5 text-xs font-bold rounded-md transition-all ${currentTab === 'hex' ? 'bg-white shadow-sm text-brand-600' : 'text-surface-500 hover:text-surface-700'}">HEX</button>
+            </div>
+          </div>
+
+          <div id="tool-content" class="p-6">
+            ${renderTabContent(chunks, isDjVu, bytes)}
+          </div>
+        </div>
+      `;
+
+      h.render(html);
+      bindEvents(h, chunks, isDjVu, bytes);
+      if (currentTab === 'preview') updatePreview();
+    }
+
+    function renderTabContent(chunks, isDjVu, bytes) {
+      if (currentTab === 'preview') {
+        if (!currentDoc) return '<div class="p-12 text-center text-surface-400 italic">Visual preview not available for this file.</div>';
+        return `
+          <div class="flex flex-col items-center gap-6">
+            <div class="flex items-center gap-4 bg-surface-50 px-4 py-2 rounded-full border border-surface-100">
+              <button id="prev-page" class="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-surface-200 hover:bg-surface-100 transition-colors disabled:opacity-30">←</button>
+              <span class="text-sm font-bold text-surface-700 min-w-[80px] text-center">Page ${currentPage} / ${currentDoc.pagesCount}</span>
+              <button id="next-page" class="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-surface-200 hover:bg-surface-100 transition-colors disabled:opacity-30">→</button>
+            </div>
+            <div class="w-full flex justify-center bg-surface-50 rounded-2xl p-8 border border-surface-100">
+              <canvas id="djvu-canvas" class="max-w-full shadow-2xl bg-white border border-surface-200"></canvas>
+            </div>
+          </div>
+        `;
+      }
+
+      if (currentTab === 'structure') {
+        return `
+          <div class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="p-4 bg-surface-50 rounded-xl border border-surface-100">
+                <p class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-1">Signature</p>
+                <p class="text-sm font-bold ${isDjVu ? 'text-green-600' : 'text-red-600'}">${isDjVu ? 'Valid DjVu IFF' : 'Invalid Signature'}</p>
+              </div>
+              <div class="p-4 bg-surface-50 rounded-xl border border-surface-100">
+                <p class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-1">Chunks Found</p>
+                <p class="text-sm font-bold text-surface-700">${chunks.length}</p>
+              </div>
+              <div class="p-4 bg-surface-50 rounded-xl border border-surface-100">
+                <p class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-1">Root Form</p>
+                <p class="text-sm font-bold text-surface-700">${chunks.length > 0 ? 'AT&T FORM' : 'N/A'}</p>
+              </div>
+            </div>
+            <div class="bg-white border border-surface-100 rounded-xl overflow-hidden shadow-sm">
+              <table class="w-full text-left border-collapse">
+                <thead class="bg-surface-50 border-b border-surface-100">
+                  <tr>
+                    <th class="px-4 py-2.5 text-[10px] font-bold text-surface-400 uppercase">Chunk ID</th>
+                    <th class="px-4 py-2.5 text-[10px] font-bold text-surface-400 uppercase text-right">Size (Bytes)</th>
+                    <th class="px-4 py-2.5 text-[10px] font-bold text-surface-400 uppercase text-right">Offset</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-50">
+                  ${chunks.map(c => `
+                    <tr class="hover:bg-brand-50/30 transition-colors">
+                      <td class="px-4 py-2 font-mono text-sm font-bold text-brand-600">${esc(c.id)}</td>
+                      <td class="px-4 py-2 text-sm text-surface-600 text-right font-mono">${c.size.toLocaleString()}</td>
+                      <td class="px-4 py-2 text-[10px] text-surface-400 text-right font-mono">0x${c.offset.toString(16).toUpperCase()}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }
+
+      if (currentTab === 'hex') {
+        return `
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-[10px] font-bold uppercase tracking-widest text-surface-400">Hexadecimal Inspection (First 1KB)</h3>
+              <button id="copy-hex" class="text-[10px] font-extrabold text-brand-600 hover:text-brand-700 transition-colors bg-brand-50 px-2 py-1 rounded">📋 COPY DUMP</button>
+            </div>
+            <div class="bg-surface-900 rounded-2xl p-6 shadow-inner overflow-x-auto border-4 border-surface-800">
+              <pre class="text-[11px] leading-relaxed font-mono text-brand-200/80 whitespace-pre">${esc(generateHexDump(bytes, 1024))}</pre>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function bindEvents(h, chunks, isDjVu, bytes) {
+      document.getElementById('tab-preview').onclick = () => { currentTab = 'preview'; renderMain(h, chunks, isDjVu, bytes); };
+      document.getElementById('tab-structure').onclick = () => { currentTab = 'structure'; renderMain(h, chunks, isDjVu, bytes); };
+      document.getElementById('tab-hex').onclick = () => { currentTab = 'hex'; renderMain(h, chunks, isDjVu, bytes); };
+
+      if (currentTab === 'preview' && currentDoc) {
+        document.getElementById('prev-page').onclick = () => { if (currentPage > 1) { currentPage--; updatePreview(); } };
+        document.getElementById('next-page').onclick = () => { if (currentPage < currentDoc.pagesCount) { currentPage++; updatePreview(); } };
+        document.getElementById('prev-page').disabled = currentPage <= 1;
+        document.getElementById('next-page').disabled = currentPage >= currentDoc.pagesCount;
+      }
+
+      if (currentTab === 'hex') {
+        document.getElementById('copy-hex').onclick = (e) => h.copyToClipboard(generateHexDump(bytes, 1024), e.target);
+      }
+    }
+
+    async function updatePreview() {
+      const canvas = document.getElementById('djvu-canvas');
+      if (!canvas || !currentDoc) return;
+
+      try {
+        const page = currentDoc.getPage(currentPage);
+        const imageData = await page.render();
+        canvas.width = imageData.width;
+        canvas.height = imageData.height;
+        const ctx = canvas.getContext('2d');
+        ctx.putImageData(imageData, 0, 0);
+      } catch (e) {
+        console.error('Render error:', e);
+      }
+    }
+  };
+
   function generateHexDump(bytes, maxBytes) {
     const limit = Math.min(bytes.length, maxBytes);
     const lines = [];
@@ -13,179 +232,8 @@
       const hex = Array.from(chunk).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
       const ascii = Array.from(chunk).map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
       const hexPadded = hex.padEnd(16 * 3 - 1, ' ');
-      lines.push(offset + '  ' + hexPadded + '  |' + ascii + '|');
+      lines.push(`${offset}  ${hexPadded}  |${ascii}|`);
     }
     return lines.join('\n');
   }
-
-  window.initTool = function (toolConfig, mountEl) {
-    OmniTool.create(mountEl, toolConfig, {
-      binary: true,
-      accept: '.djvu,.djv',
-      dropLabel: 'Drop a DjVu file here (.djvu, .djv)',
-      actions: [
-        {
-          label: '📥 Download', id: 'dl', onClick: function (h) {
-            h.download(h.getFile().name, h.getContent());
-          }
-        }
-      ],
-      onFile: async function (file, content, h) {
-        h.showLoading('Analyzing DjVu file...');
-
-        const bytes = new Uint8Array(content);
-        const view = new DataView(content);
-
-        // SHA-256
-        const hashBuf = await crypto.subtle.digest('SHA-256', content);
-        const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-        // DjVu IFF magic: bytes 0-3 = "AT&T" (0x41 0x54 0x26 0x54), bytes 4-7 = "FORM"
-        const ATT_MAGIC = [0x41, 0x54, 0x26, 0x54]; // "AT&T"
-        const FORM_MAGIC = [0x46, 0x4F, 0x52, 0x4D]; // "FORM"
-
-        let attValid = bytes.length >= 4;
-        if (attValid) {
-          for (let i = 0; i < 4; i++) {
-            if (bytes[i] !== ATT_MAGIC[i]) { attValid = false; break; }
-          }
-        }
-
-        let formValid = bytes.length >= 8;
-        if (formValid) {
-          for (let i = 0; i < 4; i++) {
-            if (bytes[4 + i] !== FORM_MAGIC[i]) { formValid = false; break; }
-          }
-        }
-
-        const magicValid = attValid && formValid;
-
-        const first8Hex = bytes.length >= 8
-          ? Array.from(bytes.slice(0, 8)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')
-          : Array.from(bytes.slice(0, bytes.length)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
-        const first16Hex = bytes.length >= 16
-          ? Array.from(bytes.slice(0, 16)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')
-          : Array.from(bytes.slice(0, bytes.length)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
-
-        // IFF chunk size at bytes 8-11 (big-endian, size of FORM chunk data)
-        let chunkSize = 'N/A';
-        let chunkSizeNote = '';
-        if (bytes.length >= 12) {
-          const rawSize = view.getUint32(8, false); // big-endian
-          chunkSize = rawSize.toLocaleString() + ' bytes';
-          const totalExpected = rawSize + 8; // 8 for AT&T + FORM header
-          chunkSizeNote = `Total expected: ${fmtBytes(totalExpected + 4)}`;
-        }
-
-        // Form type at offset 12: 4 chars — DJVM, DJVU, DJVI, THUM
-        let formType = 'N/A';
-        let formTypeDesc = '';
-        if (bytes.length >= 16) {
-          formType = String.fromCharCode(bytes[12], bytes[13], bytes[14], bytes[15]);
-          if (formType === 'DJVM') formTypeDesc = 'Multi-page DjVu document';
-          else if (formType === 'DJVU') formTypeDesc = 'Single-page DjVu document';
-          else if (formType === 'DJVI') formTypeDesc = 'DjVu shared include file';
-          else if (formType === 'THUM') formTypeDesc = 'DjVu thumbnail data';
-          else formTypeDesc = 'Unknown form type';
-        }
-
-        // Try to read DIRM chunk (directory for multi-page) at offset 16 if DJVM
-        let dirmInfo = '';
-        if (formType === 'DJVM' && bytes.length >= 24) {
-          const chunkId = String.fromCharCode(bytes[16], bytes[17], bytes[18], bytes[19]);
-          if (chunkId === 'DIRM') {
-            const dirmSize = view.getUint32(20, false);
-            if (bytes.length >= 25) {
-              const flags = bytes[24];
-              const bundled = (flags & 0x80) ? 'Bundled' : 'Indirect';
-              const numPages = bytes.length >= 27
-                ? view.getUint16(25, false)
-                : '?';
-              dirmInfo = `
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Directory type</td><td>${esc(bundled)}</td></tr>
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Number of pages</td><td>${esc(String(numPages))}</td></tr>
-              `;
-            }
-          }
-        }
-
-        // INFO chunk for single-page DjVu (width, height, DPI)
-        let infoRows = '';
-        if (formType === 'DJVU' && bytes.length >= 24) {
-          const chunkId = String.fromCharCode(bytes[16], bytes[17], bytes[18], bytes[19]);
-          if (chunkId === 'INFO') {
-            if (bytes.length >= 36) {
-              const width = view.getUint16(24, false);
-              const height = view.getUint16(26, false);
-              const minorVer = bytes[28];
-              const majorVer = bytes[29];
-              const dpi = view.getUint16(30, true); // little-endian for DPI
-              const gamma = bytes[32];
-              infoRows = `
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Image size</td><td>${width} × ${height} pixels</td></tr>
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Resolution</td><td>${dpi} DPI</td></tr>
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Version</td><td>${majorVer}.${minorVer}</td></tr>
-              `;
-            }
-          }
-        }
-
-        const hexDump = generateHexDump(bytes, 1024);
-
-        const validBadge = magicValid
-          ? '<span style="color:#22c55e;font-weight:bold;">✔ Valid DjVu Signature (AT&amp;T + FORM)</span>'
-          : '<span style="color:#ef4444;font-weight:bold;">✘ Invalid DjVu Signature</span>';
-        const attBadge = attValid
-          ? '<span style="color:#22c55e;">✔</span> "AT&amp;T" found at offset 0'
-          : '<span style="color:#ef4444;">✘</span> "AT&amp;T" not found at offset 0';
-        const formBadge = formValid
-          ? '<span style="color:#22c55e;">✔</span> "FORM" found at offset 4'
-          : '<span style="color:#ef4444;">✘</span> "FORM" not found at offset 4';
-
-        h.render(`
-          <div style="font-family:system-ui,sans-serif;max-width:860px;margin:0 auto;padding:16px;">
-            <h2 style="margin:0 0 4px;font-size:1.3rem;">DjVu File Analysis</h2>
-            <p style="margin:0 0 16px;color:#888;font-size:.9rem;">${esc(file.name)} &mdash; ${fmtBytes(file.size)}</p>
-
-            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
-              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">Signature Validation</div>
-              <div style="margin-bottom:8px;">${validBadge}</div>
-              <div style="font-size:.82rem;margin-bottom:4px;">${attBadge}</div>
-              <div style="font-size:.82rem;margin-bottom:8px;">${formBadge}</div>
-              <table style="font-size:.82rem;border-collapse:collapse;width:100%;">
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Expected bytes 0–7</td><td style="font-family:monospace;">41 54 26 54 46 4F 52 4D &nbsp; "AT&amp;TFORM"</td></tr>
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">File bytes 0–7</td><td style="font-family:monospace;">${esc(first8Hex)}</td></tr>
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Bytes 0–15</td><td style="font-family:monospace;word-break:break-all;">${esc(first16Hex)}</td></tr>
-              </table>
-            </div>
-
-            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
-              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">DjVu Structure</div>
-              <table style="font-size:.82rem;border-collapse:collapse;width:100%;">
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Form type</td><td style="font-family:monospace;">${esc(formType)} &mdash; ${esc(formTypeDesc)}</td></tr>
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">FORM chunk size</td><td>${esc(chunkSize)}${chunkSizeNote ? ' &nbsp; (' + esc(chunkSizeNote) + ')' : ''}</td></tr>
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">File size</td><td>${fmtBytes(file.size)} (${file.size.toLocaleString()} bytes)</td></tr>
-                ${dirmInfo}
-                ${infoRows}
-              </table>
-            </div>
-
-            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
-              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">SHA-256 Hash</div>
-              <div style="font-family:monospace;font-size:.8rem;word-break:break-all;color:#86efac;">${esc(hashHex)}</div>
-            </div>
-
-            <div style="background:#fdf4ff;border:1px solid #a855f7;border-radius:8px;padding:14px;margin-bottom:16px;color:#581c87;">
-              <strong>Opening DjVu Files:</strong> Use <strong>DjVuLibre</strong> (free, cross-platform), <strong>WinDjView</strong> (Windows), or <strong>Okular</strong> (Linux/KDE) to view DjVu files. DjVu is a compressed document format optimized for scanned documents and books, commonly used for academic papers and historical archives.
-            </div>
-
-            <div style="background:#0f172a;border-radius:8px;padding:16px;margin-bottom:8px;">
-              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">Hex Dump (first 1 KB)</div>
-              <pre style="font-family:'Courier New',monospace;font-size:.72rem;color:#94a3b8;margin:0;overflow-x:auto;white-space:pre;line-height:1.5;">${esc(hexDump)}</pre>
-            </div>
-          </div>
-        `);
-      }
-    });
-  };
 })();
