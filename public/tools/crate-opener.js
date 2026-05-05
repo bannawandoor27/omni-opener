@@ -1,125 +1,186 @@
 (function () {
   'use strict';
+
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
-      onFile: async function (file, content, h) {
-        h.showLoading('Analyzing Rust Crate...');
-
-        const buffer = content;
-        
-        // 1. Compute Hash
-        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-        // 2. Magic Bytes
-        const magicBytes = Array.from(new Uint8Array(buffer.slice(0, 16)))
-          .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-          .join(' ');
-
-        // 3. Crate Analysis (tar.gz)
-        let isGzip = false;
-        const view = new Uint8Array(buffer);
-        if (view.length >= 2) {
-          if (view[0] === 0x1F && view[1] === 0x8B) {
-            isGzip = true;
+      actions: [
+        {
+          label: '📋 Copy SHA-256',
+          id: 'copy-hash',
+          onClick: function (h, btn) {
+            const state = h.getState();
+            if (state.hashHex) h.copyToClipboard(state.hashHex, btn);
+          }
+        },
+        {
+          label: '📥 Download .crate',
+          id: 'download',
+          onClick: function (h) {
+            h.download(h.getFile().name, h.getContent());
           }
         }
+      ],
 
-        // 4. Entropy Calculation
-        const entropy = calculateEntropy(new Uint8Array(buffer));
+      onInit: function (h) {
+        if (typeof pako === 'undefined') {
+          h.loadScript('https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js');
+        }
+      },
 
-        // 5. Hex Dump (first 4KB)
-        const hexDump = generateHexDump(buffer.slice(0, 4096));
+      onFile: function (file, content, h) {
+        h.showLoading('Analyzing Rust Crate...');
 
-        // Render UI
-        h.render(`
-          <div class="p-6 space-y-6 font-sans">
-            <div class="flex items-center justify-between border-b border-surface-200 pb-4">
-              <div>
-                <h3 class="text-xl font-bold text-surface-900">${file.name}</h3>
-                <p class="text-sm text-surface-500">${(file.size / 1024).toFixed(2)} KB • Rust Crate Package</p>
-              </div>
-              <div class="flex gap-2">
-                <button id="btn-copy-hash" class="px-3 py-1 text-xs font-medium border border-surface-200 rounded hover:bg-surface-50 transition-colors">Copy SHA-256</button>
-                <button id="btn-dl" class="px-3 py-1 text-xs font-medium bg-brand-600 text-white rounded hover:bg-brand-700 transition-colors">Download</button>
-              </div>
-            </div>
+        // Small delay to ensure dependencies are ready
+        setTimeout(async function () {
+          try {
+            // 1. Compute Hash
+            const hashBuffer = await crypto.subtle.digest('SHA-256', content);
+            const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+            h.setState({ hashHex: hashHex });
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <!-- Metadata Card -->
-              <div class="bg-surface-50 rounded-xl p-4 border border-surface-200">
-                <h4 class="text-sm font-bold text-surface-700 mb-3 uppercase tracking-wider">File Analysis</h4>
-                <div class="space-y-2 text-sm">
-                  <div class="flex justify-between"><span class="text-surface-500">Magic Bytes:</span> <span class="font-mono text-xs">${magicBytes.slice(0, 23)}...</span></div>
-                  <div class="flex justify-between"><span class="text-surface-500">SHA-256:</span> <span class="font-mono text-[10px] break-all ml-4">${hashHex}</span></div>
-                  <div class="flex justify-between"><span class="text-surface-500">Entropy:</span> <span>${entropy.toFixed(4)} bits/byte</span></div>
+            // 2. Decompress
+            let decompressed;
+            try {
+              decompressed = pako.ungzip(new Uint8Array(content));
+            } catch (e) {
+              throw new Error('Decompression failed. Is this a valid .crate (tar.gz) file?');
+            }
+
+            // 3. Parse Tar
+            const files = parseTar(decompressed);
+            if (files.length === 0) throw new Error('No files found in the archive.');
+
+            const cargoToml = files.find(f => f.name.endsWith('Cargo.toml'));
+            let cargoContent = '';
+            if (cargoToml) {
+              cargoContent = new TextDecoder().decode(cargoToml.buffer);
+            }
+
+            // 4. Render UI
+            h.render(`
+              <div class="p-6 space-y-6 font-sans">
+                <div class="flex flex-col md:flex-row gap-4">
+                  <div class="flex-1 bg-surface-50 p-4 rounded-xl border border-surface-200">
+                    <p class="text-xs font-bold text-surface-500 uppercase tracking-wider mb-1">Package Name</p>
+                    <p class="text-lg font-semibold text-surface-900 truncate">${esc(file.name)}</p>
+                  </div>
+                  <div class="bg-surface-50 p-4 rounded-xl border border-surface-200 min-w-[120px]">
+                    <p class="text-xs font-bold text-surface-500 uppercase tracking-wider mb-1">Files</p>
+                    <p class="text-lg font-semibold text-surface-900">${files.length}</p>
+                  </div>
+                  <div class="bg-surface-50 p-4 rounded-xl border border-surface-200 min-w-[150px]">
+                    <p class="text-xs font-bold text-surface-500 uppercase tracking-wider mb-1">Unpacked Size</p>
+                    <p class="text-lg font-semibold text-surface-900">${(decompressed.length / 1024).toFixed(1)} KB</p>
+                  </div>
                 </div>
-              </div>
 
-              <!-- Crate Info Card -->
-              <div class="bg-surface-50 rounded-xl p-4 border border-surface-200">
-                <h4 class="text-sm font-bold text-surface-700 mb-3 uppercase tracking-wider">Format Info</h4>
-                ${isGzip ? `
-                  <div class="text-sm text-surface-600">
-                    <p>Verified <strong>GZip</strong> compression (standard for .crate files).</p>
-                    <p class="mt-2 text-xs">Crate files are typically GZipped Tar archives containing Rust source code and a Cargo.toml.</p>
+                ${cargoContent ? `
+                  <div class="border border-surface-200 rounded-xl overflow-hidden shadow-sm">
+                    <div class="bg-surface-100 px-4 py-2 border-b border-surface-200 flex justify-between items-center">
+                      <span class="text-xs font-bold text-surface-700 uppercase">Cargo.toml</span>
+                    </div>
+                    <pre class="p-4 font-mono text-sm leading-relaxed overflow-auto max-h-[400px] bg-white text-surface-800">${esc(cargoContent)}</pre>
                   </div>
                 ` : `
-                  <div class="text-sm text-surface-400 italic">No GZip signature detected. This might be an uncompressed crate or a different format.</div>
+                  <div class="p-4 bg-orange-50 border border-orange-100 rounded-xl text-orange-700 text-sm">
+                    No <strong>Cargo.toml</strong> found. This might not be a standard Rust crate.
+                  </div>
                 `}
-              </div>
-            </div>
 
-            <!-- Hex Viewer -->
-            <div class="border border-surface-200 rounded-xl overflow-hidden">
-              <div class="bg-surface-100 px-4 py-2 border-b border-surface-200 flex justify-between items-center">
-                <span class="text-xs font-bold text-surface-700 uppercase">Hex Viewer (First 4KB)</span>
-              </div>
-              <pre class="p-4 font-mono text-[11px] leading-tight overflow-auto max-h-96 bg-white text-surface-800">${hexDump}</pre>
-            </div>
-          </div>
-        `);
+                <div class="border border-surface-200 rounded-xl overflow-hidden shadow-sm">
+                  <div class="bg-surface-100 px-4 py-2 border-b border-surface-200">
+                    <span class="text-xs font-bold text-surface-700 uppercase">Contents</span>
+                  </div>
+                  <div class="divide-y divide-surface-100 max-h-[500px] overflow-auto bg-white">
+                    ${files.map(f => `
+                      <div class="px-4 py-2.5 flex justify-between items-center hover:bg-surface-50 transition-colors">
+                        <div class="flex items-center gap-2 overflow-hidden">
+                          <span class="text-surface-400 text-lg">${getFileIcon(f.name)}</span>
+                          <span class="text-sm font-mono text-surface-700 truncate">${esc(f.name)}</span>
+                        </div>
+                        <span class="text-xs text-surface-400 font-mono">${formatSize(f.size)}</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
 
-        document.getElementById('btn-dl').onclick = () => h.download(file.name, content);
-        document.getElementById('btn-copy-hash').onclick = (e) => h.copyToClipboard(hashHex, e.target);
+                <div class="text-[10px] text-surface-400 font-mono break-all">
+                  SHA-256: ${hashHex}
+                </div>
+              </div>
+            `);
+
+          } catch (err) {
+            h.showError('Analysis Failed', err.message);
+          }
+        }, 100);
       }
     });
 
-    // Helper functions
-    function calculateEntropy(data) {
-      const freq = new Array(256).fill(0);
-      for (let i = 0; i < data.length; i++) freq[data[i]]++;
-      let entropy = 0;
-      for (let i = 0; i < 256; i++) {
-        if (freq[i] > 0) {
-          const p = freq[i] / data.length;
-          entropy -= p * Math.log2(p);
+    // ── Tar Parser ────────────────────────────────────────
+    function parseTar(buffer) {
+      const files = [];
+      let offset = 0;
+      
+      while (offset < buffer.length - 512) {
+        const header = buffer.slice(offset, offset + 512);
+        
+        // Check for null header (end of archive)
+        let isNull = true;
+        for (let i = 0; i < 512; i++) {
+          if (header[i] !== 0) { isNull = false; break; }
         }
+        if (isNull) break;
+
+        const name = trimNulls(new TextDecoder().decode(header.slice(0, 100)));
+        const sizeStr = new TextDecoder().decode(header.slice(124, 136)).trim();
+        const size = parseInt(sizeStr, 8);
+        const type = String.fromCharCode(header[156]);
+
+        // Support standard files (type '0' or '\0')
+        if (type === '0' || type === '\0') {
+          files.push({
+            name: name,
+            size: size,
+            buffer: buffer.slice(offset + 512, offset + 512 + size)
+          });
+        }
+        
+        // tar blocks are 512 bytes
+        offset += 512 + Math.ceil(size / 512) * 512;
       }
-      return entropy;
+      return files;
     }
 
-    function generateHexDump(buffer) {
-      const bytes = new Uint8Array(buffer);
-      let out = '';
-      for (let i = 0; i < bytes.length; i += 16) {
-        let line = i.toString(16).padStart(8, '0') + '  ';
-        let ascii = '';
-        for (let j = 0; j < 16; j++) {
-          if (i + j < bytes.length) {
-            const b = bytes[i + j];
-            line += b.toString(16).padStart(2, '0') + ' ';
-            ascii += (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.';
-          } else {
-            line += '   ';
-          }
-          if (j === 7) line += ' ';
-        }
-        out += line + ' |' + ascii + '|\n';
-      }
-      return out;
+    // ── Utilities ──────────────────────────────────────────
+    function trimNulls(str) {
+      const idx = str.indexOf('\0');
+      return idx === -1 ? str : str.slice(0, idx);
+    }
+
+    function esc(str) {
+      if (!str) return '';
+      return str.replace(/[&<>"']/g, function (m) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+      });
+    }
+
+    function formatSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    function getFileIcon(name) {
+      if (name.endsWith('.rs')) return '🦀';
+      if (name.endsWith('.toml')) return '⚙️';
+      if (name.endsWith('.md')) return '📝';
+      if (name.endsWith('.txt')) return '📄';
+      if (name.includes('/')) return '📁';
+      return '📄';
     }
   };
 })();
