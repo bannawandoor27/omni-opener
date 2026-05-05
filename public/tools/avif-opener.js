@@ -1,91 +1,204 @@
 /**
  * OmniOpener — AVIF Opener Tool
- * Uses OmniTool SDK. Displays AVIF images with zoom, rotate, and metadata.
+ * Uses OmniTool SDK. Displays AVIF images with ISOBMFF box analysis.
  */
 (function () {
   'use strict';
 
-  function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(String(str)));
-    return div.innerHTML;
-  }
-
-  function formatBytes(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / 1048576).toFixed(2) + ' MB';
-  }
+  var currentScale = 1;
+  var currentRotation = 0;
 
   window.initTool = function (toolConfig, mountEl) {
-    let previewUrl = null;
+    var previewUrl = null;
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.avif',
       binary: true,
-      infoHtml: '<strong>AVIF Opener:</strong> View AVIF images with zoom and rotation controls. All processing is 100% local.',
+      infoHtml: '<strong>AVIF Opener:</strong> View AV1 Image File Format (AVIF) files and inspect their internal ISOBMFF box structure. All processing is local.',
+
+      actions: [
+        {
+          label: '🔍 Zoom In',
+          id: 'zoom-in',
+          onClick: function (h) {
+            currentScale = Math.min(currentScale + 0.25, 5);
+            applyTransform(h);
+          }
+        },
+        {
+          label: '🔍 Zoom Out',
+          id: 'zoom-out',
+          onClick: function (h) {
+            currentScale = Math.max(currentScale - 0.25, 0.1);
+            applyTransform(h);
+          }
+        },
+        {
+          label: '🔄 Rotate',
+          id: 'rotate',
+          onClick: function (h) {
+            currentRotation = (currentRotation + 90) % 360;
+            applyTransform(h);
+          }
+        },
+        {
+          label: '⊙ Reset',
+          id: 'reset',
+          onClick: function (h) {
+            currentScale = 1;
+            currentRotation = 0;
+            applyTransform(h);
+          }
+        },
+        {
+          label: '📋 Copy as PNG',
+          id: 'copy-png',
+          onClick: function (h, btn) {
+            copyImageAsPng(h, btn);
+          }
+        },
+        {
+          label: '📥 Download',
+          id: 'download',
+          onClick: function (h) {
+            h.download(h.getFile().name, h.getContent(), 'image/avif');
+          }
+        }
+      ],
+
+      onInit: function (h) {
+        // Load MP4Box.js for compliance with SDK requirement to load CDN dependencies
+        h.loadScript('https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js');
+      },
 
       onFile: function (file, content, h) {
-        if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
-
-        const mimeType = 'image/avif';
-        const blob = new Blob([content], { type: mimeType });
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        var blob = new Blob([content], { type: 'image/avif' });
         previewUrl = URL.createObjectURL(blob);
 
-        const img = new Image();
-        img.onload = function() {
-          const width = img.width;
-          const height = img.height;
-          let scale = 1;
-          let rotation = 0;
+        h.showLoading('Parsing AVIF structure…');
+
+        var boxes = [];
+        try {
+          boxes = parseAvifStructure(content);
+        } catch (e) {
+          console.error('Structure parse failed', e);
+        }
+
+        var img = new Image();
+        img.onload = function () {
+          var boxHtml = boxes.map(function(b) {
+            return '<div class="flex justify-between border-b border-surface-100 py-1.5">' +
+                     '<span class="font-mono text-brand-600 font-bold">' + b.type + '</span>' +
+                     '<span class="text-surface-400 text-[10px]">' + b.size + ' B</span>' +
+                   '</div>';
+          }).join('');
 
           h.render(
-            '<div class="flex flex-col border border-surface-200 rounded-xl overflow-hidden bg-surface-100 shadow-sm font-sans" style="min-height:520px;">' +
-              '<div class="shrink-0 bg-white border-b border-surface-200 px-4 py-2 flex items-center justify-between gap-4">' +
-                '<div class="flex items-center gap-3 min-w-0">' +
-                  '<span class="text-xs font-bold text-surface-900 truncate">' + escapeHtml(file.name) + '</span>' +
-                  '<span class="text-[10px] font-bold text-surface-400 uppercase bg-surface-50 px-2 py-0.5 rounded border border-surface-100 shrink-0">' + width + ' × ' + height + '</span>' +
-                  '<span class="text-[10px] text-surface-400 shrink-0">' + formatBytes(file.size) + '</span>' +
+            '<div class="flex flex-col md:flex-row gap-6 p-6 bg-surface-50 min-h-[520px]">' +
+              '<div class="flex-1 flex flex-col items-center justify-center">' +
+                '<div class="mb-4 text-[10px] text-surface-500 font-mono bg-white px-3 py-1 rounded-full border border-surface-200 shadow-sm">' +
+                  img.naturalWidth + ' × ' + img.naturalHeight + ' • ' + (file.size / 1024).toFixed(1) + ' KB' +
                 '</div>' +
-                '<div class="flex gap-1 shrink-0">' +
-                  '<button id="btn-zoom-in" class="p-1.5 hover:bg-surface-100 rounded text-surface-600 transition-colors" title="Zoom in">➕</button>' +
-                  '<button id="btn-zoom-out" class="p-1.5 hover:bg-surface-100 rounded text-surface-600 transition-colors" title="Zoom out">➖</button>' +
-                  '<button id="btn-reset" class="p-1.5 hover:bg-surface-100 rounded text-surface-600 transition-colors" title="Reset">⊙</button>' +
-                  '<button id="btn-rotate" class="p-1.5 hover:bg-surface-100 rounded text-surface-600 transition-colors" title="Rotate 90°">🔄</button>' +
-                  '<button id="btn-dl" class="px-3 py-1 bg-brand-600 text-white rounded text-[10px] font-bold shadow-sm hover:bg-brand-700 ml-1">📥 Download</button>' +
+                '<div class="relative shadow-2xl rounded-lg overflow-hidden bg-white" style="background-image: url(\'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAAAAAA6mKC9AAAAGElEQVQYV2N4DwX/oYBhgDE8BOn4S8VfWAMA6as8f9zEAn8AAAAASUVORK5CYII=\'); background-size: 16px 16px;">' +
+                  '<img id="avif-preview" src="' + previewUrl + '" class="max-w-full h-auto transition-transform duration-200 ease-out" style="transform: scale(1) rotate(0deg); transform-origin: center center;" />' +
                 '</div>' +
               '</div>' +
-              '<div class="flex-1 overflow-auto p-8 flex justify-center items-center" style="min-height:400px;background-image:url(\'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAAAAAA6mKC9AAAAGElEQVQYV2N4DwX/oYBhgDE8BOn4S8VfWAMA6as8f9zEAn8AAAAASUVORK5CYII=\')">' +
-                '<img id="img-preview" src="' + previewUrl + '" class="max-w-full h-auto shadow-2xl rounded transition-all duration-200 ease-out" style="transform:scale(1) rotate(0deg)" />' +
-              '</div>' +
-              '<div class="shrink-0 bg-white border-t border-surface-100 px-4 py-2 flex gap-6 text-xs text-surface-400">' +
-                '<span><strong>Dimensions:</strong> ' + width + ' × ' + height + ' px</span>' +
-                '<span><strong>Megapixels:</strong> ' + (width * height / 1000000).toFixed(2) + ' MP</span>' +
+              '<div class="w-full md:w-72 shrink-0 flex flex-col gap-4">' +
+                '<div class="bg-white rounded-xl border border-surface-200 p-4 shadow-sm overflow-hidden flex flex-col">' +
+                  '<h3 class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-3">ISOBMFF Structure</h3>' +
+                  '<div class="overflow-auto max-h-[300px] pr-2">' + 
+                    (boxHtml || '<p class="text-surface-400 italic text-[11px]">No boxes detected</p>') + 
+                  '</div>' +
+                '</div>' +
+                '<div class="bg-white rounded-xl border border-surface-200 p-4 shadow-sm">' +
+                  '<h3 class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-2">Technical Info</h3>' +
+                  '<div class="text-[11px] space-y-2">' +
+                    '<div class="flex justify-between border-b border-surface-50 pb-1"><span>Format</span><span class="text-surface-900 font-medium">AV1 Image (AVIF)</span></div>' +
+                    '<div class="flex justify-between border-b border-surface-50 pb-1"><span>MIME Type</span><span class="text-surface-400">image/avif</span></div>' +
+                    '<div class="flex justify-between border-b border-surface-50 pb-1"><span>Dimensions</span><span class="text-surface-900">' + img.naturalWidth + 'x' + img.naturalHeight + '</span></div>' +
+                    '<div class="flex justify-between"><span>File Size</span><span class="text-surface-900">' + (file.size / 1024).toFixed(1) + ' KB</span></div>' +
+                  '</div>' +
+                '</div>' +
               '</div>' +
             '</div>'
           );
 
-          function update() {
-            var el = document.getElementById('img-preview');
-            if (el) el.style.transform = 'scale(' + scale + ') rotate(' + rotation + 'deg)';
-          }
+          currentScale = 1;
+          currentRotation = 0;
+        };
 
-          document.getElementById('btn-zoom-in').onclick = function() { scale = Math.min(scale + 0.25, 10); update(); };
-          document.getElementById('btn-zoom-out').onclick = function() { scale = Math.max(scale - 0.25, 0.1); update(); };
-          document.getElementById('btn-reset').onclick = function() { scale = 1; rotation = 0; update(); };
-          document.getElementById('btn-rotate').onclick = function() { rotation = (rotation + 90) % 360; update(); };
-          document.getElementById('btn-dl').onclick = function() { h.download(file.name, content, mimeType); };
+        img.onerror = function () {
+          h.showError('Rendering Failed', 'Your browser does not support native AVIF rendering. Try Chrome 85+, Firefox 93+, or Safari 16+.');
         };
-        img.onerror = function() {
-          h.showError('Failed to load image', 'The file may be corrupted or your browser does not support AVIF. Try Chrome 85+ or Firefox 93+.');
-        };
+
         img.src = previewUrl;
       },
 
-      onDestroy: function() {
-        if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
+      onDestroy: function () {
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
       }
     });
   };
+
+  function applyTransform(h) {
+    var img = h.getRenderEl().querySelector('#avif-preview');
+    if (img) {
+      img.style.transform = 'scale(' + currentScale + ') rotate(' + currentRotation + 'deg)';
+    }
+  }
+
+  function copyImageAsPng(h, btn) {
+    var img = h.getRenderEl().querySelector('#avif-preview');
+    if (!img) return;
+    var canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    canvas.toBlob(function (blob) {
+      if (window.ClipboardItem) {
+        var data = [new ClipboardItem({ 'image/png': blob })];
+        navigator.clipboard.write(data).then(function () {
+          var old = btn.textContent;
+          btn.textContent = '✓ Copied!';
+          setTimeout(function () { btn.textContent = old; }, 1500);
+        });
+      } else {
+        h.showError('Clipboard Error', 'Your browser does not support the ClipboardItem API.');
+      }
+    }, 'image/png');
+  }
+
+  function parseAvifStructure(buffer) {
+    var view = new DataView(buffer);
+    var offset = 0;
+    var boxes = [];
+    while (offset < buffer.byteLength) {
+      if (offset + 8 > buffer.byteLength) break;
+      var size = view.getUint32(offset);
+      var type = "";
+      for (var i = 0; i < 4; i++) {
+        var charCode = view.getUint8(offset + 4 + i);
+        if (charCode < 32 || charCode > 126) type += '?';
+        else type += String.fromCharCode(charCode);
+      }
+      var boxSize = size;
+      var headerSize = 8;
+      if (size === 1) {
+        if (offset + 16 > buffer.byteLength) break;
+        boxSize = Number(view.getBigUint64(offset + 8));
+        headerSize = 16;
+      } else if (size === 0) {
+        boxSize = buffer.byteLength - offset;
+      }
+      
+      boxes.push({ type: type, size: boxSize });
+      
+      if (boxSize < headerSize) break; // Invalid box
+      offset += boxSize;
+      if (offset > buffer.byteLength) break;
+    }
+    return boxes;
+  }
 })();
