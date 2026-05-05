@@ -3,14 +3,19 @@
 
   /**
    * OmniOpener — XZ (LZMA2) Archive Toolkit
-   * Professional browser-based decompression and analysis.
+   * High-performance browser-based decompression and analysis.
    */
 
+  const LZMA_CDN = 'https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma-d-min.js';
+
   function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(String(str)));
-    return div.innerHTML;
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   function formatSize(bytes) {
@@ -22,6 +27,7 @@
   }
 
   function calculateEntropy(data) {
+    if (!data || data.length === 0) return 0;
     const freq = new Array(256).fill(0);
     for (let i = 0; i < data.length; i++) freq[data[i]]++;
     let entropy = 0;
@@ -60,143 +66,132 @@
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
       onInit: function (h) {
-        // B1: Load decompression library
-        h.loadScript('https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma-d-min.js');
+        h.loadScript(LZMA_CDN);
       },
       onDestroy: function (h) {
-        // B5: Revoke object URLs
         const state = h.getState();
-        if (state && state.previewUrl) {
+        if (state?.previewUrl) {
           URL.revokeObjectURL(state.previewUrl);
         }
       },
       onFile: function _onFileFn(file, content, h) {
         // B5: Revoke previous file's URLs
         const prevState = h.getState();
-        if (prevState && prevState.previewUrl) {
+        if (prevState?.previewUrl) {
           URL.revokeObjectURL(prevState.previewUrl);
+        }
+
+        // B1, B8: Library load check
+        if (typeof LZMA === 'undefined') {
+          h.showLoading('Initializing decompression engine...');
+          setTimeout(function () { _onFileFn(file, content, h); }, 150);
+          return;
         }
 
         h.showLoading('Decompressing XZ archive...');
 
-        // B1, B4, B8: Check library availability and retry if necessary
-        if (typeof LZMA === 'undefined') {
-          setTimeout(function() { _onFileFn(file, content, h); }, 200);
-          return;
-        }
-
         const uint8 = new Uint8Array(content);
         
-        // Verify Magic Bytes for XZ (FD 37 7A 58 5A 00)
+        // Verify Magic Bytes (FD 37 7A 58 5A 00)
         const isXZ = uint8.length >= 6 && 
                      uint8[0] === 0xFD && uint8[1] === 0x37 && uint8[2] === 0x7A && 
                      uint8[3] === 0x58 && uint8[4] === 0x5A && uint8[5] === 0x00;
 
         if (!isXZ) {
-          h.showError('Invalid XZ File', 'The file does not appear to be a valid XZ archive (missing "FD 37 7A 58 5A 00" signature).');
+          h.showError('Unsupported Format', 'The file does not appear to be a valid XZ archive. Expected magic bytes "FD 37 7A 58 5A 00" were not found.');
           return;
         }
 
-        // B3: Async decompression using library callback
+        // B3: Handle async decompression
         try {
-          LZMA.decompress(uint8, function(result, error) {
+          LZMA.decompress(uint8, function (result, error) {
             if (error) {
-              console.error('XZ Decompression Error:', error);
-              renderUI(file, content, h, null, error);
+              console.error('[XZ] Decompression Error:', error);
+              processResult(null, error);
             } else {
-              // Ensure we have a Uint8Array
+              // Normalize result to Uint8Array
               const decompressed = (result instanceof Uint8Array) ? result : 
                                    (Array.isArray(result) ? new Uint8Array(result) : 
                                    (typeof result === 'string' ? new TextEncoder().encode(result) : null));
-              
-              if (!decompressed || decompressed.length === 0) {
-                renderUI(file, content, h, null, 'Archive produced no data.');
-              } else {
-                renderUI(file, content, h, decompressed, null);
-              }
+              processResult(decompressed, null);
             }
           });
         } catch (e) {
-          renderUI(file, content, h, null, e.message);
+          processResult(null, e.message);
         }
 
-        async function renderUI(file, content, h, decompressed, decompressError) {
-          // B3: Handle async hash calculation
+        async function processResult(decompressed, error) {
+          if (error) {
+            h.showError('Decompression Failed', `The XZ stream could not be decoded: ${error}`);
+            return;
+          }
+
+          if (!decompressed || decompressed.length === 0) {
+            h.showError('Empty Archive', 'The archive was decompressed successfully but contained no data.');
+            return;
+          }
+
           const hashBuffer = await crypto.subtle.digest('SHA-256', content);
-          const hashArray = Array.from(new Uint8Array(hashBuffer));
-          const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-          
-          const entropy = calculateEntropy(new Uint8Array(content));
+          const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+          const entropy = calculateEntropy(uint8);
           const originalName = file.name.replace(/\.xz$/i, '') || 'unpacked_file';
 
           h.setState({
-            hashHex: hashHex,
-            decompressed: decompressed,
-            originalName: originalName
+            decompressed,
+            hashHex,
+            originalName
           });
 
-          // U7-U10: Construct beautiful UI components
+          // Detect content type for preview
+          const sampleSize = Math.min(decompressed.length, 4096);
+          const sample = decompressed.slice(0, sampleSize);
+          let binaryCount = 0;
+          for (let i = 0; i < sample.length; i++) {
+            const b = sample[i];
+            if (b < 7 || (b > 13 && b < 32)) binaryCount++;
+          }
+          const isProbablyText = (binaryCount / sample.length) < 0.05;
+
           let previewHtml = '';
-          if (decompressed) {
-            const sample = decompressed.slice(0, 4000);
-            const isProbablyText = Array.from(sample).every(b => b === 10 || b === 13 || b === 9 || (b >= 32 && b <= 126) || b > 127);
+          if (isProbablyText) {
+            const textLimit = 100000;
+            const text = new TextDecoder().decode(decompressed.slice(0, textLimit));
+            const isTruncated = decompressed.length > textLimit;
             
-            if (isProbablyText) {
-              const text = new TextDecoder().decode(decompressed.slice(0, 50000));
-              const showingAll = decompressed.length <= 50000;
-              previewHtml = `
-                <div class="mt-8">
-                  <div class="flex items-center justify-between mb-3">
-                    <div class="flex items-center gap-3">
-                      <h3 class="font-semibold text-surface-800">Content Preview</h3>
-                      <span class="text-[10px] bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Text Content</span>
-                    </div>
-                    <div class="relative">
-                      <input type="text" id="preview-search" placeholder="Filter lines..." class="text-xs border border-surface-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500 w-48 transition-all">
-                    </div>
-                  </div>
-                  <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm">
-                    <pre id="preview-box" class="p-4 text-sm font-mono bg-gray-950 text-gray-100 overflow-x-auto leading-relaxed max-h-[600px] whitespace-pre-wrap break-all">${escapeHtml(text)}${showingAll ? '' : '\n\n... [remaining data truncated]'}</pre>
-                  </div>
-                </div>
-              `;
-            } else {
-              const hexDump = generateHexDump(decompressed, 4096);
-              const showingAll = decompressed.length <= 4096;
-              previewHtml = `
-                <div class="mt-8">
-                  <div class="flex items-center justify-between mb-3">
-                    <h3 class="font-semibold text-surface-800">Decompressed Hex View ${showingAll ? '' : '(First 4KB)'}</h3>
-                    <span class="text-[10px] bg-surface-200 text-surface-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Binary Stream</span>
-                  </div>
-                  <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm">
-                    <pre class="p-4 text-[11px] font-mono bg-white text-surface-800 overflow-x-auto leading-tight max-h-[600px]">${escapeHtml(hexDump)}</pre>
-                  </div>
-                </div>
-              `;
-            }
-          } else {
-            const hexDump = generateHexDump(content, 4096);
             previewHtml = `
               <div class="mt-8">
-                <div class="flex items-center justify-between mb-3">
-                  <h3 class="font-semibold text-surface-800">Source Archive (Hex View)</h3>
-                  <div class="flex items-center gap-2">
-                    <span class="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Decompression Failed</span>
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                  <div class="flex items-center gap-3">
+                    <h3 class="font-semibold text-surface-800">Content Preview</h3>
+                    <span class="text-xs bg-brand-100 text-brand-700 px-2.5 py-0.5 rounded-full font-medium">Text Content</span>
+                  </div>
+                  <div class="relative max-w-xs w-full">
+                    <input type="text" id="content-filter" placeholder="Search lines..." class="w-full text-sm border border-surface-200 rounded-lg pl-9 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all">
+                    <svg class="w-4 h-4 absolute left-3 top-2.5 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                   </div>
                 </div>
-                <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm">
-                  <pre class="p-4 text-[11px] font-mono bg-white text-surface-800 overflow-x-auto leading-tight max-h-[400px]">${escapeHtml(hexDump)}</pre>
+                <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm bg-gray-950">
+                  <pre id="text-preview" class="p-4 text-sm font-mono text-gray-100 overflow-x-auto leading-relaxed max-h-[600px] whitespace-pre-wrap break-all">${escapeHtml(text)}${isTruncated ? '\n\n[... Remaining data truncated for performance ...]' : ''}</pre>
                 </div>
-                <div class="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-100 text-xs text-amber-800">
-                  <strong>Notice:</strong> ${escapeHtml(decompressError || 'The archive could not be unpacked. Showing raw compressed data instead.')}
+              </div>
+            `;
+          } else {
+            const hexDump = generateHexDump(decompressed, 4096);
+            previewHtml = `
+              <div class="mt-8">
+                <div class="flex items-center justify-between mb-4">
+                  <h3 class="font-semibold text-surface-800">Hex View (First 4KB)</h3>
+                  <span class="text-xs bg-surface-200 text-surface-700 px-2.5 py-0.5 rounded-full font-medium">Binary Data</span>
+                </div>
+                <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm">
+                  <pre class="p-4 text-[11px] font-mono bg-white text-surface-800 overflow-x-auto leading-tight max-h-[500px]">${escapeHtml(hexDump)}</pre>
                 </div>
               </div>
             `;
           }
 
           h.render(`
-            <div class="max-w-5xl mx-auto p-4 md:p-6 font-sans">
+            <div class="max-w-6xl mx-auto p-4 md:p-6 font-sans animate-in fade-in duration-500">
               <!-- U1: File Info Bar -->
               <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100">
                 <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
@@ -206,86 +201,82 @@
                 <span class="text-surface-500">.xz archive</span>
               </div>
 
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <!-- Main Status Card -->
-                <div class="md:col-span-2 bg-white rounded-2xl border border-surface-200 overflow-hidden shadow-sm">
+              <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <!-- Main Stats Card -->
+                <div class="lg:col-span-3 bg-white rounded-2xl border border-surface-200 overflow-hidden shadow-sm">
                   <div class="px-6 py-4 border-b border-surface-100 bg-surface-50/50 flex justify-between items-center">
-                    <h2 class="font-bold text-surface-800">Extraction Report</h2>
-                    <div class="flex items-center gap-2">
-                       <span class="w-2 h-2 rounded-full ${decompressed ? 'bg-green-500' : 'bg-amber-500'}"></span>
-                       <span class="text-[10px] font-bold uppercase tracking-wider ${decompressed ? 'text-green-700' : 'text-amber-700'}">
-                         ${decompressed ? 'Unpacked Successfully' : 'Analysis Complete'}
-                       </span>
-                    </div>
+                    <h2 class="font-bold text-surface-800">Extraction Results</h2>
+                    <span class="flex items-center gap-1.5 px-2.5 py-1 bg-green-50 text-green-700 rounded-full text-[10px] font-bold uppercase tracking-wider border border-green-100">
+                      <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                      Success
+                    </span>
                   </div>
-                  <div class="p-6">
-                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-6">
+                  
+                  <div class="p-6 md:p-8">
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-8">
                       <div>
-                        <div class="text-[10px] font-bold text-surface-400 uppercase mb-1 tracking-tight">Compressed Size</div>
-                        <div class="text-xl font-mono font-bold text-surface-900">${formatSize(file.size)}</div>
+                        <div class="text-[10px] font-bold text-surface-400 uppercase mb-1.5 tracking-wider">Archive Size</div>
+                        <div class="text-2xl font-mono font-bold text-surface-900">${formatSize(file.size)}</div>
                       </div>
-                      ${decompressed ? `
-                        <div>
-                          <div class="text-[10px] font-bold text-surface-400 uppercase mb-1 tracking-tight">Unpacked Size</div>
-                          <div class="text-xl font-mono font-bold text-brand-600">${formatSize(decompressed.length)}</div>
-                        </div>
-                        <div class="col-span-2 sm:col-span-1">
-                          <div class="text-[10px] font-bold text-surface-400 uppercase mb-1 tracking-tight">Savings</div>
-                          <div class="text-xl font-mono font-bold text-orange-600">${((1 - (file.size / decompressed.length)) * 100).toFixed(1)}%</div>
-                        </div>
-                      ` : `
-                        <div>
-                          <div class="text-[10px] font-bold text-surface-400 uppercase mb-1 tracking-tight">Shannon Entropy</div>
-                          <div class="text-xl font-mono font-bold text-surface-900">${entropy.toFixed(3)}</div>
-                        </div>
-                      `}
+                      <div>
+                        <div class="text-[10px] font-bold text-surface-400 uppercase mb-1.5 tracking-wider">Unpacked Size</div>
+                        <div class="text-2xl font-mono font-bold text-brand-600">${formatSize(decompressed.length)}</div>
+                      </div>
+                      <div class="col-span-2 md:col-span-1">
+                        <div class="text-[10px] font-bold text-surface-400 uppercase mb-1.5 tracking-wider">Compression Ratio</div>
+                        <div class="text-2xl font-mono font-bold text-orange-600">${(decompressed.length / file.size).toFixed(2)}x</div>
+                      </div>
                     </div>
 
-                    <div class="mt-8 pt-6 border-t border-surface-100">
-                      <div class="flex flex-col sm:flex-row items-center gap-4 bg-surface-50 p-4 rounded-xl border border-surface-100">
-                        <div class="w-12 h-12 rounded-xl bg-white border border-surface-200 flex items-center justify-center text-2xl shadow-sm">📦</div>
-                        <div class="flex-1 min-w-0 text-center sm:text-left">
-                          <div class="text-sm font-bold text-surface-900 truncate">${escapeHtml(decompressed ? originalName : file.name)}</div>
-                          <div class="text-[10px] text-surface-500 uppercase font-bold tracking-tight">
-                            ${decompressed ? 'Extracted file ready' : 'Source file analysis'}
-                          </div>
-                        </div>
-                        <button id="btn-main-dl" class="w-full sm:w-auto px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-brand-200 transition-all active:scale-95 flex items-center justify-center gap-2">
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                          <span>Download</span>
-                        </button>
+                    <div class="mt-10 p-5 bg-surface-50 rounded-2xl border border-surface-200 flex flex-col sm:flex-row items-center gap-5">
+                      <div class="w-14 h-14 rounded-xl bg-white border border-surface-200 flex items-center justify-center text-3xl shadow-sm flex-shrink-0">
+                        📦
                       </div>
+                      <div class="flex-1 min-w-0 text-center sm:text-left">
+                        <div class="text-base font-bold text-surface-900 truncate">${escapeHtml(originalName)}</div>
+                        <div class="text-[10px] text-surface-500 uppercase font-bold tracking-widest mt-0.5">Extracted Payload</div>
+                      </div>
+                      <button id="main-download-btn" class="w-full sm:w-auto px-8 py-3 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-brand-200 transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        Download Unpacked
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                <!-- Sidebar Metadata -->
+                <!-- Metadata Sidebar -->
                 <div class="space-y-4">
                   <div class="bg-surface-50 rounded-2xl p-5 border border-surface-200 shadow-sm">
-                    <h4 class="text-[10px] font-bold text-surface-400 uppercase mb-4 tracking-widest">Digital Fingerprint</h4>
-                    <div class="space-y-4">
+                    <h4 class="text-[10px] font-bold text-surface-400 uppercase mb-4 tracking-widest flex items-center gap-2">
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                      Verification
+                    </h4>
+                    <div class="space-y-5">
                       <div>
-                        <label class="text-[10px] text-surface-400 uppercase font-bold block mb-1.5">SHA-256 (Archive)</label>
-                        <div class="bg-white border border-surface-200 rounded-lg p-2.5 flex items-center gap-2">
-                          <code class="text-[10px] text-surface-600 break-all flex-1 font-mono leading-tight">${hashHex}</code>
-                          <button id="btn-copy-hash" class="p-1.5 hover:bg-surface-100 rounded-md transition-colors text-surface-400 hover:text-brand-600" title="Copy Hash">
+                        <label class="text-[10px] text-surface-400 uppercase font-bold block mb-1.5">SHA-256 Hash</label>
+                        <div class="bg-white border border-surface-200 rounded-xl p-3 relative group">
+                          <code class="text-[10px] text-surface-600 break-all font-mono leading-relaxed block pr-8">${hashHex}</code>
+                          <button id="copy-hash-btn" class="absolute right-2 top-2 p-1.5 hover:bg-surface-100 rounded-md transition-colors text-surface-400 hover:text-brand-600" title="Copy to clipboard">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
                           </button>
                         </div>
                       </div>
-                      <div class="pt-2">
-                         <div class="flex items-center gap-2 text-xs text-surface-600">
-                           <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                           <span>XZ (LZMA2 / Container)</span>
-                         </div>
+                      <div>
+                        <label class="text-[10px] text-surface-400 uppercase font-bold block mb-1.5">Shannon Entropy</label>
+                        <div class="flex items-center gap-3">
+                          <div class="flex-1 h-1.5 bg-surface-200 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-500 rounded-full" style="width: ${(entropy / 8) * 100}%"></div>
+                          </div>
+                          <span class="text-xs font-mono font-bold text-surface-700">${entropy.toFixed(3)}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                  
-                  <div class="bg-brand-50 rounded-2xl p-5 border border-brand-100 shadow-sm shadow-brand-100/20">
-                    <h4 class="text-[10px] font-bold text-brand-600 uppercase mb-2 tracking-widest">Client-Side Processing</h4>
-                    <p class="text-[11px] text-brand-700 leading-relaxed opacity-90">
-                      Archive decompression is handled locally via the <code>lzma-js</code> library. No data is ever sent to our servers.
+
+                  <div class="bg-blue-50 rounded-2xl p-5 border border-blue-100">
+                    <h4 class="text-[10px] font-bold text-blue-600 uppercase mb-2 tracking-widest">XZ Container</h4>
+                    <p class="text-[11px] text-blue-700 leading-relaxed">
+                      Utilizes LZMA2 compression for extreme ratios. This tool decompressess the stream locally in your browser sandbox.
                     </p>
                   </div>
                 </div>
@@ -295,38 +286,35 @@
             </div>
           `);
 
-          // B9: Attach event listeners after render
-          document.getElementById('btn-main-dl').onclick = function() {
-            if (decompressed) {
-              h.download(originalName, decompressed);
-            } else {
-              h.download(file.name, content);
-            }
-          };
-          
-          document.getElementById('btn-copy-hash').onclick = function(e) {
-            h.copyToClipboard(hashHex, e.currentTarget);
-          };
+          // B9: Event Listeners
+          const dlBtn = document.getElementById('main-download-btn');
+          if (dlBtn) dlBtn.onclick = () => h.download(originalName, decompressed);
 
-          // PART 4: Data Excellence - Filter/Search
-          const searchInput = document.getElementById('preview-search');
-          if (searchInput && decompressed) {
-            const previewBox = document.getElementById('preview-box');
-            // Decode a larger chunk for searching
-            const fullText = new TextDecoder().decode(decompressed.slice(0, 100000));
-            const hasMore = decompressed.length > 100000;
+          const copyBtn = document.getElementById('copy-hash-btn');
+          if (copyBtn) copyBtn.onclick = (e) => h.copyToClipboard(hashHex, e.currentTarget);
+
+          // PART 4: Data Excellence - Live Filter
+          const filterInput = document.getElementById('content-filter');
+          if (filterInput && isProbablyText) {
+            const previewBox = document.getElementById('text-preview');
+            const fullText = new TextDecoder().decode(decompressed.slice(0, 150000));
+            const hasMore = decompressed.length > 150000;
             
-            searchInput.oninput = function() {
-              const query = this.value.toLowerCase();
+            filterInput.oninput = function() {
+              const query = this.value.toLowerCase().trim();
               if (!query) {
-                previewBox.textContent = fullText + (hasMore ? '\n\n... [remaining data truncated]' : '');
+                previewBox.textContent = fullText + (hasMore ? '\n\n[... Remaining data truncated for performance ...]' : '');
                 return;
               }
               const lines = fullText.split('\n');
-              const filtered = lines.filter(l => l.toLowerCase().includes(query)).slice(0, 1000).join('\n');
-              previewBox.textContent = filtered || '-- No matching lines found --';
-              if (filtered && lines.length > 1000) {
-                 previewBox.textContent += '\n\n-- Showing first 1000 matches --';
+              const filtered = lines.filter(line => line.toLowerCase().includes(query)).slice(0, 1000);
+              
+              if (filtered.length === 0) {
+                previewBox.innerHTML = `<div class="text-center py-10 text-surface-500 font-sans italic">No lines matching "${escapeHtml(query)}"</div>`;
+              } else {
+                let resultText = filtered.join('\n');
+                if (filtered.length === 1000) resultText += '\n\n-- Showing first 1000 matches --';
+                previewBox.textContent = resultText;
               }
             };
           }
@@ -334,23 +322,23 @@
       },
       actions: [
         {
-          label: '📥 Download Unpacked',
-          id: 'dl-unpacked',
+          label: '📥 Download',
+          id: 'dl-action',
           onClick: function (h) {
             const state = h.getState();
-            if (state && state.decompressed) {
+            if (state?.decompressed) {
               h.download(state.originalName, state.decompressed);
             } else {
-              h.showError('Not Ready', 'Please wait for decompression to complete.');
+              h.showError('Not Ready', 'Please wait for decompression to finish.');
             }
           }
         },
         {
           label: '📋 Copy Hash',
-          id: 'copy-hash',
+          id: 'copy-hash-action',
           onClick: function (h, btn) {
             const state = h.getState();
-            if (state && state.hashHex) h.copyToClipboard(state.hashHex, btn);
+            if (state?.hashHex) h.copyToClipboard(state.hashHex, btn);
           }
         }
       ]
