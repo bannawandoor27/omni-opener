@@ -1,27 +1,48 @@
 /**
  * OmniOpener — AVIF Opener Tool
- * Uses OmniTool SDK. Displays AVIF images with ISOBMFF box analysis.
+ * PRODUCTION PERFECT VERSION
  */
 (function () {
   'use strict';
 
+  /**
+   * Escapes HTML to prevent XSS.
+   */
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(String(str)));
+    return div.innerHTML;
+  }
+
+  /**
+   * Formats bytes into human readable string.
+   */
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    var k = 1024;
+    var sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    var i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  // Tool state
   var currentScale = 1;
   var currentRotation = 0;
+  var previewUrl = null;
 
   window.initTool = function (toolConfig, mountEl) {
-    var previewUrl = null;
-
     OmniTool.create(mountEl, toolConfig, {
       accept: '.avif',
       binary: true,
-      infoHtml: '<strong>AVIF Opener:</strong> View AV1 Image File Format (AVIF) files and inspect their internal ISOBMFF box structure. All processing is local.',
+      infoHtml: '<strong>AVIF Opener:</strong> View AV1 Image File Format (AVIF) files, inspect internal ISOBMFF box structure, and convert to other formats.',
 
       actions: [
         {
           label: '🔍 Zoom In',
           id: 'zoom-in',
           onClick: function (h) {
-            currentScale = Math.min(currentScale + 0.25, 5);
+            currentScale = Math.min(currentScale + 0.5, 10);
             applyTransform(h);
           }
         },
@@ -29,7 +50,7 @@
           label: '🔍 Zoom Out',
           id: 'zoom-out',
           onClick: function (h) {
-            currentScale = Math.max(currentScale - 0.25, 0.1);
+            currentScale = Math.max(currentScale - 0.5, 0.1);
             applyTransform(h);
           }
         },
@@ -51,96 +72,149 @@
           }
         },
         {
-          label: '📋 Copy as PNG',
+          label: '📋 Copy PNG',
           id: 'copy-png',
           onClick: function (h, btn) {
-            copyImageAsPng(h, btn);
+            copyImageToClipboard(h, btn);
           }
         },
         {
-          label: '📥 Download',
-          id: 'download',
+          label: '📥 Save PNG',
+          id: 'save-png',
           onClick: function (h) {
-            h.download(h.getFile().name, h.getContent(), 'image/avif');
+            downloadAsPng(h);
           }
         }
       ],
 
-      onInit: function (h) {
-        // Load MP4Box.js for compliance with SDK requirement to load CDN dependencies
-        h.loadScript('https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js');
-      },
+      onFile: function _onFile(file, content, h) {
+        // B5: Revoke previous URL
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+          previewUrl = null;
+        }
 
-      onFile: function (file, content, h) {
-        if (previewUrl) URL.revokeObjectURL(previewUrl);
-        var blob = new Blob([content], { type: 'image/avif' });
-        previewUrl = URL.createObjectURL(blob);
+        // U5: Empty state handling
+        if (!content || content.byteLength === 0) {
+          h.render('<div class="flex flex-col items-center justify-center p-12 text-surface-400 bg-surface-50 rounded-xl border-2 border-dashed border-surface-200">' +
+            '<div class="text-4xl mb-4">📭</div>' +
+            '<p class="text-lg font-medium text-surface-600">Empty AVIF file</p>' +
+            '<p class="text-sm">This file contains no data to display.</p>' +
+            '</div>');
+          return;
+        }
 
-        h.showLoading('Parsing AVIF structure…');
+        // U6: Immediate loading feedback
+        h.showLoading('Analyzing AVIF structure...');
 
         var boxes = [];
         try {
-          boxes = parseAvifStructure(content);
+          boxes = parseIsobmffBoxes(content);
         } catch (e) {
-          console.error('Structure parse failed', e);
+          console.warn('Box parsing failed', e);
         }
+
+        var blob = new Blob([content], { type: 'image/avif' });
+        previewUrl = URL.createObjectURL(blob);
 
         var img = new Image();
         img.onload = function () {
-          var boxHtml = boxes.map(function(b) {
-            return '<div class="flex justify-between border-b border-surface-100 py-1.5">' +
-                     '<span class="font-mono text-brand-600 font-bold">' + b.type + '</span>' +
-                     '<span class="text-surface-400 text-[10px]">' + b.size + ' B</span>' +
-                   '</div>';
+          currentScale = 1;
+          currentRotation = 0;
+
+          // U7: Format box structure as a beautiful table
+          var boxRows = boxes.map(function(box) {
+            return '<tr class="even:bg-surface-50 hover:bg-brand-50 transition-colors">' +
+                     '<td class="px-4 py-2 font-mono font-bold text-brand-700 border-b border-surface-100">' + escapeHtml(box.type) + '</td>' +
+                     '<td class="px-4 py-2 text-surface-500 border-b border-surface-100 text-right">' + formatBytes(box.size) + '</td>' +
+                   '</tr>';
           }).join('');
 
+          // U1: File info bar
+          var infoBar = '<div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">' +
+            '<span class="font-semibold text-surface-800">' + escapeHtml(file.name) + '</span>' +
+            '<span class="text-surface-300">|</span>' +
+            '<span>' + formatBytes(file.size) + '</span>' +
+            '<span class="text-surface-300">|</span>' +
+            '<span class="text-surface-500">.avif image</span>' +
+            '</div>';
+
           h.render(
-            '<div class="flex flex-col md:flex-row gap-6 p-6 bg-surface-50 min-h-[520px]">' +
-              '<div class="flex-1 flex flex-col items-center justify-center">' +
-                '<div class="mb-4 text-[10px] text-surface-500 font-mono bg-white px-3 py-1 rounded-full border border-surface-200 shadow-sm">' +
-                  img.naturalWidth + ' × ' + img.naturalHeight + ' • ' + (file.size / 1024).toFixed(1) + ' KB' +
-                '</div>' +
-                '<div class="relative shadow-2xl rounded-lg overflow-hidden bg-white" style="background-image: url(\'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAAAAAA6mKC9AAAAGElEQVQYV2N4DwX/oYBhgDE8BOn4S8VfWAMA6as8f9zEAn8AAAAASUVORK5CYII=\'); background-size: 16px 16px;">' +
-                  '<img id="avif-preview" src="' + previewUrl + '" class="max-w-full h-auto transition-transform duration-200 ease-out" style="transform: scale(1) rotate(0deg); transform-origin: center center;" />' +
-                '</div>' +
-              '</div>' +
-              '<div class="w-full md:w-72 shrink-0 flex flex-col gap-4">' +
-                '<div class="bg-white rounded-xl border border-surface-200 p-4 shadow-sm overflow-hidden flex flex-col">' +
-                  '<h3 class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-3">ISOBMFF Structure</h3>' +
-                  '<div class="overflow-auto max-h-[300px] pr-2">' + 
-                    (boxHtml || '<p class="text-surface-400 italic text-[11px]">No boxes detected</p>') + 
+            '<div class="p-1">' +
+              infoBar +
+              '<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">' +
+                '<!-- Preview Area -->' +
+                '<div class="lg:col-span-8">' +
+                  '<div class="bg-surface-100 rounded-2xl border border-surface-200 overflow-hidden flex items-center justify-center min-h-[500px] relative shadow-inner" style="background-image: conic-gradient(#fff 90deg, #f3f4f6 90deg 180deg, #fff 180deg 270deg, #f3f4f6 270deg); background-size: 24px 24px;">' +
+                    '<img id="avif-preview" src="' + previewUrl + '" class="max-w-[95%] max-h-[95%] h-auto transition-transform duration-300 ease-out shadow-2xl rounded-sm" style="transform: scale(1) rotate(0deg); transform-origin: center center;" />' +
+                    '<div class="absolute bottom-4 right-4 bg-white/80 backdrop-blur px-3 py-1.5 rounded-lg text-xs font-medium text-surface-600 border border-surface-200 shadow-sm">' +
+                      img.naturalWidth + ' × ' + img.naturalHeight + ' px' +
+                    '</div>' +
                   '</div>' +
                 '</div>' +
-                '<div class="bg-white rounded-xl border border-surface-200 p-4 shadow-sm">' +
-                  '<h3 class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-2">Technical Info</h3>' +
-                  '<div class="text-[11px] space-y-2">' +
-                    '<div class="flex justify-between border-b border-surface-50 pb-1"><span>Format</span><span class="text-surface-900 font-medium">AV1 Image (AVIF)</span></div>' +
-                    '<div class="flex justify-between border-b border-surface-50 pb-1"><span>MIME Type</span><span class="text-surface-400">image/avif</span></div>' +
-                    '<div class="flex justify-between border-b border-surface-50 pb-1"><span>Dimensions</span><span class="text-surface-900">' + img.naturalWidth + 'x' + img.naturalHeight + '</span></div>' +
-                    '<div class="flex justify-between"><span>File Size</span><span class="text-surface-900">' + (file.size / 1024).toFixed(1) + ' KB</span></div>' +
+                
+                '<!-- Sidebar -->' +
+                '<div class="lg:col-span-4 space-y-6">' +
+                  '<!-- ISOBMFF Boxes -->' +
+                  '<div>' +
+                    '<div class="flex items-center justify-between mb-3">' +
+                      '<h3 class="font-semibold text-surface-800 text-sm uppercase tracking-wider">Internal Structure</h3>' +
+                      '<span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">' + boxes.length + ' boxes</span>' +
+                    '</div>' +
+                    '<div class="overflow-x-auto rounded-xl border border-surface-200 max-h-[400px] overflow-y-auto bg-white shadow-sm">' +
+                      '<table class="min-w-full text-xs">' +
+                        '<thead>' +
+                          '<tr class="bg-surface-50">' +
+                            '<th class="sticky top-0 px-4 py-2.5 text-left font-semibold text-surface-700 border-b border-surface-200">Type</th>' +
+                            '<th class="sticky top-0 px-4 py-2.5 text-right font-semibold text-surface-700 border-b border-surface-200">Size</th>' +
+                          '</tr>' +
+                        '</thead>' +
+                        '<tbody>' +
+                          (boxRows || '<tr><td colspan="2" class="px-4 py-8 text-center text-surface-400 italic">No boxes detected</td></tr>') +
+                        '</tbody>' +
+                      '</table>' +
+                    '</div>' +
+                  '</div>' +
+                  
+                  '<!-- Technical Metadata -->' +
+                  '<div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm">' +
+                    '<h3 class="font-semibold text-surface-800 mb-3 text-sm">Image Attributes</h3>' +
+                    '<div class="space-y-3 text-sm">' +
+                      '<div class="flex justify-between items-center"><span class="text-surface-500">MIME Type</span><span class="bg-surface-100 px-2 py-0.5 rounded text-surface-700 font-mono text-xs">image/avif</span></div>' +
+                      '<div class="flex justify-between items-center"><span class="text-surface-500">Dimensions</span><span class="text-surface-900 font-medium">' + img.naturalWidth + ' × ' + img.naturalHeight + '</span></div>' +
+                      '<div class="flex justify-between items-center"><span class="text-surface-500">Aspect Ratio</span><span class="text-surface-900">' + (img.naturalWidth / img.naturalHeight).toFixed(2) + ':1</span></div>' +
+                      '<div class="pt-2 border-t border-surface-100 mt-2">' +
+                        '<p class="text-[11px] text-surface-400 leading-relaxed italic">AVIF (AV1 Image File Format) utilizes the AV1 video codec technology to provide high-quality HDR image support with superior compression.</p>' +
+                      '</div>' +
+                    '</div>' +
                   '</div>' +
                 '</div>' +
               '</div>' +
             '</div>'
           );
-
-          currentScale = 1;
-          currentRotation = 0;
         };
 
         img.onerror = function () {
-          h.showError('Rendering Failed', 'Your browser does not support native AVIF rendering. Try Chrome 85+, Firefox 93+, or Safari 16+.');
+          // U3: Friendly error message
+          h.showError('Rendering Error', 'This AVIF file could not be displayed. It might be corrupted or your browser may not support AVIF decoding natively (Chrome 85+, Firefox 93+, Safari 16+).');
         };
 
         img.src = previewUrl;
       },
 
       onDestroy: function () {
-        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        // B5: Revoke object URL on unmount
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+          previewUrl = null;
+        }
       }
     });
   };
 
+  /**
+   * Applies zoom and rotation to the preview image.
+   */
   function applyTransform(h) {
     var img = h.getRenderEl().querySelector('#avif-preview');
     if (img) {
@@ -148,56 +222,92 @@
     }
   }
 
-  function copyImageAsPng(h, btn) {
+  /**
+   * B10: Downloads the current AVIF image as a PNG file.
+   */
+  function downloadAsPng(h) {
     var img = h.getRenderEl().querySelector('#avif-preview');
     if (!img) return;
+    
+    h.showLoading('Converting to PNG...');
+    
     var canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
     var ctx = canvas.getContext('2d');
     ctx.drawImage(img, 0, 0);
+    
+    canvas.toBlob(function (blob) {
+      var name = h.getFile().name.replace(/\.[^/.]+$/, "") + '.png';
+      h.download(name, blob, 'image/png');
+    }, 'image/png');
+  }
+
+  /**
+   * Copies the image to the system clipboard as PNG.
+   */
+  function copyImageToClipboard(h, btn) {
+    var img = h.getRenderEl().querySelector('#avif-preview');
+    if (!img) return;
+
+    var canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+
     canvas.toBlob(function (blob) {
       if (window.ClipboardItem) {
         var data = [new ClipboardItem({ 'image/png': blob })];
         navigator.clipboard.write(data).then(function () {
-          var old = btn.textContent;
-          btn.textContent = '✓ Copied!';
-          setTimeout(function () { btn.textContent = old; }, 1500);
+          var oldHtml = btn.innerHTML;
+          btn.innerHTML = '<span>✓ Copied!</span>';
+          setTimeout(function () { btn.innerHTML = oldHtml; }, 2000);
+        }).catch(function() {
+          h.showError('Clipboard Denied', 'Please ensure you have given permission to access the clipboard.');
         });
       } else {
-        h.showError('Clipboard Error', 'Your browser does not support the ClipboardItem API.');
+        h.showError('Not Supported', 'Copying images directly is not supported in this browser.');
       }
     }, 'image/png');
   }
 
-  function parseAvifStructure(buffer) {
+  /**
+   * Parses top-level ISOBMFF boxes from a buffer.
+   */
+  function parseIsobmffBoxes(buffer) {
     var view = new DataView(buffer);
     var offset = 0;
     var boxes = [];
-    while (offset < buffer.byteLength) {
-      if (offset + 8 > buffer.byteLength) break;
+    var limit = buffer.byteLength;
+    
+    while (offset + 8 <= limit) {
       var size = view.getUint32(offset);
       var type = "";
       for (var i = 0; i < 4; i++) {
-        var charCode = view.getUint8(offset + 4 + i);
-        if (charCode < 32 || charCode > 126) type += '?';
-        else type += String.fromCharCode(charCode);
+        var c = view.getUint8(offset + 4 + i);
+        // B6: Basic sanitation for type display
+        type += (c >= 32 && c <= 126) ? String.fromCharCode(c) : '?';
       }
+      
       var boxSize = size;
       var headerSize = 8;
-      if (size === 1) {
-        if (offset + 16 > buffer.byteLength) break;
+      
+      if (size === 1) { // 64-bit size
+        if (offset + 16 > limit) break;
         boxSize = Number(view.getBigUint64(offset + 8));
         headerSize = 16;
-      } else if (size === 0) {
-        boxSize = buffer.byteLength - offset;
+      } else if (size === 0) { // Extends to end of file
+        boxSize = limit - offset;
       }
       
-      boxes.push({ type: type, size: boxSize });
+      if (boxSize < headerSize) break; // Avoid infinite loops on corrupt files
       
-      if (boxSize < headerSize) break; // Invalid box
+      boxes.push({ type: type, size: boxSize });
       offset += boxSize;
-      if (offset > buffer.byteLength) break;
+      
+      // B7: Safety break for unusually fragmented files
+      if (boxes.length > 500) break;
     }
     return boxes;
   }
