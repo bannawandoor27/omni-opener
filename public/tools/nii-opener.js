@@ -1,6 +1,25 @@
 (function () {
   'use strict';
 
+  function formatBytes(bytes, decimals = 2) {
+    if (!+bytes) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+  }
+
+  function escapeHtml(unsafe) {
+    if (typeof unsafe !== 'string') return unsafe;
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+  }
+
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
@@ -16,7 +35,7 @@
             const header = h.getState().header;
             if (header) {
               const cleanHeader = Object.assign({}, header);
-              delete cleanHeader.extension; // Usually huge binary blob
+              delete cleanHeader.extension; 
               h.copyToClipboard(JSON.stringify(cleanHeader, null, 2), btn);
             }
           }
@@ -29,7 +48,9 @@
             if (header) {
               const cleanHeader = Object.assign({}, header);
               delete cleanHeader.extension;
-              h.download(h.getFile().name.replace(/\.nii(\.gz)?$/, '.json'), JSON.stringify(cleanHeader, null, 2), 'application/json');
+              const jsonStr = JSON.stringify(cleanHeader, null, 2);
+              const blob = new Blob([jsonStr], { type: 'application/json' });
+              h.download(h.getFile().name.replace(/\.nii(\.gz)?$/, '.json'), blob, 'application/json');
             }
           }
         },
@@ -37,49 +58,56 @@
           label: '🖼️ Save Slice',
           id: 'dl-slice',
           onClick: function (h) {
-            const canvas = h.getRenderEl().querySelector('canvas');
+            const canvas = h.getRenderEl().querySelector('#nii-canvas');
             if (canvas) {
-              h.download('nifti-slice.png', canvas.toDataURL('image/png'), 'image/png');
+              canvas.toBlob(function(blob) {
+                h.download('nifti-slice.png', blob, 'image/png');
+              }, 'image/png');
             }
           }
         }
       ],
 
       onInit: function (h) {
-        if (typeof nifti === 'undefined') {
+        if (typeof window.nifti === 'undefined') {
           h.loadScript('https://cdn.jsdelivr.net/npm/fflate@0.8.2/lib/browser.min.js', function () {
             h.loadScript('https://cdn.jsdelivr.net/npm/nifti-reader-js@0.6.6/release/browser/nifti-reader-min.js');
           });
         }
       },
 
-      onFile: function (file, content, h) {
-        if (typeof nifti === 'undefined') {
+      onDestroy: function (h) {
+        // Any specific cleanup for NIfTI can go here
+      },
+
+      onFile: function _onFileFn(file, content, h) {
+        if (typeof window.nifti === 'undefined') {
           h.showLoading('Loading NIfTI engine...');
-          setTimeout(() => h.onFile(file, content, h), 500);
+          setTimeout(function() { _onFileFn(file, content, h); }, 500);
           return;
         }
 
-        h.showLoading('Decompressing and parsing...');
+        h.showLoading('Decompressing and parsing NIfTI...');
 
         setTimeout(() => {
           try {
             let data = content;
-            if (nifti.isCompressed(data)) {
-              data = nifti.decompress(data);
+            if (window.nifti.isCompressed(data)) {
+              data = window.nifti.decompress(data);
             }
 
-            if (!nifti.isNIFTI(data)) {
-              throw new Error('Not a valid NIfTI file');
+            if (!window.nifti.isNIFTI(data)) {
+              h.showError('Could not open nii file', 'The file may be corrupted or in an unsupported variant. Try saving it again and re-uploading.');
+              return;
             }
 
-            const header = nifti.readHeader(data);
-            const image = nifti.readImage(header, data);
+            const header = window.nifti.readHeader(data);
+            const image = window.nifti.readImage(header, data);
 
-            h.setState({ header, image });
+            h.setState({ header, image, file });
             renderNifti(h);
           } catch (err) {
-            h.showError('NIfTI Error', err.message);
+            h.showError('Could not open nii file', 'Error during parsing: ' + err.message);
           }
         }, 50);
       }
@@ -87,8 +115,10 @@
   };
 
   function renderNifti(h) {
-    const header = h.getState().header;
-    const image = h.getState().image;
+    const state = h.getState();
+    const header = state.header;
+    const image = state.image;
+    const file = state.file;
 
     // Dimensions
     const dims = header.dims; // [dim, x, y, z, t, ...]
@@ -97,17 +127,41 @@
     const nz = dims[3] || 1;
     const nt = dims[4] || 1;
 
+    if (nx === 0 || ny === 0) {
+      h.render(`
+        <div class="flex flex-col items-center justify-center py-12 px-4 text-center">
+          <div class="w-16 h-16 bg-surface-100 rounded-full flex items-center justify-center mb-4">
+            <svg class="w-8 h-8 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+          </div>
+          <h3 class="text-lg font-medium text-surface-900 mb-1">Empty NIfTI File</h3>
+          <p class="text-surface-500 max-w-sm">The file was parsed successfully but contains no image dimensions.</p>
+        </div>
+      `);
+      return;
+    }
+
+    const fileSizeStr = formatBytes(file.size);
+
     const html = `
-      <div class="flex flex-col lg:flex-row gap-6 p-6 bg-surface-50 min-h-[600px]">
+      <!-- File Info Bar -->
+      <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">
+        <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
+        <span class="text-surface-300">|</span>
+        <span>${fileSizeStr}</span>
+        <span class="text-surface-300">|</span>
+        <span class="text-surface-500">.nii NIfTI Image</span>
+      </div>
+
+      <div class="flex flex-col lg:flex-row gap-6 p-6 bg-surface-50 min-h-[600px] rounded-xl border border-surface-200">
         <!-- Viewer -->
         <div class="flex-1 flex flex-col gap-4">
           <div class="bg-surface-900 rounded-xl border border-surface-200 shadow-inner flex items-center justify-center overflow-hidden relative" style="min-height: 500px;">
             <canvas id="nii-canvas" class="max-w-full max-h-full image-pixelated"></canvas>
             <div class="absolute bottom-4 left-4 flex gap-2">
-               <div class="bg-black/60 backdrop-blur px-3 py-1.5 rounded-lg text-white text-[10px] font-mono border border-white/20">
+               <div class="bg-black/60 backdrop-blur px-3 py-1.5 rounded-lg text-white text-[10px] font-mono border border-white/20 shadow-sm">
                   ${nx} x ${ny} x ${nz} ${nt > 1 ? ' x ' + nt : ''}
                </div>
-               <div id="slice-label" class="bg-brand-600/80 backdrop-blur px-3 py-1.5 rounded-lg text-white text-[10px] font-mono border border-brand-400/20">
+               <div id="slice-label" class="bg-brand-600/80 backdrop-blur px-3 py-1.5 rounded-lg text-white text-[10px] font-mono border border-brand-400/20 shadow-sm">
                   Slice: 1 / ${nz}
                </div>
             </div>
@@ -118,7 +172,7 @@
              <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div class="space-y-1">
                    <label class="text-[10px] font-bold text-surface-400 uppercase">View Plane</label>
-                   <select id="view-plane" class="w-full text-xs p-2 bg-surface-50 border border-surface-200 rounded-lg">
+                   <select id="view-plane" class="w-full text-xs p-2 bg-surface-50 border border-surface-200 rounded-lg outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all">
                       <option value="axial">Axial (X-Y)</option>
                       <option value="sagittal">Sagittal (Y-Z)</option>
                       <option value="coronal">Coronal (X-Z)</option>
@@ -126,15 +180,15 @@
                 </div>
                 <div class="space-y-1">
                    <label class="text-[10px] font-bold text-surface-400 uppercase">Slice Index</label>
-                   <input type="range" id="slice-range" class="w-full h-2 bg-surface-100 rounded-lg appearance-none cursor-pointer accent-brand-600">
+                   <input type="range" id="slice-range" class="w-full h-2 bg-surface-100 rounded-lg appearance-none cursor-pointer accent-brand-600 outline-none focus:ring-2 focus:ring-brand-500">
                 </div>
                 <div class="space-y-1">
                    <label class="text-[10px] font-bold text-surface-400 uppercase">Contrast</label>
-                   <input type="range" id="contrast-range" min="0.1" max="5" step="0.1" value="1" class="w-full h-2 bg-surface-100 rounded-lg appearance-none cursor-pointer accent-brand-600">
+                   <input type="range" id="contrast-range" min="0.1" max="5" step="0.1" value="1" class="w-full h-2 bg-surface-100 rounded-lg appearance-none cursor-pointer accent-brand-600 outline-none focus:ring-2 focus:ring-brand-500">
                 </div>
                 <div class="space-y-1">
                    <label class="text-[10px] font-bold text-surface-400 uppercase">Brightness</label>
-                   <input type="range" id="brightness-range" min="-100" max="100" step="1" value="0" class="w-full h-2 bg-surface-100 rounded-lg appearance-none cursor-pointer accent-brand-600">
+                   <input type="range" id="brightness-range" min="-100" max="100" step="1" value="0" class="w-full h-2 bg-surface-100 rounded-lg appearance-none cursor-pointer accent-brand-600 outline-none focus:ring-2 focus:ring-brand-500">
                 </div>
              </div>
           </div>
@@ -149,27 +203,27 @@
               <div class="flex-1 overflow-auto p-4 space-y-4">
                  <div>
                     <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Dimensions</div>
-                    <div class="text-xs text-surface-700 font-mono">${dims.slice(1, dims[0] + 1).join(' x ')}</div>
+                    <div class="text-xs text-surface-700 font-mono bg-surface-50 p-2 rounded border border-surface-100">${dims.slice(1, dims[0] + 1).join(' x ')}</div>
                  </div>
                  <div>
                     <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Voxel Size</div>
-                    <div class="text-xs text-surface-700 font-mono">${header.pixDims.slice(1, dims[0] + 1).map(d => d.toFixed(2)).join(' x ')}</div>
+                    <div class="text-xs text-surface-700 font-mono bg-surface-50 p-2 rounded border border-surface-100">${header.pixDims.slice(1, dims[0] + 1).map(d => d.toFixed(2)).join(' x ')}</div>
                  </div>
                  <div>
                     <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Datatype</div>
-                    <div class="text-xs text-surface-700 font-mono">${getDataTypeName(header.datatypeCode)} (${header.numBitsPerVoxel} bits)</div>
+                    <div class="text-xs text-surface-700 font-mono bg-surface-50 p-2 rounded border border-surface-100">${getDataTypeName(header.datatypeCode)} (${header.numBitsPerVoxel} bits)</div>
                  </div>
                  <div>
                     <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Units</div>
-                    <div class="text-xs text-surface-700 font-mono">${getUnits(header.xyzt_units)}</div>
+                    <div class="text-xs text-surface-700 font-mono bg-surface-50 p-2 rounded border border-surface-100">${getUnits(header.xyzt_units)}</div>
                  </div>
                  <div class="pt-4 border-t border-surface-100">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-2 text-surface-400">Attributes</div>
+                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-2">Attributes</div>
                     <div class="space-y-2">
                        ${['description', 'aux_file', 'intent_name'].map(key => header[key] && header[key].trim() ? `
-                          <div>
-                             <div class="text-[9px] text-surface-400 font-medium">${key}</div>
-                             <div class="text-[11px] text-surface-600 truncate" title="${header[key]}">${header[key]}</div>
+                          <div class="bg-surface-50 p-2 rounded border border-surface-100">
+                             <div class="text-[9px] text-surface-400 font-medium uppercase tracking-wider mb-0.5">${key}</div>
+                             <div class="text-[11px] text-surface-600 truncate" title="${escapeHtml(header[key])}">${escapeHtml(header[key])}</div>
                           </div>
                        ` : '').join('')}
                     </div>
@@ -275,10 +329,10 @@
       sliceLabel.textContent = `Slice: ${sliceIdx + 1} / ${parseInt(sliceRange.max) + 1}`;
     }
 
-    viewPlane.onchange = (e) => { plane = e.target.value; updateRange(); draw(); };
-    sliceRange.oninput = (e) => { sliceIdx = parseInt(e.target.value); draw(); };
-    contrastRange.oninput = (e) => { contrast = parseFloat(e.target.value); draw(); };
-    brightnessRange.oninput = (e) => { brightness = parseFloat(e.target.value); draw(); };
+    viewPlane.addEventListener('change', (e) => { plane = e.target.value; updateRange(); draw(); });
+    sliceRange.addEventListener('input', (e) => { sliceIdx = parseInt(e.target.value, 10); draw(); });
+    contrastRange.addEventListener('input', (e) => { contrast = parseFloat(e.target.value); draw(); });
+    brightnessRange.addEventListener('input', (e) => { brightness = parseFloat(e.target.value); draw(); });
 
     updateRange();
     draw();
