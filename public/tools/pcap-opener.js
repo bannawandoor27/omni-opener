@@ -2,40 +2,37 @@
   'use strict';
 
   window.initTool = function (toolConfig, mountEl) {
-    let _pakoPromise = null;
-    let _cleanup = null;
+    let _pako = null;
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.pcap,.pcapng,.cap,.gz',
       binary: true,
-      dropLabel: 'Drop a packet capture (PCAP/PCAPNG)',
-      infoHtml: 'Professional browser-based packet analyzer. Decodes Ethernet, IPv4, IPv6, TCP, UDP, ICMP, ARP, DNS, and more. 100% private, local processing.',
+      dropLabel: 'Drop a network capture (PCAP/PCAPNG)',
+      infoHtml: 'Professional browser-based packet analyzer. Supports PCAP and PCAPNG formats with protocol decoding for Ethernet, IPv4/v6, TCP, UDP, ICMP, DNS, and more. All parsing happens locally for maximum privacy.',
 
       actions: [
         {
           label: '📋 Copy JSON',
           id: 'copy-json',
           onClick: function (h, btn) {
-            const state = h.getState();
-            if (!state.packets || state.packets.length === 0) {
-              h.showError('No packets to copy', 'Please load a valid PCAP file first.');
-              return;
-            }
-            h.showLoading('Preparing JSON export...');
-            setTimeout(function() {
+            const { packets } = h.getState();
+            if (!packets || packets.length === 0) return h.showError('No data', 'Load a capture file first.');
+            
+            h.showLoading('Formatting JSON (Top 5,000)...');
+            setTimeout(() => {
               try {
-                const data = JSON.stringify(state.packets.slice(0, 5000).map(p => ({
+                const exportData = packets.slice(0, 5000).map(p => ({
                   no: p.num,
                   time: p.time.toFixed(6),
-                  source: p.src,
-                  destination: p.dst,
-                  protocol: p.proto,
-                  length: p.len,
+                  src: p.src,
+                  dst: p.dst,
+                  proto: p.proto,
+                  len: p.len,
                   info: p.info
-                })), null, 2);
-                h.copyToClipboard(data, btn);
+                }));
+                h.copyToClipboard(JSON.stringify(exportData, null, 2), btn);
               } catch (e) {
-                h.showError('Export failed', 'The capture might be too large for JSON serialization.');
+                h.showError('Copy failed', 'The dataset is too large to copy as JSON.');
               } finally {
                 h.hideLoading();
               }
@@ -43,28 +40,32 @@
           }
         },
         {
-          label: '📥 Export CSV',
-          id: 'export-csv',
+          label: '📥 Download CSV',
+          id: 'download-csv',
           onClick: function (h) {
-            const state = h.getState();
-            if (!state.packets || state.packets.length === 0) return;
+            const { packets, fileName } = h.getState();
+            if (!packets || packets.length === 0) return;
+            
             h.showLoading('Generating CSV...');
-            setTimeout(function() {
+            setTimeout(() => {
               try {
-                const headers = ['No.', 'Time', 'Source', 'Destination', 'Protocol', 'Length', 'Info'];
-                const rows = state.packets.slice(0, 10000).map(p => [
+                const head = ['No.', 'Time', 'Source', 'Destination', 'Protocol', 'Length', 'Info'];
+                const rows = packets.map(p => [
                   p.num,
                   p.time.toFixed(6),
                   `"${p.src}"`,
                   `"${p.dst}"`,
                   p.proto,
                   p.len,
-                  `"${p.info.replace(/"/g, '""')}"`
+                  `"${(p.info || '').replace(/"/g, '""')}"`
                 ]);
-                const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-                h.download(`${(state.fileName || 'capture').replace(/\.[^/.]+$/, '')}.csv`, csv, 'text/csv');
+                const csvContent = [head.join(','), ...rows.map(r => r.join(','))].join('\n');
+                const name = (fileName || 'capture').replace(/\.[^/.]+$/, '') + '.csv';
+                
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                h.download(name, blob, 'text/csv');
               } catch (e) {
-                h.showError('CSV Export failed', 'An error occurred during generation.');
+                h.showError('Download failed', 'Could not generate CSV file.');
               } finally {
                 h.hideLoading();
               }
@@ -74,15 +75,18 @@
       ],
 
       onInit: function (h) {
-        _pakoPromise = new Promise((resolve) => {
-          if (typeof window.pako !== 'undefined') return resolve(window.pako);
+        if (typeof window.pako === 'undefined') {
           h.loadScript('https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js', () => {
-            resolve(window.pako);
+            _pako = window.pako;
           });
-        });
+        } else {
+          _pako = window.pako;
+        }
       },
 
       onFile: async function _onFileFn(file, content, h) {
+        h.showLoading('Analyzing network capture...');
+        
         h.setState({
           fileName: file.name,
           fileSize: file.size,
@@ -96,51 +100,64 @@
           perPage: 100
         });
 
-        h.showLoading('Decompressing capture...');
-
         try {
           let buffer = content;
           if (!(buffer instanceof ArrayBuffer)) {
-            // Ensure we have an ArrayBuffer if SDK passed something else (rare)
             if (buffer.buffer instanceof ArrayBuffer) buffer = buffer.buffer;
+            else throw new Error('Invalid binary data provided.');
           }
 
-          const magicBytes = new Uint8Array(buffer.slice(0, 2));
-          const isGzip = file.name.endsWith('.gz') || (magicBytes[0] === 0x1F && magicBytes[1] === 0x8B);
+          if (buffer.byteLength < 24) throw new Error('File is too small to be a valid PCAP capture.');
+
+          const magicView = new Uint8Array(buffer.slice(0, 4));
+          const isGzip = (magicView[0] === 0x1F && magicView[1] === 0x8B);
           
           if (isGzip) {
-            const pakoLib = await _pakoPromise;
-            if (!pakoLib) throw new Error('Decompression library failed to load.');
-            buffer = pakoLib.ungzip(new Uint8Array(buffer)).buffer;
+            h.showLoading('Decompressing GZIP capture...');
+            if (!_pako) {
+              await new Promise((resolve, reject) => {
+                let attempts = 0;
+                const check = () => { 
+                  if (window.pako) { _pako = window.pako; resolve(); }
+                  else if (attempts++ > 100) reject(new Error('Pako library failed to load'));
+                  else setTimeout(check, 50); 
+                };
+                check();
+              });
+            }
+            try {
+              buffer = _pako.ungzip(new Uint8Array(buffer)).buffer;
+            } catch (e) {
+              throw new Error('Failed to decompress GZIP file.');
+            }
           }
 
-          h.showLoading('Analyzing packet frames...');
-          await new Promise(r => setTimeout(r, 20)); // UI breathe
+          h.showLoading('Decoding packets...');
+          await new Promise(r => setTimeout(r, 16));
           
-          const result = await parsePcap(buffer);
+          const result = await parsePcapData(buffer);
           
           if (!result.packets || result.packets.length === 0) {
             h.hideLoading();
-            renderEmptyState(h);
+            renderEmptyView(h);
             return;
           }
 
           h.setState('packets', result.packets);
           h.hideLoading();
-          renderUI(h);
+          renderMainUI(h);
         } catch (err) {
           console.error('[PCAP] Error:', err);
-          h.showError('Could not open PCAP file', 'The file may be corrupted, encrypted, or in an unsupported format. Standard PCAP or PCAPNG files are required.');
+          h.showError('Could not open capture', err.message || 'The file may be corrupted or in an unsupported format.');
         }
       },
 
       onDestroy: function (h) {
-        if (_cleanup) _cleanup();
         h.setState({ packets: [], selectedPacket: null });
       }
     });
 
-    function renderUI(h) {
+    function renderMainUI(h) {
       const state = h.getState();
       const packets = state.packets || [];
       const filter = (state.filter || '').toLowerCase();
@@ -148,7 +165,6 @@
       const sortCol = state.sortCol || 'num';
       const sortDir = state.sortDir || 1;
 
-      // Filtering
       const filtered = packets.filter(p => {
         const matchesText = !filter || 
           p.src.toLowerCase().includes(filter) || 
@@ -159,25 +175,23 @@
         return matchesText && matchesProto;
       });
 
-      // Sorting
-      filtered.sort((a, b) => {
-        let valA = a[sortCol];
-        let valB = b[sortCol];
-        if (typeof valA === 'string') {
-          valA = valA.toLowerCase();
-          valB = valB.toLowerCase();
-        }
-        if (valA < valB) return -1 * sortDir;
-        if (valA > valB) return 1 * sortDir;
-        return 0;
-      });
+      if (sortCol) {
+        filtered.sort((a, b) => {
+          let valA = a[sortCol];
+          let valB = b[sortCol];
+          if (typeof valA === 'string') {
+            valA = valA.toLowerCase();
+            valB = valB.toLowerCase();
+          }
+          return valA < valB ? -1 * sortDir : valA > valB ? 1 * sortDir : 0;
+        });
+      }
 
-      // Pagination
       const page = state.page || 1;
       const perPage = state.perPage || 100;
       const totalPages = Math.ceil(filtered.length / perPage);
-      const start = (page - 1) * perPage;
-      const currentPackets = filtered.slice(start, start + perPage);
+      const startIdx = (page - 1) * perPage;
+      const currentPackets = filtered.slice(startIdx, startIdx + perPage);
 
       const protos = {};
       packets.forEach(p => protos[p.proto] = (protos[p.proto] || 0) + 1);
@@ -186,86 +200,91 @@
       const html = `
         <div class="animate-in fade-in duration-500">
           <!-- U1. File info bar -->
-          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100">
-            <span class="font-semibold text-surface-800">${escapeHtml(state.fileName)}</span>
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">
+            <span class="font-semibold text-surface-800">${esc(state.fileName)}</span>
             <span class="text-surface-300">|</span>
-            <span>${formatSize(state.fileSize)}</span>
+            <span>${fmtSize(state.fileSize)}</span>
             <span class="text-surface-300">|</span>
-            <span class="text-surface-500">${packets.length.toLocaleString()} packets detected</span>
+            <span class="text-surface-500">.pcap capture</span>
+            <span class="text-surface-300 ml-auto hidden md:inline">|</span>
+            <span class="font-medium text-surface-700 hidden md:inline">${packets.length.toLocaleString()} packets</span>
           </div>
 
-          <!-- Summary Stats -->
-          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
+          <!-- U10. Section header with count -->
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold text-surface-800">Protocol Distribution</h3>
+            <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${sortedProtos.length} protocols found</span>
+          </div>
+
+          <!-- U9. Content cards for quick filters -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-8">
             ${sortedProtos.slice(0, 6).map(([proto, count]) => `
-              <div class="px-3 py-2 bg-white border border-surface-100 rounded-lg shadow-sm">
-                <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">${proto}</div>
-                <div class="text-lg font-bold text-surface-800">${count.toLocaleString()}</div>
+              <div class="p-4 bg-white border border-surface-200 rounded-xl shadow-sm hover:border-brand-300 hover:shadow-md transition-all cursor-pointer proto-quick-filter group ${protoFilter === proto ? 'ring-2 ring-brand-500 border-brand-500' : ''}" data-proto="${proto}">
+                <div class="text-[10px] font-bold text-surface-400 uppercase tracking-widest group-hover:text-brand-500 transition-colors">${proto}</div>
+                <div class="text-xl font-bold text-surface-800">${count.toLocaleString()}</div>
+                <div class="w-full bg-surface-100 h-1 mt-2 rounded-full overflow-hidden">
+                  <div class="h-full bg-brand-500" style="width: ${Math.max(5, (count / packets.length) * 100)}%"></div>
+                </div>
               </div>
             `).join('')}
           </div>
 
-          <!-- Controls Section -->
           <div class="flex flex-col md:flex-row gap-4 mb-6">
-            <div class="flex-grow">
-              <div class="relative">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg class="h-4 w-4 text-surface-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
-                <input type="text" id="pcap-search" placeholder="Search by IP, Protocol, or Info text..." 
-                  class="block w-full pl-10 pr-4 py-2.5 bg-white border border-surface-200 rounded-xl text-sm focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none transition-all"
-                  value="${escapeHtml(state.filter || '')}">
+            <!-- Search/Filter -->
+            <div class="relative flex-grow">
+              <input type="text" id="pcap-search-input" placeholder="Live search by IP, Protocol, or Content..." 
+                class="block w-full pl-10 pr-4 py-3 bg-white border border-surface-200 rounded-xl text-sm focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none transition-all"
+                value="${esc(state.filter || '')}">
+              <div class="absolute left-3.5 top-3.5 text-surface-400">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
               </div>
             </div>
             <div class="w-full md:w-64">
-              <select id="proto-select" class="block w-full px-4 py-2.5 bg-white border border-surface-200 rounded-xl text-sm focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none transition-all cursor-pointer">
-                <option value="ALL" ${protoFilter === 'ALL' ? 'selected' : ''}>All Protocols</option>
+              <select id="pcap-proto-filter" class="block w-full px-4 py-3 bg-white border border-surface-200 rounded-xl text-sm focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none transition-all cursor-pointer">
+                <option value="ALL">All Protocols</option>
                 ${sortedProtos.map(([proto, count]) => `<option value="${proto}" ${protoFilter === proto ? 'selected' : ''}>${proto} (${count})</option>`).join('')}
               </select>
             </div>
           </div>
 
-          <!-- U10. Section headers with counts -->
           <div class="flex items-center justify-between mb-3">
-            <h3 class="font-semibold text-surface-800 flex items-center gap-2">
-              Captured Traffic
-            </h3>
-            <span class="text-xs font-medium bg-brand-100 text-brand-700 px-2.5 py-1 rounded-full">${filtered.length.toLocaleString()} matches</span>
+            <h3 class="font-semibold text-surface-800">Traffic Details</h3>
+            <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${filtered.length.toLocaleString()} matching</span>
           </div>
 
-          <!-- U7. Tables -->
-          <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white shadow-sm mb-4">
-            <table class="min-w-full text-sm font-mono border-collapse">
+          <!-- U7. Table styling -->
+          <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white">
+            <table class="min-w-full text-sm font-mono">
               <thead>
-                <tr class="bg-surface-50">
-                  ${renderHeader('No.', 'num', sortCol, sortDir)}
-                  ${renderHeader('Time', 'time', sortCol, sortDir)}
-                  ${renderHeader('Source', 'src', sortCol, sortDir)}
-                  ${renderHeader('Destination', 'dst', sortCol, sortDir)}
-                  ${renderHeader('Protocol', 'proto', sortCol, sortDir)}
-                  ${renderHeader('Length', 'len', sortCol, sortDir)}
-                  <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200">Info</th>
+                <tr class="bg-white">
+                  ${renderTh('No.', 'num', sortCol, sortDir)}
+                  ${renderTh('Time', 'time', sortCol, sortDir)}
+                  ${renderTh('Source', 'src', sortCol, sortDir)}
+                  ${renderTh('Destination', 'dst', sortCol, sortDir)}
+                  ${renderTh('Protocol', 'proto', sortCol, sortDir)}
+                  ${renderTh('Length', 'len', sortCol, sortDir)}
+                  <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 font-sans">Info</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-surface-100">
                 ${currentPackets.length === 0 ? `
                   <tr>
                     <td colspan="7" class="px-4 py-16 text-center text-surface-400 font-sans italic">
-                      No matching packets found.
+                      <div class="mb-2">No packets match your search filters.</div>
+                      <button id="pcap-clear-filters" class="text-brand-600 font-semibold text-xs hover:underline">Clear all filters</button>
                     </td>
                   </tr>
                 ` : currentPackets.map(p => `
-                  <tr class="packet-row group transition-colors cursor-pointer even:bg-surface-50/50 hover:bg-brand-50 ${state.selectedPacket?.num === p.num ? 'bg-brand-50/80' : ''}" data-num="${p.num}">
-                    <td class="px-4 py-2.5 text-surface-400">${p.num}</td>
-                    <td class="px-4 py-2.5 text-surface-500 whitespace-nowrap">${p.time.toFixed(4)}</td>
-                    <td class="px-4 py-2.5 text-surface-900 font-medium whitespace-nowrap">${escapeHtml(p.src)}</td>
-                    <td class="px-4 py-2.5 text-surface-900 font-medium whitespace-nowrap">${escapeHtml(p.dst)}</td>
+                  <tr class="packet-row hover:bg-brand-50/50 transition-colors cursor-pointer even:bg-surface-50/30 ${state.selectedPacket?.num === p.num ? 'bg-brand-50 ring-2 ring-inset ring-brand-200' : ''}" data-num="${p.num}">
+                    <td class="px-4 py-2.5 text-surface-400 text-[11px]">${p.num}</td>
+                    <td class="px-4 py-2.5 text-surface-500 whitespace-nowrap text-[11px]">${p.time.toFixed(6)}</td>
+                    <td class="px-4 py-2.5 text-surface-800 font-medium whitespace-nowrap">${esc(p.src)}</td>
+                    <td class="px-4 py-2.5 text-surface-800 font-medium whitespace-nowrap">${esc(p.dst)}</td>
                     <td class="px-4 py-2.5">
-                      <span class="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${getProtoClass(p.proto)}">${p.proto}</span>
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${getStyle(p.proto)}">${p.proto}</span>
                     </td>
                     <td class="px-4 py-2.5 text-surface-500">${p.len}</td>
-                    <td class="px-4 py-2.5 text-surface-600 truncate max-w-[200px] xl:max-w-md" title="${escapeHtml(p.info)}">${escapeHtml(p.info)}</td>
+                    <td class="px-4 py-2.5 text-surface-600 truncate max-w-xs xl:max-w-lg font-sans text-xs" title="${esc(p.info)}">${esc(p.info)}</td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -274,51 +293,70 @@
 
           <!-- Pagination -->
           ${totalPages > 1 ? `
-            <div class="flex items-center justify-between px-4 py-3 bg-white border border-surface-200 rounded-xl mb-8">
-              <div class="text-xs text-surface-500">
-                Showing <span class="font-bold">${start + 1}</span> to <span class="font-bold">${Math.min(start + perPage, filtered.length)}</span> of <span class="font-bold">${filtered.length}</span> packets
+            <div class="flex items-center justify-between px-6 py-4 mt-6 bg-surface-50 rounded-xl">
+              <div class="text-xs text-surface-500 font-medium">
+                Showing <span class="text-surface-900 font-bold">${(startIdx + 1).toLocaleString()}</span> to <span class="text-surface-900 font-bold">${Math.min(startIdx + perPage, filtered.length).toLocaleString()}</span> of <span class="text-surface-900 font-bold">${filtered.length.toLocaleString()}</span>
               </div>
               <div class="flex gap-2">
-                <button id="prev-page" class="px-3 py-1.5 text-xs font-semibold bg-white border border-surface-200 rounded-lg hover:bg-surface-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all" ${page === 1 ? 'disabled' : ''}>Previous</button>
-                <button id="next-page" class="px-3 py-1.5 text-xs font-semibold bg-white border border-surface-200 rounded-lg hover:bg-surface-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all" ${page === totalPages ? 'disabled' : ''}>Next</button>
+                <button id="pcap-prev-page" class="px-4 py-2 text-xs font-bold bg-white border border-surface-200 rounded-lg hover:bg-surface-100 disabled:opacity-40 transition-all shadow-sm" ${page === 1 ? 'disabled' : ''}>Previous</button>
+                <div class="flex items-center px-4 text-xs font-bold text-surface-400">Page ${page} of ${totalPages}</div>
+                <button id="pcap-next-page" class="px-4 py-2 text-xs font-bold bg-white border border-surface-200 rounded-lg hover:bg-surface-100 disabled:opacity-40 transition-all shadow-sm" ${page === totalPages ? 'disabled' : ''}>Next</button>
               </div>
             </div>
           ` : ''}
 
           <!-- Packet Inspector -->
-          <div id="inspector" class="${state.selectedPacket ? 'block' : 'hidden'} mt-8 animate-in slide-in-from-bottom-4 duration-300">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="font-bold text-surface-800 flex items-center gap-2">
-                <span class="w-6 h-6 rounded bg-brand-600 text-white text-[10px] flex items-center justify-center font-mono">#${state.selectedPacket?.num}</span>
-                Packet Details
-              </h3>
-              <button id="close-inspector" class="text-surface-400 hover:text-surface-600 transition-colors">
+          <div id="pcap-inspector" class="${state.selectedPacket ? 'block' : 'hidden'} mt-10 space-y-6 animate-in slide-in-from-bottom-6 duration-300 scroll-mt-8">
+            <div class="flex items-center justify-between border-b border-surface-200 pb-4">
+              <div class="flex items-center gap-4">
+                <div class="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                </div>
+                <div>
+                  <h3 class="text-lg font-bold text-surface-900 leading-tight">Packet Details #${state.selectedPacket?.num}</h3>
+                  <div class="flex items-center gap-2 mt-1">
+                    <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase ${getStyle(state.selectedPacket?.proto)}">${state.selectedPacket?.proto}</span>
+                    <span class="text-[10px] text-surface-400 font-medium">Captured at T+${state.selectedPacket?.time.toFixed(6)}s</span>
+                  </div>
+                </div>
+              </div>
+              <button id="pcap-close-inspector" class="p-2 text-surface-400 hover:text-surface-600 hover:bg-surface-100 rounded-xl transition-all">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div class="lg:col-span-2 space-y-4">
-                <!-- U8. Code/pre blocks -->
-                <div class="rounded-xl overflow-hidden border border-surface-200 bg-gray-950 shadow-sm">
-                  <div class="px-4 py-2 bg-gray-900 border-b border-gray-800 flex justify-between items-center">
-                    <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Hex Dump</span>
-                    <button id="copy-hex" class="text-[10px] font-bold text-brand-400 hover:text-brand-300 transition-all uppercase">Copy Bytes</button>
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+              <div class="xl:col-span-2 space-y-4">
+                <div class="flex items-center justify-between">
+                  <h4 class="text-xs font-bold text-surface-500 uppercase tracking-widest">Hex & ASCII Dump</h4>
+                  <div class="flex gap-2">
+                    <button id="pcap-download-raw" class="px-3 py-1 bg-surface-100 hover:bg-surface-200 text-surface-600 rounded-lg text-[10px] font-bold uppercase transition-colors">Raw Bin</button>
+                    <button id="pcap-copy-hex" class="px-3 py-1 bg-surface-100 hover:bg-surface-200 text-surface-600 rounded-lg text-[10px] font-bold uppercase transition-colors">Copy Hex</button>
                   </div>
-                  <pre id="hex-view" class="p-4 text-[10px] md:text-xs font-mono text-gray-300 overflow-x-auto leading-relaxed"></pre>
+                </div>
+                <!-- U8. Pre block styling -->
+                <div class="rounded-2xl overflow-hidden border border-surface-200 bg-gray-950 shadow-lg">
+                  <pre class="p-5 text-[11px] font-mono text-gray-300 overflow-x-auto leading-relaxed selection:bg-brand-500/30" id="pcap-hex-view"></pre>
                 </div>
               </div>
 
-              <div class="space-y-4">
-                <!-- U9. Content cards -->
-                <div class="rounded-xl border border-surface-200 p-5 bg-white shadow-sm hover:border-brand-300 transition-all">
-                  <h4 class="text-[11px] font-bold text-surface-400 uppercase tracking-widest mb-4">Protocol Analysis</h4>
-                  <div id="inspector-analysis" class="space-y-4"></div>
+              <div class="space-y-6">
+                <!-- U9. Content cards for analysis -->
+                <div class="rounded-2xl border border-surface-200 p-5 bg-white shadow-sm">
+                  <h4 class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-4 border-b border-surface-50 pb-2">Protocol Analysis</h4>
+                  <div class="space-y-5" id="pcap-analysis-content"></div>
                 </div>
                 
-                <div class="rounded-xl border border-surface-200 p-5 bg-surface-50 shadow-sm text-xs font-mono">
-                  <h4 class="text-[11px] font-bold font-sans text-surface-400 uppercase tracking-widest mb-4">Metadata</h4>
-                  <div id="inspector-meta" class="space-y-2 text-surface-600"></div>
+                <div class="rounded-2xl border border-surface-200 p-5 bg-surface-50/50">
+                  <h4 class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-4 border-b border-surface-100 pb-2">Frame Metadata</h4>
+                  <div id="pcap-meta-content" class="space-y-3 text-[11px] font-mono"></div>
+                </div>
+
+                <div class="p-4 bg-brand-50 rounded-2xl border border-brand-100 flex items-start gap-3">
+                  <div class="text-brand-600 mt-0.5">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  </div>
+                  <p class="text-[11px] text-brand-800 leading-relaxed font-medium">This packet was decoded locally in your browser. No data was sent to any server.</p>
                 </div>
               </div>
             </div>
@@ -330,81 +368,108 @@
 
       const el = h.getRenderEl();
 
-      // Events
-      const searchInput = el.querySelector('#pcap-search');
+      const searchInput = el.querySelector('#pcap-search-input');
       if (searchInput) {
-        let timeout;
+        let debounceTimer;
         searchInput.oninput = (e) => {
-          clearTimeout(timeout);
-          timeout = setTimeout(() => {
-            h.setState({ filter: e.target.value, page: 1 });
-            renderUI(h);
-            const input = h.getRenderEl().querySelector('#pcap-search');
+          const val = e.target.value;
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            h.setState({ filter: val, page: 1 });
+            renderMainUI(h);
+            const input = h.getRenderEl().querySelector('#pcap-search-input');
             if (input) {
               input.focus();
-              input.setSelectionRange(e.target.value.length, e.target.value.length);
+              input.setSelectionRange(val.length, val.length);
             }
           }, 300);
         };
       }
 
-      const protoSelect = el.querySelector('#proto-select');
-      if (protoSelect) {
-        protoSelect.onchange = (e) => {
-          h.setState({ protoFilter: e.target.value, page: 1 });
-          renderUI(h);
-        };
-      }
+      el.querySelector('#pcap-proto-filter')?.addEventListener('change', (e) => {
+        h.setState({ protoFilter: e.target.value, page: 1 });
+        renderMainUI(h);
+      });
 
-      el.querySelectorAll('.sort-header').forEach(header => {
+      el.querySelector('#pcap-clear-filters')?.addEventListener('click', () => {
+        h.setState({ filter: '', protoFilter: 'ALL', page: 1 });
+        renderMainUI(h);
+      });
+
+      el.querySelectorAll('.proto-quick-filter').forEach(card => {
+        card.onclick = () => {
+          const proto = card.dataset.proto;
+          h.setState({ protoFilter: proto === state.protoFilter ? 'ALL' : proto, page: 1 });
+          renderMainUI(h);
+        };
+      });
+
+      el.querySelectorAll('.sortable-header').forEach(header => {
         header.onclick = () => {
           const col = header.dataset.col;
-          const currentDir = h.getState().sortDir || 1;
-          const currentCol = h.getState().sortCol;
           h.setState({ 
             sortCol: col, 
-            sortDir: currentCol === col ? currentDir * -1 : 1,
+            sortDir: state.sortCol === col ? state.sortDir * -1 : 1,
             page: 1
           });
-          renderUI(h);
+          renderMainUI(h);
         };
       });
 
       el.querySelectorAll('.packet-row').forEach(row => {
         row.onclick = () => {
           const num = parseInt(row.dataset.num);
-          const packet = packets.find(p => p.num === num);
+          const packet = packets.find(x => x.num === num);
           if (packet) {
             h.setState('selectedPacket', packet);
-            renderUI(h);
-            const inspector = h.getRenderEl().querySelector('#inspector');
+            renderMainUI(h);
+            const inspector = h.getRenderEl().querySelector('#pcap-inspector');
             if (inspector) inspector.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
         };
       });
 
-      const closeBtn = el.querySelector('#close-inspector');
-      if (closeBtn) closeBtn.onclick = () => { h.setState('selectedPacket', null); renderUI(h); };
+      el.querySelector('#pcap-close-inspector')?.addEventListener('click', () => { 
+        h.setState('selectedPacket', null); 
+        renderMainUI(h); 
+      });
 
-      const prevBtn = el.querySelector('#prev-page');
-      if (prevBtn) prevBtn.onclick = () => { h.setState('page', Math.max(1, page - 1)); renderUI(h); };
+      el.querySelector('#pcap-prev-page')?.addEventListener('click', () => { 
+        h.setState('page', Math.max(1, (state.page || 1) - 1)); 
+        renderMainUI(h); 
+      });
 
-      const nextBtn = el.querySelector('#next-page');
-      if (nextBtn) nextBtn.onclick = () => { h.setState('page', Math.min(totalPages, page + 1)); renderUI(h); };
+      el.querySelector('#pcap-next-page')?.addEventListener('click', () => { 
+        h.setState('page', Math.min(totalPages, (state.page || 1) + 1)); 
+        renderMainUI(h); 
+      });
 
-      if (h.getState().selectedPacket) {
-        updateInspector(h.getState().selectedPacket, h);
+      el.querySelector('#pcap-copy-hex')?.addEventListener('click', (e) => {
+        if (!state.selectedPacket) return;
+        const hex = Array.from(state.selectedPacket.data).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+        h.copyToClipboard(hex, e.target);
+      });
+
+      el.querySelector('#pcap-download-raw')?.addEventListener('click', () => {
+        if (!state.selectedPacket) return;
+        const p = state.selectedPacket;
+        const blob = new Blob([p.data], { type: 'application/octet-stream' });
+        h.download(`packet_${p.num}.bin`, blob, 'application/octet-stream');
+      });
+
+      if (state.selectedPacket) {
+        updateInspector(state.selectedPacket, h);
       }
     }
 
-    function renderHeader(label, col, currentCol, currentDir) {
+    function renderTh(label, col, currentCol, currentDir) {
       const isSorted = currentCol === col;
       return `
-        <th class="sort-header sticky top-0 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors group" data-col="${col}">
-          <div class="flex items-center gap-1">
+        <th class="sortable-header sticky top-0 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 group transition-all font-sans" data-col="${col}">
+          <div class="flex items-center gap-2">
             ${label}
-            <span class="text-[10px] ${isSorted ? 'text-brand-600' : 'text-surface-300 opacity-0 group-hover:opacity-100'}">
-              ${isSorted ? (currentDir === 1 ? '▲' : '▼') : '▲'}
+            <span class="text-[10px] ${isSorted ? 'text-brand-600 opacity-100' : 'text-surface-300 opacity-0 group-hover:opacity-100'} transition-all transform ${isSorted && currentDir === -1 ? 'rotate-180' : ''}">
+              ▲
             </span>
           </div>
         </th>
@@ -413,126 +478,116 @@
 
     function updateInspector(packet, h) {
       const el = h.getRenderEl();
-      const hexView = el.querySelector('#hex-view');
-      const analysis = el.querySelector('#inspector-analysis');
-      const meta = el.querySelector('#inspector-meta');
+      const hexView = el.querySelector('#pcap-hex-view');
+      const analysis = el.querySelector('#pcap-analysis-content');
+      const meta = el.querySelector('#pcap-meta-content');
       
       if (!hexView) return;
 
-      let hexLines = [];
+      const lines = [];
       const data = packet.data;
       for (let i = 0; i < data.length; i += 16) {
         const chunk = data.slice(i, i + 16);
         const offset = i.toString(16).padStart(4, '0').toUpperCase();
         const hex = Array.from(chunk).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
         const ascii = Array.from(chunk).map(b => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.')).join('');
-        hexLines.push(`<span class="text-gray-600">${offset}</span>  ${hex.padEnd(47)}  <span class="text-brand-500/80">${escapeHtml(ascii)}</span>`);
+        lines.push(`<span class="text-gray-600 select-none opacity-50 font-sans">${offset}</span>  <span class="text-gray-300">${hex.padEnd(47)}</span>  <span class="text-brand-400 font-sans">${esc(ascii)}</span>`);
       }
-      hexView.innerHTML = hexLines.join('\n');
+      hexView.innerHTML = lines.join('\n');
 
       analysis.innerHTML = `
-        <div class="flex justify-between items-center mb-4">
-          <span class="text-xs text-surface-500">Protocol</span>
-          <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${getProtoClass(packet.proto)}">${packet.proto}</span>
+        <div class="group">
+          <div class="text-[9px] font-bold text-surface-400 uppercase tracking-widest mb-1.5 group-hover:text-brand-500 transition-colors">Source Address</div>
+          <div class="text-surface-900 font-mono text-xs p-3 bg-surface-50 rounded-xl border border-surface-100 break-all font-bold shadow-inner">${esc(packet.src)}</div>
         </div>
-        <div class="space-y-4">
-          <div>
-            <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Source</div>
-            <div class="text-surface-900 font-mono text-xs bg-surface-50 p-2 rounded border border-surface-100 break-all select-all">${escapeHtml(packet.src)}</div>
-          </div>
-          <div>
-            <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Destination</div>
-            <div class="text-surface-900 font-mono text-xs bg-surface-50 p-2 rounded border border-surface-100 break-all select-all">${escapeHtml(packet.dst)}</div>
-          </div>
-          <div>
-            <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Summary</div>
-            <div class="text-surface-700 text-xs bg-brand-50/30 p-3 rounded-lg border border-brand-100/50 italic">${escapeHtml(packet.info)}</div>
-          </div>
+        <div class="group">
+          <div class="text-[9px] font-bold text-surface-400 uppercase tracking-widest mb-1.5 group-hover:text-brand-500 transition-colors">Destination Address</div>
+          <div class="text-surface-900 font-mono text-xs p-3 bg-surface-50 rounded-xl border border-surface-100 break-all font-bold shadow-inner">${esc(packet.dst)}</div>
+        </div>
+        <div class="group">
+          <div class="text-[9px] font-bold text-surface-400 uppercase tracking-widest mb-1.5 group-hover:text-brand-500 transition-colors">Protocol Summary</div>
+          <div class="text-surface-700 text-xs italic leading-relaxed bg-brand-50/40 p-3 rounded-xl border border-brand-100/50">${esc(packet.info)}</div>
         </div>
       `;
 
       meta.innerHTML = `
-        <div class="flex justify-between py-1 border-b border-surface-200/50"><span>Total Length:</span> <span class="text-surface-900 font-bold">${packet.len} B</span></div>
-        <div class="flex justify-between py-1 border-b border-surface-200/50"><span>Captured:</span> <span class="text-surface-900 font-bold">${packet.data.length} B</span></div>
-        <div class="flex justify-between py-1"><span>Timestamp:</span> <span class="text-surface-900 font-bold">${packet.time.toFixed(6)}s</span></div>
+        <div class="flex justify-between border-b border-surface-200/50 pb-2">
+          <span class="text-surface-500">Wire Length</span>
+          <span class="text-surface-900 font-bold">${packet.len} bytes</span>
+        </div>
+        <div class="flex justify-between border-b border-surface-200/50 py-2">
+          <span class="text-surface-500">Captured Length</span>
+          <span class="text-surface-900 font-bold">${packet.data.length} bytes</span>
+        </div>
+        <div class="flex justify-between pt-1">
+          <span class="text-surface-500">Relative Time</span>
+          <span class="text-surface-900 font-bold">${packet.time.toFixed(9)}s</span>
+        </div>
       `;
-
-      const copyHexBtn = el.querySelector('#copy-hex');
-      if (copyHexBtn) {
-        copyHexBtn.onclick = (e) => {
-          const textOnly = hexLines.map(line => line.replace(/<[^>]*>/g, '')).join('\n');
-          h.copyToClipboard(textOnly, e.target);
-        };
-      }
     }
 
-    function renderEmptyState(h) {
+    function renderEmptyView(h) {
       const state = h.getState();
       h.render(`
-        <div class="animate-in fade-in duration-700">
-          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-8">
-            <span class="font-semibold text-surface-800">${escapeHtml(state.fileName)}</span>
+        <div class="animate-in fade-in duration-500">
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-12">
+            <span class="font-semibold text-surface-800">${esc(state.fileName)}</span>
             <span class="text-surface-300">|</span>
-            <span>${formatSize(state.fileSize)}</span>
+            <span>${fmtSize(state.fileSize)}</span>
           </div>
-          <div class="flex flex-col items-center justify-center py-20 px-4 text-center border-2 border-surface-200 border-dashed rounded-3xl bg-surface-50/50">
-            <div class="w-16 h-16 bg-surface-100 rounded-full flex items-center justify-center mb-4">
-              <svg class="w-8 h-8 text-surface-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+          <div class="flex flex-col items-center justify-center py-24 text-center border-2 border-surface-200 border-dashed rounded-3xl bg-surface-50/30">
+            <div class="w-20 h-20 bg-white rounded-2xl flex items-center justify-center text-surface-200 mb-6 shadow-sm">
+              <svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
             </div>
-            <h3 class="text-xl font-bold text-surface-900 mb-2">No packets found</h3>
-            <p class="text-surface-500 max-w-sm mx-auto text-sm leading-relaxed">
-              We couldn't parse any network frames from this capture. Please ensure it's a standard PCAP or PCAPNG file and not encrypted.
-            </p>
+            <h3 class="text-2xl font-bold text-surface-900 mb-3">No packets found</h3>
+            <p class="text-surface-500 max-w-sm mx-auto text-sm leading-relaxed">The network capture file appears to be empty or uses an unsupported format variant. Ensure it is a valid PCAP or PCAPNG file.</p>
           </div>
         </div>
       `);
     }
 
-    // --- Parser Implementation ---
-
-    async function parsePcap(buffer) {
+    async function parsePcapData(buffer) {
       const dv = new DataView(buffer);
-      if (buffer.byteLength < 24) throw new Error('File header too small');
-
+      if (buffer.byteLength < 8) throw new Error('File too short');
+      
       const magic = dv.getUint32(0, true);
       let isLittle = true;
-      let isPcapNg = false;
-      let nano = false;
+      let isNg = false;
+      let isNano = false;
 
       if (magic === 0xA1B2C3D4) isLittle = false;
       else if (magic === 0xD4C3B2A1) isLittle = true;
-      else if (magic === 0xA1B23C4D) { isLittle = false; nano = true; }
-      else if (magic === 0x4D3CB2A1) { isLittle = true; nano = true; }
-      else if (magic === 0x0A0D0D0A) { isPcapNg = true; isLittle = true; }
-      else throw new Error('Unsupported PCAP format');
+      else if (magic === 0xA1B23C4D) { isLittle = false; isNano = true; }
+      else if (magic === 0x4D3CB2A1) { isLittle = true; isNano = true; }
+      else if (magic === 0x0A0D0D0A) { isNg = true; isLittle = true; }
+      else throw new Error('Unknown PCAP format (Magic: 0x' + magic.toString(16).toUpperCase() + ')');
 
-      if (isPcapNg) return parsePcapNg(buffer, isLittle);
+      if (isNg) return parseNg(buffer, isLittle);
 
-      const network = dv.getUint32(20, isLittle);
+      if (buffer.byteLength < 24) throw new Error('Invalid PCAP header');
+      const linkType = dv.getUint32(20, isLittle);
       const packets = [];
-      let pos = 24;
-      let startTime = null;
-      const MAX_PACKETS = 50000; 
+      let offset = 24;
+      let firstTs = null;
+      const MAX_PACKETS = 100000;
 
-      while (pos + 16 <= buffer.byteLength && packets.length < MAX_PACKETS) {
-        const tsSec = dv.getUint32(pos, isLittle);
-        const tsSub = dv.getUint32(pos + 4, isLittle);
-        const inclLen = dv.getUint32(pos + 8, isLittle);
-        const origLen = dv.getUint32(pos + 12, isLittle);
+      while (offset + 16 <= buffer.byteLength && packets.length < MAX_PACKETS) {
+        const tsSec = dv.getUint32(offset, isLittle);
+        const tsSub = dv.getUint32(offset + 4, isLittle);
+        const capLen = dv.getUint32(offset + 8, isLittle);
+        const origLen = dv.getUint32(offset + 12, isLittle);
         
-        if (pos + 16 + inclLen > buffer.byteLength) break;
+        if (offset + 16 + capLen > buffer.byteLength) break;
         
-        const time = tsSec + (nano ? tsSub / 1e9 : tsSub / 1e6);
-        if (startTime === null) startTime = time;
+        const time = tsSec + (isNano ? tsSub / 1e9 : tsSub / 1e6);
+        if (firstTs === null) firstTs = time;
         
-        const data = new Uint8Array(buffer, pos + 16, inclLen);
-        const decoded = decodePacket(data, network);
+        const data = new Uint8Array(buffer, offset + 16, capLen);
+        const decoded = decode(data, linkType);
         
         packets.push({
           num: packets.length + 1,
-          time: time - startTime,
+          time: time - firstTs,
           len: origLen,
           src: decoded.src,
           dst: decoded.dst,
@@ -540,45 +595,44 @@
           info: decoded.info,
           data: data
         });
-        pos += 16 + inclLen;
+        offset += 16 + capLen;
       }
-
       return { packets };
     }
 
-    function parsePcapNg(buffer, isLittle) {
+    function parseNg(buffer, isLittle) {
       const dv = new DataView(buffer);
       let offset = 0;
       const packets = [];
-      let startTime = null;
-      let ifaceLinkType = 1;
-      const MAX_PACKETS = 50000;
+      let firstTs = null;
+      let linkType = 1;
+      const MAX_PACKETS = 100000;
 
       while (offset + 8 <= buffer.byteLength && packets.length < MAX_PACKETS) {
         const type = dv.getUint32(offset, isLittle);
         const len = dv.getUint32(offset + 4, isLittle);
         if (len < 8 || offset + len > buffer.byteLength) break;
 
-        if (type === 0x00000001) { 
-          ifaceLinkType = dv.getUint16(offset + 8, isLittle);
-        } else if (type === 0x00000006 || type === 0x00000003) { 
-          const isEPB = type === 0x06;
-          const tsHigh = isEPB ? dv.getUint32(offset + 12, isLittle) : 0;
-          const tsLow = isEPB ? dv.getUint32(offset + 16, isLittle) : 0;
-          const capLen = isEPB ? dv.getUint32(offset + 20, isLittle) : dv.getUint32(offset + 8, isLittle);
-          const wireLen = isEPB ? dv.getUint32(offset + 24, isLittle) : capLen;
+        if (type === 0x01) { 
+          linkType = dv.getUint16(offset + 8, isLittle);
+        } else if (type === 0x06 || type === 0x03) { 
+          const isEpb = type === 0x06;
+          const tsH = isEpb ? dv.getUint32(offset + 12, isLittle) : 0;
+          const tsL = isEpb ? dv.getUint32(offset + 16, isLittle) : 0;
+          const capL = isEpb ? dv.getUint32(offset + 20, isLittle) : dv.getUint32(offset + 8, isLittle);
+          const wireL = isEpb ? dv.getUint32(offset + 24, isLittle) : capL;
           
-          const time = (tsHigh * 4294967296 + tsLow) / 1000000;
-          if (startTime === null) startTime = time;
+          const time = (tsH * 4294967296 + tsL) / 1000000;
+          if (firstTs === null) firstTs = time;
           
-          const dataOffset = isEPB ? 28 : 12;
-          if (offset + dataOffset + capLen <= buffer.byteLength) {
-            const data = new Uint8Array(buffer, offset + dataOffset, capLen);
-            const decoded = decodePacket(data, ifaceLinkType);
+          const dOff = isEpb ? 28 : 12;
+          if (offset + dOff + capL <= buffer.byteLength) {
+            const data = new Uint8Array(buffer, offset + dOff, capL);
+            const decoded = decode(data, linkType);
             packets.push({ 
               num: packets.length + 1, 
-              time: time - startTime, 
-              len: wireLen, 
+              time: time - firstTs, 
+              len: wireL, 
               src: decoded.src, 
               dst: decoded.dst, 
               proto: decoded.proto, 
@@ -592,135 +646,129 @@
       return { packets };
     }
 
-    function decodePacket(data, network) {
-      let res = { src: 'L2', dst: 'L2', proto: 'RAW', info: 'Unknown Packet' };
-      let ethType = 0;
-      let payloadOffset = 0;
+    function decode(data, link) {
+      let r = { src: 'Unknown', dst: 'Unknown', proto: 'DATA', info: 'Raw payload' };
+      let type = 0;
+      let off = 0;
 
-      if (network === 1 && data.length >= 14) {
-        ethType = (data[12] << 8) | data[13];
-        payloadOffset = 14;
-        res.src = formatMAC(data.slice(6, 12));
-        res.dst = formatMAC(data.slice(0, 6));
-        res.proto = 'ETH';
-      } else if (network === 113 && data.length >= 16) {
-        ethType = (data[14] << 8) | data[15];
-        payloadOffset = 16;
-        res.proto = 'SLL';
-      } else return res;
+      if (link === 1 && data.length >= 14) { 
+        type = (data[12] << 8) | data[13];
+        off = 14;
+        r.src = fmtMAC(data.slice(6, 12));
+        r.dst = fmtMAC(data.slice(0, 6));
+        r.proto = 'ETH';
+      } else if (link === 113 && data.length >= 16) { 
+        type = (data[14] << 8) | data[15];
+        off = 16;
+        r.proto = 'SLL';
+      } else return r;
 
-      if (ethType === 0x0800 && data.length >= payloadOffset + 20) {
-        const ihl = (data[payloadOffset] & 0x0F) * 4;
-        const proto = data[payloadOffset + 9];
-        res.src = data.slice(payloadOffset + 12, payloadOffset + 16).join('.');
-        res.dst = data.slice(payloadOffset + 16, payloadOffset + 20).join('.');
-        res.proto = 'IPv4';
-        decodeL4(data, payloadOffset + ihl, proto, res);
-      } else if (ethType === 0x86DD && data.length >= payloadOffset + 40) {
-        const next = data[payloadOffset + 6];
-        res.src = formatIPv6(data.slice(payloadOffset + 8, payloadOffset + 24));
-        res.dst = formatIPv6(data.slice(payloadOffset + 24, payloadOffset + 40));
-        res.proto = 'IPv6';
-        decodeL4(data, payloadOffset + 40, next, res);
-      } else if (ethType === 0x0806 && data.length >= payloadOffset + 28) {
-        res.proto = 'ARP';
-        const op = data[payloadOffset + 7];
-        const spa = data.slice(payloadOffset + 14, payloadOffset + 18).join('.');
-        const tpa = data.slice(payloadOffset + 24, payloadOffset + 28).join('.');
-        res.info = op === 1 ? `Who has ${tpa}? Tell ${spa}` : `Reply: ${spa} is at ${formatMAC(data.slice(payloadOffset + 8, payloadOffset + 14))}`;
+      if (type === 0x0800 && data.length >= off + 20) { 
+        const ihl = (data[off] & 0x0F) * 4;
+        const p = data[off + 9];
+        r.src = data.slice(off + 12, off + 16).join('.');
+        r.dst = data.slice(off + 16, off + 20).join('.');
+        r.proto = 'IPv4';
+        decL4(data, off + ihl, p, r);
+      } else if (type === 0x86DD && data.length >= off + 40) { 
+        const next = data[off + 6];
+        r.src = fmtIPv6(data.slice(off + 8, off + 24));
+        r.dst = fmtIPv6(data.slice(off + 24, off + 40));
+        r.proto = 'IPv6';
+        decL4(data, off + 40, next, r);
+      } else if (type === 0x0806 && data.length >= off + 28) { 
+        r.proto = 'ARP';
+        const op = data[off + 7];
+        const spa = data.slice(off + 14, off + 18).join('.');
+        const tpa = data.slice(off + 24, off + 28).join('.');
+        r.info = op === 1 ? `Who has ${tpa}? Tell ${spa}` : `Reply: ${spa} is at ${fmtMAC(data.slice(off + 8, off + 14))}`;
       }
-      return res;
+      return r;
     }
 
-    function decodeL4(data, offset, proto, res) {
-      if (data.length < offset + 4) return;
-      const sp = (data[offset] << 8) | data[offset + 1];
-      const dp = (data[offset + 2] << 8) | data[offset + 3];
+    function decL4(data, off, proto, r) {
+      if (data.length < off + 4) return;
+      const sp = (data[off] << 8) | data[off + 1];
+      const dp = (data[off + 2] << 8) | data[off + 3];
 
       if (proto === 6) { 
-        res.proto = 'TCP';
-        res.src += `:${sp}`;
-        res.dst += `:${dp}`;
-        if (data.length >= offset + 14) {
-          const flags = data[offset + 13];
-          const f = [];
-          if (flags & 0x02) f.push('SYN');
-          if (flags & 0x10) f.push('ACK');
-          if (flags & 0x01) f.push('FIN');
-          if (flags & 0x04) f.push('RST');
-          if (flags & 0x08) f.push('PSH');
-          res.info = f.join(' ');
+        r.proto = 'TCP';
+        r.src += `:${sp}`;
+        r.dst += `:${dp}`;
+        if (data.length >= off + 14) {
+          const f = data[off + 13];
+          const flags = [];
+          if (f & 0x02) flags.push('SYN');
+          if (f & 0x10) flags.push('ACK');
+          if (f & 0x01) flags.push('FIN');
+          if (f & 0x04) flags.push('RST');
+          if (f & 0x08) flags.push('PSH');
+          r.info = flags.join(' ') || 'TCP Segment';
           
-          const dataOff = (data[offset + 12] >> 4) * 4;
-          if (data.length > offset + dataOff) {
-            const firstByte = data[offset + dataOff];
-            if (dp === 80 || sp === 80) res.proto = 'HTTP';
-            else if (dp === 443 || sp === 443 || firstByte === 0x16) res.proto = 'TLS';
-            else if (dp === 21 || sp === 21) res.proto = 'FTP';
-            else if (dp === 22 || sp === 22) res.proto = 'SSH';
+          const dOff = (data[off + 12] >> 4) * 4;
+          if (data.length > off + dOff) {
+            const first = data[off + dOff];
+            if (dp === 80 || sp === 80) r.proto = 'HTTP';
+            else if (dp === 443 || sp === 443 || first === 0x16) r.proto = 'TLS';
+            else if (dp === 21 || sp === 21) r.proto = 'FTP';
+            else if (dp === 22 || sp === 22) r.proto = 'SSH';
           }
         }
       } else if (proto === 17) { 
-        res.proto = 'UDP';
-        res.src += `:${sp}`;
-        res.dst += `:${dp}`;
-        if (dp === 53 || sp === 53) res.proto = 'DNS';
-        else if (dp === 67 || dp === 68 || sp === 67 || sp === 68) res.proto = 'DHCP';
-        else if (dp === 123 || sp === 123) res.proto = 'NTP';
-        else if (dp === 161 || sp === 161) res.proto = 'SNMP';
-        else if (dp === 5353 || sp === 5353) res.proto = 'MDNS';
-        else if (dp === 1900 || sp === 1900) res.proto = 'SSDP';
-        else if (dp === 5060 || sp === 5060) res.proto = 'SIP';
+        r.proto = 'UDP';
+        r.src += `:${sp}`;
+        r.dst += `:${dp}`;
+        if (dp === 53 || sp === 53) r.proto = 'DNS';
+        else if (dp === 67 || dp === 68 || sp === 67 || sp === 68) r.proto = 'DHCP';
+        else if (dp === 123 || sp === 123) r.proto = 'NTP';
+        else if (dp === 5353 || sp === 5353) r.proto = 'mDNS';
+        else r.info = 'UDP Payload';
       } else if (proto === 1) {
-        res.proto = 'ICMP';
-        const type = data[offset];
-        res.info = type === 8 ? 'Echo Request' : type === 0 ? 'Echo Reply' : `Type ${type}`;
+        r.proto = 'ICMP';
+        const t = data[off];
+        r.info = t === 8 ? 'Echo Request' : t === 0 ? 'Echo Reply' : `Type ${t}`;
       } else if (proto === 58) {
-        res.proto = 'ICMPv6';
-        res.info = `Type ${data[offset]}`;
+        r.proto = 'ICMPv6';
+        r.info = `Type ${data[off]}`;
       }
     }
 
-    // --- Utility Functions ---
-
-    function formatIPv6(b) {
+    function fmtIPv6(b) {
       const p = [];
       for (let i = 0; i < 16; i += 2) p.push(((b[i] << 8) | b[i + 1]).toString(16));
       return p.join(':').replace(/(^|:)0(:0)+(:|$)/, '::');
     }
 
-    function formatMAC(b) {
+    function fmtMAC(b) {
       return Array.from(b).map(x => x.toString(16).padStart(2, '0')).join(':');
     }
 
-    function getProtoClass(p) {
-      const map = {
-        'TCP': 'bg-blue-50 text-blue-600 border border-blue-100',
-        'UDP': 'bg-sky-50 text-sky-600 border border-sky-100',
-        'ICMP': 'bg-purple-50 text-purple-600 border border-purple-100',
-        'ICMPv6': 'bg-purple-50 text-purple-600 border border-purple-100',
-        'ARP': 'bg-orange-50 text-orange-600 border border-orange-100',
-        'HTTP': 'bg-green-50 text-green-600 border border-green-100',
-        'TLS': 'bg-emerald-50 text-emerald-600 border border-emerald-100',
-        'DNS': 'bg-indigo-50 text-indigo-600 border border-indigo-100',
-        'DHCP': 'bg-yellow-50 text-yellow-600 border border-yellow-100',
-        'SSH': 'bg-zinc-100 text-zinc-700 border border-zinc-200',
-        'MDNS': 'bg-teal-50 text-teal-600 border border-teal-100'
+    function getStyle(p) {
+      const s = {
+        'TCP': 'bg-blue-50 text-blue-600 border border-blue-200',
+        'UDP': 'bg-sky-50 text-sky-600 border border-sky-200',
+        'ICMP': 'bg-purple-50 text-purple-600 border border-purple-200',
+        'ARP': 'bg-orange-50 text-orange-600 border border-orange-200',
+        'HTTP': 'bg-green-50 text-green-600 border border-green-200',
+        'TLS': 'bg-emerald-50 text-emerald-600 border border-emerald-200',
+        'DNS': 'bg-indigo-50 text-indigo-600 border border-indigo-200',
+        'DHCP': 'bg-yellow-50 text-yellow-600 border border-yellow-200',
+        'SSH': 'bg-slate-50 text-slate-600 border border-slate-200'
       };
-      return map[p] || 'bg-surface-50 text-surface-500 border border-surface-100';
+      return s[p] || 'bg-surface-50 text-surface-500 border border-surface-200';
     }
 
-    function formatSize(bytes) {
-      if (!bytes) return '0 B';
+    function fmtSize(b) {
+      if (!b) return '0 B';
       const k = 1024;
-      const sizes = ['B', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+      const s = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(b) / Math.log(k));
+      return parseFloat((b / Math.pow(k, i)).toFixed(1)) + ' ' + s[i];
     }
 
-    function escapeHtml(str) {
-      if (!str) return '';
-      return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+    function esc(s) {
+      if (!s) return '';
+      return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
     }
   };
 })();
