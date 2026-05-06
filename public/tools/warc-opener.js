@@ -1,20 +1,33 @@
 (function () {
   'use strict';
 
-  // State management inside closure
   let currentObjectUrls = [];
+
+  function cleanupUrls() {
+    currentObjectUrls.forEach(url => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (e) {}
+    });
+    currentObjectUrls = [];
+  }
 
   function esc(str) {
     if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
-  function formatSize(b) {
-    if (!b || b < 0) return '0 B';
-    const i = b === 0 ? 0 : Math.floor(Math.log(b) / Math.log(1024));
-    return (b / Math.pow(1024, i)).toFixed(2) * 1 + ' ' + ['B', 'KB', 'MB', 'GB', 'TB'][i];
+  function formatSize(bytes) {
+    if (!bytes || bytes < 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
   function getIcon(type) {
@@ -28,12 +41,7 @@
       'conversion': '📑',
       'continuation': '🔗'
     };
-    return types[type.toLowerCase()] || '📄';
-  }
-
-  function cleanupUrls() {
-    currentObjectUrls.forEach(url => URL.revokeObjectURL(url));
-    currentObjectUrls = [];
+    return types[String(type).toLowerCase()] || '📄';
   }
 
   function findSequence(bytes, seq, start) {
@@ -54,11 +62,11 @@
     const chunks = [];
     let offset = 0;
     while (offset < data.length) {
+      if (data[offset] !== 0x1f || data[offset + 1] !== 0x8b) {
+        offset++;
+        continue;
+      }
       try {
-        if (data[offset] !== 0x1f || data[offset + 1] !== 0x8b) {
-          offset++;
-          continue;
-        }
         const inflater = new pako.Inflate();
         inflater.push(data.subarray(offset), true);
         if (inflater.err) {
@@ -73,7 +81,7 @@
         break;
       }
     }
-    if (chunks.length === 0) throw new Error('Failed to decompress GZIP members');
+    if (chunks.length === 0) throw new Error('Could not decompress GZIP archive.');
     const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
     const result = new Uint8Array(totalLength);
     let pos = 0;
@@ -95,44 +103,42 @@
 
       const headerText = decoder.decode(bytes.subarray(offset, headerEnd));
       const lines = headerText.split('\r\n');
-      if (!lines[0].startsWith('WARC/')) {
+      if (!lines[0] || !lines[0].startsWith('WARC/')) {
         offset++;
         continue;
       }
 
       const headers = {};
-      lines.slice(1).forEach(line => {
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
         const idx = line.indexOf(':');
         if (idx !== -1) {
           headers[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
         }
-      });
+      }
 
       const contentLength = parseInt(headers['content-length'] || '0', 10);
       const bodyStart = headerEnd + 4;
       const bodyEnd = bodyStart + contentLength;
-      
-      if (bodyEnd > bytes.length) {
-        records.push({
-          headers: headers,
-          body: bytes.subarray(bodyStart),
-          type: headers['warc-type'] || 'unknown',
-          uri: headers['warc-target-uri'] || '',
-          date: headers['warc-date'] || '',
-          contentType: headers['content-type'] || '',
-          truncated: true
-        });
-        break;
-      }
 
-      records.push({
-        headers: headers,
-        body: bytes.subarray(bodyStart, bodyEnd),
+      const record = {
+        headers,
         type: headers['warc-type'] || 'unknown',
         uri: headers['warc-target-uri'] || '',
         date: headers['warc-date'] || '',
-        contentType: headers['content-type'] || ''
-      });
+        contentType: headers['content-type'] || '',
+        id: headers['warc-record-id'] || `idx-${records.length}`
+      };
+
+      if (bodyEnd > bytes.length) {
+        record.body = bytes.subarray(bodyStart);
+        record.truncated = true;
+        records.push(record);
+        break;
+      } else {
+        record.body = bytes.subarray(bodyStart, bodyEnd);
+        records.push(record);
+      }
 
       offset = bodyEnd;
       while (offset < bytes.length && (bytes[offset] === 10 || bytes[offset] === 13)) {
@@ -144,7 +150,7 @@
 
   function generateHexDump(buffer) {
     const bytes = new Uint8Array(buffer);
-    const maxLen = 8192;
+    const maxLen = 4096;
     const len = Math.min(bytes.length, maxLen);
     let out = '';
     for (let i = 0; i < len; i += 16) {
@@ -162,7 +168,7 @@
       }
       out += line + ' |' + ascii + '|\n';
     }
-    if (bytes.length > maxLen) out += '\n... (truncated to 8KB)';
+    if (bytes.length > maxLen) out += '\n... (truncated for performance)';
     return out;
   }
 
@@ -170,8 +176,7 @@
     OmniTool.create(mountEl, toolConfig, {
       accept: '.warc,.warc.gz',
       binary: true,
-      dropLabel: 'Drop a WARC file here',
-      infoHtml: 'All WARC parsing happens locally in your browser. Supports concatenated GZIP members.',
+      infoHtml: 'Parses Web ARChive (WARC) files directly in your browser. Supports GZIP compression.',
 
       actions: [
         {
@@ -182,74 +187,73 @@
             if (!records) return;
             const uris = records.map(r => r.uri).filter(u => u).join('\n');
             if (!uris) {
-              h.showError('No URIs found', 'This WARC file does not contain target URIs.');
+              h.showError('No URIs', 'No target URIs found in this archive.');
               return;
             }
             h.copyToClipboard(uris, btn);
           }
         },
         {
-          label: '📥 Export Index',
-          id: 'dl-index',
+          label: '📥 Export CSV Index',
+          id: 'export-csv',
           onClick: function (h) {
             const records = h.getState().records;
             if (!records) return;
-            const index = records.map(r => ({
-              type: r.type,
-              uri: r.uri,
-              date: r.date,
-              contentType: r.contentType,
-              size: r.body.length
-            }));
-            h.download('warc-index.json', JSON.stringify(index, null, 2), 'application/json');
+            const csv = [
+              'ID,Type,URI,MimeType,Size,Date',
+              ...records.map(r => [
+                `"${(r.id || '').replace(/"/g, '""')}"`,
+                `"${(r.type || '').replace(/"/g, '""')}"`,
+                `"${(r.uri || '').replace(/"/g, '""')}"`,
+                `"${(r.contentType || '').replace(/"/g, '""')}"`,
+                r.body.length,
+                `"${(r.date || '').replace(/"/g, '""')}"`
+              ].join(','))
+            ].join('\n');
+            h.download('warc-index.csv', csv, 'text/csv');
           }
         }
       ],
 
       onInit: function (h) {
-        if (typeof pako === 'undefined') {
-          h.loadScript('https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js');
-        }
+        h.loadScript('https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js');
       },
 
-      onDestroy: function() {
+      onDestroy: function () {
         cleanupUrls();
       },
 
-      onFile: function _onFile(file, content, h) {
+      onFile: function _onFileFn(file, content, h) {
         if (typeof pako === 'undefined') {
-          h.showLoading('Loading decompression library...');
-          h.loadScript('https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js');
-          let attempts = 0;
-          const check = setInterval(() => {
-            if (typeof pako !== 'undefined') {
-              clearInterval(check);
-              _onFile(file, content, h);
-            } else if (++attempts > 50) {
-              clearInterval(check);
-              h.showError('Dependency Error', 'Could not load pako.js library.');
-            }
-          }, 100);
+          h.showLoading('Loading dependencies...');
+          setTimeout(function () { _onFileFn(file, content, h); }, 100);
           return;
         }
 
         cleanupUrls();
-        h.showLoading('Parsing WARC archive...');
+        h.showLoading('Parsing WARC structure...');
 
-        setTimeout(() => {
+        setTimeout(function () {
           try {
             let data = new Uint8Array(content);
+            
+            // Handle GZIP
             if (data[0] === 0x1f && data[1] === 0x8b) {
               try {
                 data = pako.inflate(data);
               } catch (e) {
-                data = decompressConcatenatedGzip(data);
+                // Try concatenated gzip members
+                try {
+                  data = decompressConcatenatedGzip(data);
+                } catch (e2) {
+                  throw new Error('Failed to decompress GZIP: ' + e2.message);
+                }
               }
             }
 
             const records = parseWarc(data);
-            if (records.length === 0) {
-              h.showError('Empty Archive', 'No valid WARC records found.');
+            if (!records || records.length === 0) {
+              h.showError('Empty Archive', 'No valid WARC records were found in this file.');
               return;
             }
 
@@ -259,13 +263,14 @@
               fileSize: file.size,
               searchTerm: '',
               sortCol: 'id',
-              sortDir: 1
+              sortDir: 1,
+              viewingRecord: null
             });
             renderWarc(h);
           } catch (err) {
-            h.showError('Parsing Error', err.message);
+            h.showError('Parsing Failed', err.message);
           }
-        }, 50);
+        }, 30);
       }
     });
   };
@@ -274,27 +279,33 @@
     const state = h.getState();
     const records = state.records || [];
     const searchTerm = (state.searchTerm || '').toLowerCase();
-    
-    const filtered = searchTerm ? records.filter(r => 
-      (r.uri || '').toLowerCase().includes(searchTerm) || 
+
+    const filtered = searchTerm ? records.filter(r =>
+      (r.uri || '').toLowerCase().includes(searchTerm) ||
       (r.contentType || '').toLowerCase().includes(searchTerm) ||
-      (r.type || '').toLowerCase().includes(searchTerm)
+      (r.type || '').toLowerCase().includes(searchTerm) ||
+      (r.id || '').toLowerCase().includes(searchTerm)
     ) : records;
 
     const sorted = [...filtered].sort((a, b) => {
-      let valA, valB;
-      if (state.sortCol === 'uri') { valA = a.uri; valB = b.uri; }
-      else if (state.sortCol === 'size') { valA = a.body.length; valB = b.body.length; }
-      else if (state.sortCol === 'type') { valA = a.type; valB = b.type; }
-      else { return 0; }
-      if (valA < valB) return -1 * state.sortDir;
-      if (valA > valB) return 1 * state.sortDir;
+      let vA, vB;
+      if (state.sortCol === 'uri') { vA = a.uri; vB = b.uri; }
+      else if (state.sortCol === 'type') { vA = a.type; vB = b.type; }
+      else if (state.sortCol === 'size') { vA = a.body.length; vB = b.body.length; }
+      else if (state.sortCol === 'date') { vA = a.date; vB = b.date; }
+      else { vA = records.indexOf(a); vB = records.indexOf(b); }
+      
+      if (vA < vB) return -1 * state.sortDir;
+      if (vA > vB) return 1 * state.sortDir;
       return 0;
     });
 
+    const PAGE_SIZE = 500;
+    const displayItems = sorted.slice(0, PAGE_SIZE);
+
     const html = `
-      <div class="p-6 max-w-7xl mx-auto space-y-6">
-        <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">
+      <div class="p-4 md:p-8 max-w-7xl mx-auto">
+        <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">
           <span class="font-semibold text-surface-800">${esc(state.fileName)}</span>
           <span class="text-surface-300">|</span>
           <span>${formatSize(state.fileSize)}</span>
@@ -304,62 +315,102 @@
           <span class="text-surface-500">.warc file</span>
         </div>
 
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
-          <h3 class="font-semibold text-surface-800">Archive Entries</h3>
-          <div class="relative min-w-[300px]">
-            <input type="text" id="warc-search-input" placeholder="Search entries..." value="${esc(state.searchTerm || '')}"
-              class="w-full pl-10 pr-4 py-2 text-sm bg-white border border-surface-200 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none">
-            <span class="absolute left-3.5 top-2.5 text-surface-400">🔍</span>
+        <div class="space-y-4">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h3 class="font-semibold text-surface-800 text-lg">Archive Records</h3>
+              <p class="text-xs text-surface-500">Select a record to view headers and content</p>
+            </div>
+            
+            <div class="relative w-full md:w-80">
+              <input type="text" id="warc-search" placeholder="Search URI, type, or mime..." value="${esc(state.searchTerm)}"
+                class="w-full pl-10 pr-4 py-2 text-sm bg-white border border-surface-200 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all">
+              <span class="absolute left-3.5 top-2.5 text-surface-400">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              </span>
+            </div>
           </div>
-        </div>
 
-        <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm bg-white">
-          <table class="min-w-full text-sm">
-            <thead class="bg-surface-50 border-b border-surface-200">
-              <tr>
-                <th class="px-4 py-3 text-left font-semibold text-surface-700 w-12">#</th>
-                <th class="px-4 py-3 text-left font-semibold text-surface-700 cursor-pointer hover:text-brand-600" data-sort="type">Type</th>
-                <th class="px-4 py-3 text-left font-semibold text-surface-700 cursor-pointer hover:text-brand-600" data-sort="uri">URI</th>
-                <th class="px-4 py-3 text-left font-semibold text-surface-700">Mime</th>
-                <th class="px-4 py-3 text-right font-semibold text-surface-700 cursor-pointer hover:text-brand-600" data-sort="size">Size</th>
-                <th class="px-4 py-3 text-right font-semibold text-surface-700">View</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-surface-100">
-              ${sorted.slice(0, 1000).map((r, i) => `
-                <tr class="hover:bg-brand-50 transition-colors record-row cursor-pointer" data-idx="${records.indexOf(r)}">
-                  <td class="px-4 py-3 text-surface-400 font-mono text-xs">${records.indexOf(r) + 1}</td>
-                  <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full bg-surface-100 text-[10px] font-bold uppercase">${getIcon(r.type)} ${esc(r.type)}</span></td>
-                  <td class="px-4 py-3 font-mono text-[11px] text-surface-700 break-all max-w-xl">${esc(r.uri || '—')}</td>
-                  <td class="px-4 py-3 text-surface-500 font-mono text-[10px]">${esc(r.contentType || '—')}</td>
-                  <td class="px-4 py-3 text-right text-surface-600 font-mono text-[10px]">${formatSize(r.body.length)}</td>
-                  <td class="px-4 py-3 text-right"><button class="view-btn text-brand-600 font-bold hover:underline" data-idx="${records.indexOf(r)}">Open</button></td>
+          <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm bg-white">
+            <table class="min-w-full text-sm">
+              <thead>
+                <tr class="bg-surface-50/50">
+                  <th class="sticky top-0 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 w-12">#</th>
+                  <th class="sticky top-0 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100" data-sort="type">Type ${state.sortCol==='type'?(state.sortDir===1?'▲':'▼'):''}</th>
+                  <th class="sticky top-0 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100" data-sort="uri">URI ${state.sortCol==='uri'?(state.sortDir===1?'▲':'▼'):''}</th>
+                  <th class="sticky top-0 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200">Content Type</th>
+                  <th class="sticky top-0 px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100" data-sort="size">Size ${state.sortCol==='size'?(state.sortDir===1?'▲':'▼'):''}</th>
+                  <th class="sticky top-0 px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200">Action</th>
                 </tr>
-              `).join('')}
-              ${sorted.length === 0 ? `<tr><td colspan="6" class="p-12 text-center text-surface-400 italic">No records found.</td></tr>` : ''}
-            </tbody>
-          </table>
+              </thead>
+              <tbody class="divide-y divide-surface-100">
+                ${displayItems.map((r, i) => `
+                  <tr class="even:bg-surface-50/30 hover:bg-brand-50 transition-colors cursor-pointer group" data-idx="${records.indexOf(r)}">
+                    <td class="px-4 py-2.5 text-surface-400 font-mono text-xs">${records.indexOf(r) + 1}</td>
+                    <td class="px-4 py-2.5">
+                      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-surface-100 text-[10px] font-bold text-surface-700 uppercase">
+                        ${getIcon(r.type)} ${esc(r.type)}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 font-mono text-[11px] text-surface-700 break-all max-w-md">${esc(r.uri || '—')}</td>
+                    <td class="px-4 py-2.5 text-surface-500 text-xs">${esc(r.contentType || '—')}</td>
+                    <td class="px-4 py-2.5 text-right text-surface-600 font-mono text-xs">${formatSize(r.body.length)}</td>
+                    <td class="px-4 py-2.5 text-right">
+                      <button class="view-btn text-brand-600 hover:text-brand-700 font-semibold text-xs group-hover:underline">Inspect</button>
+                    </td>
+                  </tr>
+                `).join('')}
+                ${filtered.length === 0 ? `
+                  <tr>
+                    <td colspan="6" class="p-16 text-center">
+                      <div class="text-surface-400 mb-2">No records found matching your search.</div>
+                    </td>
+                  </tr>
+                ` : ''}
+              </tbody>
+            </table>
+          </div>
+          
+          ${filtered.length > PAGE_SIZE ? `
+            <div class="text-center py-4 bg-surface-50 rounded-xl text-surface-500 text-xs italic">
+              Showing first ${PAGE_SIZE} of ${filtered.length.toLocaleString()} matching records. Use search to find specific entries.
+            </div>
+          ` : ''}
         </div>
 
-        <div id="warc-preview-overlay" class="fixed inset-0 z-50 hidden bg-surface-950/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-full flex flex-col overflow-hidden">
+        <div id="warc-modal" class="fixed inset-0 z-50 hidden bg-surface-950/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-8">
+          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-full flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
             <div class="flex items-center justify-between px-6 py-4 border-b border-surface-100 bg-surface-50/50">
-              <div class="flex items-center gap-3 overflow-hidden">
-                <span id="p-icon" class="text-2xl">📄</span>
-                <h4 id="p-title" class="text-sm font-bold text-surface-900 truncate"></h4>
+              <div class="flex items-center gap-4 min-w-0">
+                <div id="m-icon" class="w-10 h-10 rounded-xl bg-white border border-surface-200 flex items-center justify-center text-xl shadow-sm"></div>
+                <div class="min-w-0">
+                  <h4 id="m-title" class="text-sm font-bold text-surface-900 truncate"></h4>
+                  <p id="m-subtitle" class="text-[11px] text-surface-500 font-mono truncate"></p>
+                </div>
               </div>
               <div class="flex items-center gap-2">
-                <button id="p-dl" class="p-2 text-surface-500 hover:text-brand-600 hover:bg-white rounded-lg transition-all">📥</button>
-                <button id="p-close" class="p-2 text-surface-500 hover:text-red-600 hover:bg-white rounded-lg transition-all">✕</button>
+                <button id="m-dl" title="Download Record Body" class="p-2.5 text-surface-500 hover:text-brand-600 hover:bg-white rounded-xl border border-transparent hover:border-surface-200 transition-all">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                </button>
+                <button id="m-close" class="p-2.5 text-surface-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
               </div>
             </div>
-            <div class="flex bg-surface-50 border-b border-surface-100">
-              <button class="p-tab px-6 py-3 text-xs font-bold text-surface-500 border-b-2 border-transparent hover:text-brand-600 active" data-tab="body">BODY</button>
-              <button class="p-tab px-6 py-3 text-xs font-bold text-surface-500 border-b-2 border-transparent hover:text-brand-600" data-tab="headers">HEADERS</button>
+
+            <div class="flex bg-surface-50/50 border-b border-surface-100 px-4">
+              <button class="m-tab px-6 py-3 text-xs font-bold text-surface-500 border-b-2 border-transparent transition-all hover:text-brand-600" data-tab="content">CONTENT</button>
+              <button class="m-tab px-6 py-3 text-xs font-bold text-surface-500 border-b-2 border-transparent transition-all hover:text-brand-600" data-tab="headers">WARC HEADERS</button>
             </div>
-            <div class="flex-1 overflow-hidden relative bg-white">
-              <div id="p-body-view" class="h-full overflow-auto p-6"></div>
-              <div id="p-headers-view" class="hidden absolute inset-0 overflow-auto p-6 bg-surface-50 font-mono text-xs"></div>
+
+            <div class="flex-1 overflow-hidden relative bg-white min-h-[400px]">
+              <div id="m-content-view" class="h-full overflow-auto"></div>
+              <div id="m-headers-view" class="hidden absolute inset-0 overflow-auto p-6 bg-surface-50 font-mono text-xs"></div>
+            </div>
+            
+            <div class="px-6 py-3 bg-surface-50 border-t border-surface-100 flex justify-between items-center text-[10px] text-surface-400">
+              <span id="m-status"></span>
+              <span id="m-size"></span>
             </div>
           </div>
         </div>
@@ -368,12 +419,12 @@
 
     h.render(html);
 
-    const searchInput = document.getElementById('warc-search-input');
-    searchInput.addEventListener('input', (e) => {
+    const searchEl = document.getElementById('warc-search');
+    searchEl.oninput = (e) => {
       h.setState({ searchTerm: e.target.value });
       renderWarc(h);
-      document.getElementById('warc-search-input').focus();
-    });
+      document.getElementById('warc-search').focus();
+    };
 
     h.getRenderEl().querySelectorAll('th[data-sort]').forEach(th => {
       th.onclick = () => {
@@ -384,58 +435,111 @@
       };
     });
 
-    h.getRenderEl().querySelectorAll('.record-row, .view-btn').forEach(el => {
-      el.onclick = (e) => {
-        e.stopPropagation();
-        showPreview(records[parseInt(el.dataset.idx)], h);
+    h.getRenderEl().querySelectorAll('tr[data-idx]').forEach(tr => {
+      tr.onclick = () => {
+        const idx = parseInt(tr.dataset.idx);
+        openRecord(records[idx], h);
       };
     });
   }
 
-  function showPreview(record, h) {
+  function openRecord(record, h) {
     cleanupUrls();
-    const overlay = document.getElementById('warc-preview-overlay');
-    overlay.classList.remove('hidden');
-    document.getElementById('p-title').textContent = record.uri || record.type;
-    document.getElementById('p-icon').textContent = getIcon(record.type);
+    const modal = document.getElementById('warc-modal');
+    modal.classList.remove('hidden');
+    
+    document.getElementById('m-title').textContent = record.uri || 'Unnamed Record';
+    document.getElementById('m-subtitle').textContent = record.id;
+    document.getElementById('m-icon').textContent = getIcon(record.type);
+    document.getElementById('m-size').textContent = formatSize(record.body.length);
+    document.getElementById('m-status').textContent = record.truncated ? '⚠️ Truncated' : 'Complete Record';
 
-    document.getElementById('p-headers-view').innerHTML = `
-      <div class="space-y-1">
-        ${Object.entries(record.headers).map(([k, v]) => `<div><span class="font-bold text-brand-700">${esc(k)}:</span> ${esc(v)}</div>`).join('')}
-      </div>`;
+    const headersHtml = Object.entries(record.headers).map(([k, v]) => 
+      `<div class="py-1 border-b border-surface-200/50"><span class="font-bold text-brand-700 select-none">${esc(k)}:</span> <span class="text-surface-800 break-all">${esc(v)}</span></div>`
+    ).join('');
+    document.getElementById('m-headers-view').innerHTML = `<div class="max-w-4xl mx-auto">${headersHtml}</div>`;
 
-    const bodyView = document.getElementById('p-body-view');
+    const contentView = document.getElementById('m-content-view');
     const ct = (record.contentType || '').toLowerCase();
     
     if (ct.startsWith('image/')) {
-      const url = URL.createObjectURL(new Blob([record.body], { type: record.contentType }));
+      const blob = new Blob([record.body], { type: record.contentType });
+      const url = URL.createObjectURL(blob);
       currentObjectUrls.push(url);
-      bodyView.innerHTML = `<div class="flex justify-center"><img src="${url}" class="max-w-full max-h-[60vh] rounded shadow-lg"></div>`;
+      contentView.innerHTML = `<div class="flex items-center justify-center p-8 h-full bg-surface-100/50"><img src="${url}" class="max-w-full max-h-full rounded shadow-xl bg-white p-2"></div>`;
     } else if (ct === 'text/html') {
-      const url = URL.createObjectURL(new Blob([record.body], { type: 'text/html' }));
+      let text = new TextDecoder().decode(record.body);
+      const sanitized = text
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '<!-- script removed -->')
+        .replace(/\son\w+="[^"]*"/gi, '')
+        .replace(/href="javascript:[^"]*"/gi, 'href="#"');
+        
+      const blob = new Blob([sanitized], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
       currentObjectUrls.push(url);
-      bodyView.innerHTML = `<iframe src="${url}" class="w-full h-[60vh] border rounded shadow-inner" sandbox="allow-same-origin"></iframe>`;
+      contentView.innerHTML = `<iframe src="${url}" class="w-full h-full border-none" sandbox="allow-same-origin"></iframe>`;
     } else {
-      const text = new TextDecoder().decode(record.body);
-      if (/[\x00-\x08\x0E-\x1F]/.test(text.slice(0, 1000))) {
-        bodyView.innerHTML = `<pre class="p-4 text-[10px] font-mono bg-gray-950 text-gray-100 rounded-xl overflow-x-auto">${generateHexDump(record.body)}</pre>`;
+      let text;
+      try {
+        text = new TextDecoder().decode(record.body);
+      } catch (e) {
+        text = null;
+      }
+
+      const isBinary = !text || /[\x00-\x08\x0E-\x1F]/.test(text.slice(0, 4096));
+      
+      if (isBinary) {
+        contentView.innerHTML = `
+          <div class="p-6">
+            <div class="mb-4 flex items-center gap-2 text-amber-600 bg-amber-50 px-3 py-2 rounded-lg text-xs font-medium">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+              Binary content detected. Showing hex dump.
+            </div>
+            <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm">
+              <pre class="p-4 text-[10px] md:text-xs font-mono bg-gray-900 text-gray-100 overflow-x-auto leading-relaxed">${generateHexDump(record.body)}</pre>
+            </div>
+          </div>
+        `;
       } else {
-        bodyView.innerHTML = `<pre class="p-4 text-sm font-mono bg-gray-950 text-gray-100 rounded-xl overflow-x-auto whitespace-pre-wrap break-all">${esc(text)}</pre>`;
+        contentView.innerHTML = `
+          <div class="p-6">
+            <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm">
+              <pre class="p-4 text-xs md:text-sm font-mono bg-gray-900 text-gray-100 overflow-x-auto leading-relaxed whitespace-pre-wrap break-all">${esc(text)}</pre>
+            </div>
+          </div>
+        `;
       }
     }
 
-    document.getElementById('p-close').onclick = () => overlay.classList.add('hidden');
-    overlay.onclick = (e) => { if (e.target === overlay) overlay.classList.add('hidden'); };
-    document.getElementById('p-dl').onclick = () => h.download('record.bin', new Blob([record.body]));
+    const closeBtn = document.getElementById('m-close');
+    const closeFn = () => {
+      modal.classList.add('hidden');
+      cleanupUrls();
+    };
+    closeBtn.onclick = closeFn;
+    modal.onclick = (e) => { if (e.target === modal) closeFn(); };
+    
+    document.getElementById('m-dl').onclick = () => {
+      h.download(`${record.id.replace(/[^a-z0-9]/gi, '_')}.bin`, record.body);
+    };
 
-    const tabs = document.querySelectorAll('.p-tab');
-    tabs.forEach(tab => {
-      tab.onclick = () => {
-        tabs.forEach(t => t.classList.remove('active', 'border-brand-600', 'text-brand-600'));
-        tab.classList.add('active', 'border-brand-600', 'text-brand-600');
-        document.getElementById('p-body-view').classList.toggle('hidden', tab.dataset.tab !== 'body');
-        document.getElementById('p-headers-view').classList.toggle('hidden', tab.dataset.tab !== 'headers');
-      };
+    const tabs = document.querySelectorAll('.m-tab');
+    function setTab(activeId) {
+      tabs.forEach(t => {
+        const isActive = t.dataset.tab === activeId;
+        t.classList.toggle('text-brand-600', isActive);
+        t.classList.toggle('border-brand-600', isActive);
+        t.classList.toggle('text-surface-500', !isActive);
+        t.classList.toggle('border-transparent', !isActive);
+      });
+      document.getElementById('m-content-view').classList.toggle('hidden', activeId !== 'content');
+      document.getElementById('m-headers-view').classList.toggle('hidden', activeId !== 'headers');
+    }
+
+    tabs.forEach(t => {
+      t.onclick = () => setTab(t.dataset.tab);
     });
+    setTab('content');
   }
+
 })();
