@@ -2,7 +2,7 @@
   'use strict';
 
   /**
-   * Escapes strings for safe HTML insertion (B6)
+   * Escapes strings for safe HTML insertion
    */
   function esc(s) {
     if (!s) return '';
@@ -15,7 +15,7 @@
   }
 
   /**
-   * Human-readable byte formatting (U1)
+   * Human-readable byte formatting
    */
   function formatSize(bytes) {
     if (bytes === 0) return '0 B';
@@ -25,36 +25,17 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
-  /**
-   * Generates a filtered hex dump with search metadata (B7, U8, Format Excellence)
-   */
-  function generateHexDump(buffer, start, length) {
-    const totalBytes = buffer.byteLength;
-    const bytes = new Uint8Array(buffer, start, Math.min(length, totalBytes - start));
-    let lines = [];
-    for (let i = 0; i < bytes.length; i += 16) {
-      const offset = (start + i).toString(16).padStart(8, '0');
-      const chunk = bytes.slice(i, i + 16);
-      const hex = Array.from(chunk).map(b => b.toString(16).padStart(2, '0')).join(' ');
-      const ascii = Array.from(chunk).map(b => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.')).join('');
-      const hexPadded = hex.padEnd(47, ' ');
-      
-      lines.push(
-        `<div class="hex-line flex py-0.5 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0" data-search="${esc(hex.toLowerCase())} ${esc(ascii.toLowerCase())}">` +
-          `<span class="w-20 text-surface-500 shrink-0 font-mono select-none">${offset}</span>` +
-          `<span class="text-brand-400 shrink-0 mr-4 font-mono font-bold">${esc(hexPadded)}</span>` +
-          `<span class="text-surface-400 font-mono">|${esc(ascii)}|</span>` +
-        `</div>`
-      );
-    }
-    return lines.join('');
-  }
-
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
       accept: '.h5,.hdf5,.hdf,.he5,.he4',
       dropLabel: 'Drop HDF5 file here',
+      onInit: function (h) {
+        h.loadScripts([
+          'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js',
+          'https://cdn.jsdelivr.net/npm/js-five@0.3.8/dist/hdf5.js'
+        ]);
+      },
       actions: [
         {
           label: '📥 Download File',
@@ -74,178 +55,279 @@
           }
         }
       ],
-      onFile: async function _onFileFn(file, content, h) {
-        if (!content || content.byteLength === 0) {
-          h.showError('Empty File', 'The provided HDF5 file contains no data.');
-          return;
-        }
+      onFile: async function (file, content, h) {
+        h.showLoading('Analyzing HDF5 Structure...');
 
-        h.showLoading('Analyzing HDF5 Hierarchical Structure...');
-
-        // 1. Compute Integrity Hash (B3)
+        // 1. Compute Integrity Hash
         const hashBuffer = await crypto.subtle.digest('SHA-256', content);
         const hashHex = Array.from(new Uint8Array(hashBuffer))
           .map(b => b.toString(16).padStart(2, '0'))
           .join('');
         h.setState({ sha256: hashHex });
 
-        // 2. Detect HDF5 Signature (at offsets 0, 512, 1024, 2048, 4096, 8192)
-        const bytes = new Uint8Array(content);
-        const HDF5_MAGIC = [0x89, 0x48, 0x44, 0x46, 0x0D, 0x0A, 0x1A, 0x0A];
-        let sigOffset = -1;
-        const searchOffsets = [0, 512, 1024, 2048, 4096, 8192];
-        
-        for (const off of searchOffsets) {
-          if (bytes.length < off + 8) break;
-          let match = true;
-          for (let i = 0; i < 8; i++) {
-            if (bytes[off + i] !== HDF5_MAGIC[i]) { match = false; break; }
-          }
-          if (match) { sigOffset = off; break; }
+        // 2. Load dependencies if missing
+        if (typeof hdf5 === 'undefined') {
+          await h.loadScripts([
+            'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js',
+            'https://cdn.jsdelivr.net/npm/js-five@0.3.8/dist/hdf5.js'
+          ]);
         }
 
-        const isValid = sigOffset !== -1;
-        const superblock = {
-          version: isValid && bytes.length > sigOffset + 8 ? bytes[sigOffset + 8] : 'N/A',
-          offsetSize: isValid && bytes.length > sigOffset + 13 ? bytes[sigOffset + 13] : 'N/A',
-          lengthSize: isValid && bytes.length > sigOffset + 14 ? bytes[sigOffset + 14] : 'N/A'
-        };
-
-        const displayLineLimit = 8192; // Max bytes for hex dump (B7)
-        const lineCount = Math.ceil(Math.min(content.byteLength, displayLineLimit) / 16);
-
-        // 3. Render UI
-        h.render(`
-          <div class="p-4 md:p-8 max-w-6xl mx-auto space-y-6 animate-in fade-in duration-500">
-            <!-- U1: File Info Bar -->
-            <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 shadow-sm border border-surface-100">
-              <span class="font-semibold text-surface-800">${esc(file.name)}</span>
-              <span class="text-surface-300">|</span>
-              <span>${formatSize(file.size)}</span>
-              <span class="text-surface-300">|</span>
-              <span class="text-surface-500 font-medium italic">HDF5 Hierarchical Data</span>
-            </div>
-
-            <!-- Dashboard Grid (U9) -->
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <!-- Validity Status -->
-              <div class="rounded-xl border border-surface-200 p-5 hover:border-brand-300 transition-all bg-white shadow-sm group">
-                <div class="flex items-center justify-between mb-4">
-                  <h3 class="text-xs font-bold text-surface-400 uppercase tracking-widest">Verification</h3>
-                  <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${isValid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
-                    ${isValid ? 'Verified' : 'Mismatch'}
-                  </span>
-                </div>
-                <div class="text-2xl font-bold ${isValid ? 'text-surface-800' : 'text-red-500'} mb-1">
-                  ${isValid ? 'Valid HDF5' : 'Invalid File'}
-                </div>
-                <p class="text-xs text-surface-400">
-                  ${isValid ? `Signature found at byte ${sigOffset}` : 'HDF5 magic header not detected'}
-                </p>
-              </div>
-
-              <!-- Integrity Hash -->
-              <div class="rounded-xl border border-surface-200 p-5 hover:border-brand-300 transition-all bg-white shadow-sm lg:col-span-2">
-                <h3 class="text-xs font-bold text-surface-400 uppercase tracking-widest mb-3">Integrity (SHA-256)</h3>
-                <div class="font-mono text-[11px] break-all text-brand-700 bg-brand-50/50 p-3 rounded-lg border border-brand-100 leading-relaxed shadow-inner">
-                  ${hashHex}
-                </div>
-              </div>
-            </div>
-
-            <!-- Metadata Details (U7, U10) -->
-            <div class="space-y-3">
-              <div class="flex items-center justify-between px-1">
-                <h3 class="font-bold text-surface-800 flex items-center gap-2">
-                  Superblock Analysis
-                  <span class="text-xs font-normal text-surface-400">(HDF5 Header)</span>
-                </h3>
-                <span class="text-[10px] bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-bold">SPEC V${superblock.version}</span>
-              </div>
-              <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white shadow-sm">
-                <table class="min-w-full text-sm">
-                  <thead>
-                    <tr class="bg-surface-50/80 border-b border-surface-200">
-                      <th class="px-4 py-3 text-left font-semibold text-surface-700">Internal Property</th>
-                      <th class="px-4 py-3 text-left font-semibold text-surface-700">Value / Parameter</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-surface-100">
-                    <tr class="hover:bg-brand-50/30 transition-colors">
-                      <td class="px-4 py-3 text-surface-500">Superblock Format Version</td>
-                      <td class="px-4 py-3 font-mono text-brand-600 font-bold">${superblock.version}</td>
-                    </tr>
-                    <tr class="hover:bg-brand-50/30 transition-colors">
-                      <td class="px-4 py-3 text-surface-500">Offset Addressing Size</td>
-                      <td class="px-4 py-3 font-mono">${superblock.offsetSize} bytes</td>
-                    </tr>
-                    <tr class="hover:bg-brand-50/30 transition-colors">
-                      <td class="px-4 py-3 text-surface-500">Length Addressing Size</td>
-                      <td class="px-4 py-3 font-mono">${superblock.lengthSize} bytes</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <!-- Raw Data Explorer (U8, U10, Format Excellence) -->
-            <div class="space-y-3">
-              <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 px-1">
-                <div class="flex items-center gap-2">
-                  <h3 class="font-bold text-surface-800">Hexadecimal Explorer</h3>
-                  <span class="text-[10px] bg-surface-100 text-surface-600 px-2 py-0.5 rounded-full font-bold">${lineCount} entries displayed</span>
-                </div>
-                <div class="relative">
-                  <input type="text" id="hex-search" placeholder="Search hex or ASCII strings..." 
-                    class="text-xs border border-surface-200 rounded-lg pl-8 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 w-full md:w-64 shadow-sm transition-all">
-                  <svg class="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                </div>
-              </div>
-              <div class="rounded-xl overflow-hidden border border-surface-900 shadow-2xl bg-gray-950">
-                <div id="hex-container" class="p-5 text-[11px] font-mono bg-gray-950 text-gray-200 overflow-x-auto leading-relaxed max-h-[500px] overflow-y-auto custom-scrollbar">
-                  ${generateHexDump(content, 0, displayLineLimit)}
-                </div>
-              </div>
-            </div>
-
-            <!-- Format Tip -->
-            <div class="bg-brand-50/50 border border-brand-100 rounded-2xl p-6 text-sm text-brand-900 flex items-start gap-4">
-              <div class="text-2xl select-none">🧪</div>
-              <div class="space-y-1">
-                <p class="font-bold text-brand-950">Scientific Data Insight</p>
-                <p class="leading-relaxed opacity-90">
-                  HDF5 is a complex container format. This tool performs high-level validation and raw bit inspection. 
-                  For deep data extraction of datasets (tensors) or group hierarchies, we recommend the 
-                  <code class="bg-brand-100 px-1.5 py-0.5 rounded font-mono font-bold text-brand-800 text-[11px]">h5py</code> Python library 
-                  or the standalone <code class="bg-brand-100 px-1.5 py-0.5 rounded font-mono font-bold text-brand-800 text-[11px]">HDFView</code> application.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <style>
-            .custom-scrollbar::-webkit-scrollbar { width: 10px; height: 10px; }
-            .custom-scrollbar::-webkit-scrollbar-track { background: #030712; }
-            .custom-scrollbar::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 5px; border: 2px solid #030712; }
-            .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #374151; }
-            @keyframes fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-            .animate-in { animation: fade-in 0.4s ease-out forwards; }
-          </style>
-        `);
-
-        // 4. Interaction Logic (Format Excellence)
-        const searchInput = document.getElementById('hex-search');
-        if (searchInput) {
-          searchInput.addEventListener('input', function (e) {
-            const term = e.target.value.toLowerCase();
-            const lines = document.querySelectorAll('.hex-line');
-            lines.forEach(line => {
-              const contentMatch = line.getAttribute('data-search').includes(term);
-              line.style.display = contentMatch ? 'flex' : 'none';
-            });
-          });
+        // 3. Parse HDF5
+        try {
+          const f = new hdf5.File(content, file.name);
+          renderHdf5Viewer(f, h, hashHex);
+        } catch (err) {
+          console.error('[HDF5 Error]', err);
+          h.showError('HDF5 Parse Error', 'This file might be an unsupported HDF5 version or corrupted. Detail: ' + err.message);
         }
       }
     });
   };
+
+  function renderHdf5Viewer(f, h, hashHex) {
+    const file = h.getFile();
+    h.render(`
+      <div class="flex flex-col h-full min-h-[650px] animate-in fade-in duration-500">
+        <!-- File Info Header -->
+        <div class="p-4 border-b bg-surface-50 flex flex-wrap items-center gap-4 text-xs">
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-surface-900">${esc(file.name)}</span>
+            <span class="text-surface-300">|</span>
+            <span class="text-surface-600">${formatSize(file.size)}</span>
+          </div>
+          <div class="flex items-center gap-2 font-mono text-brand-600 bg-brand-50 px-2 py-1 rounded border border-brand-100">
+            <span class="text-[10px] uppercase font-bold text-brand-400">SHA256:</span>
+            ${hashHex.substring(0, 12)}...${hashHex.substring(hashHex.length - 8)}
+          </div>
+        </div>
+
+        <div class="flex flex-1 overflow-hidden">
+          <!-- Sidebar: Tree Navigation -->
+          <div class="w-1/3 md:w-1/4 border-r flex flex-col bg-white">
+            <div class="p-2 border-b bg-surface-50 text-[10px] font-bold uppercase tracking-wider text-surface-500 flex items-center justify-between">
+              <span>Hierarchy</span>
+              <span class="text-surface-300">Click to expand</span>
+            </div>
+            <div id="hdf5-tree" class="flex-1 overflow-auto p-2 text-sm custom-scrollbar"></div>
+          </div>
+
+          <!-- Content: Item Inspector -->
+          <div class="flex-1 flex flex-col bg-white overflow-hidden">
+            <div class="p-2 border-b bg-surface-50 text-[10px] font-bold uppercase tracking-wider text-surface-500">
+              Object Inspector
+            </div>
+            <div id="hdf5-inspector" class="flex-1 overflow-auto p-6 custom-scrollbar bg-white">
+              <div class="flex flex-col items-center justify-center h-full text-surface-400 space-y-4 opacity-50">
+                <span class="text-5xl">📊</span>
+                <p class="text-sm font-medium">Select a Group or Dataset to inspect</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+        @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-in { animation: fade-in 0.3s ease-out forwards; }
+        .tree-row { transition: all 0.2s ease; border-radius: 6px; }
+        .tree-row:hover { background-color: #f8fafc; color: #4f46e5; }
+        .tree-row-active { background-color: #eef2ff !important; color: #4f46e5 !important; font-weight: 600; box-shadow: inset 0 0 0 1px #e0e7ff; }
+        .group-children { border-left: 1px solid #f1f5f9; margin-left: 14px; }
+      </style>
+    `);
+
+    const treeContainer = document.getElementById('hdf5-tree');
+    
+    function buildTree(item, path, container, depth = 0) {
+      const name = item.name || (depth === 0 ? '/' : 'unnamed');
+      const isGroup = item instanceof hdf5.Group;
+      
+      const itemWrapper = document.createElement('div');
+      itemWrapper.className = 'flex flex-col mb-0.5';
+      
+      const row = document.createElement('div');
+      row.className = 'tree-row flex items-center gap-2 py-1.5 px-2 cursor-pointer text-surface-600 select-none';
+      row.style.paddingLeft = (depth * 12 + 8) + 'px';
+      
+      const icon = isGroup ? '📁' : '📊';
+      row.innerHTML = `
+        <span class="text-xs shrink-0">${icon}</span>
+        <span class="truncate" title="${esc(name)}">${esc(name)}</span>
+      `;
+      
+      const childrenContainer = document.createElement('div');
+      childrenContainer.className = 'group-children hidden';
+
+      row.onclick = () => {
+        if (isGroup) {
+          childrenContainer.classList.toggle('hidden');
+        }
+        
+        // Active states
+        treeContainer.querySelectorAll('.tree-row-active').forEach(el => el.classList.remove('tree-row-active'));
+        row.classList.add('tree-row-active');
+        
+        inspectHdf5Object(item, path, h);
+      };
+
+      itemWrapper.appendChild(row);
+      
+      if (isGroup && item.children) {
+        itemWrapper.appendChild(childrenContainer);
+        // Sort keys: Groups then Datasets
+        const keys = Object.keys(item.children).sort((a, b) => {
+          const itemA = item.get(a);
+          const itemB = item.get(b);
+          const isGA = itemA instanceof hdf5.Group;
+          const isGB = itemB instanceof hdf5.Group;
+          if (isGA && !isGB) return -1;
+          if (!isGA && isGB) return 1;
+          return a.localeCompare(b);
+        });
+
+        keys.forEach(childName => {
+          const childPath = path === '/' ? '/' + childName : path + '/' + childName;
+          buildTree(item.get(childName), childPath, childrenContainer, depth + 1);
+        });
+      }
+      
+      container.appendChild(itemWrapper);
+    }
+
+    const root = f.get('/');
+    buildTree(root, '/', treeContainer);
+  }
+
+  function inspectHdf5Object(item, path, h) {
+    const container = document.getElementById('hdf5-inspector');
+    const isGroup = item instanceof hdf5.Group;
+    const isDataset = item instanceof hdf5.Dataset;
+
+    let html = `
+      <div class="max-w-5xl space-y-8 animate-in">
+        <div class="border-b pb-6">
+          <div class="flex items-center gap-4 mb-2">
+            <span class="text-3xl">${isGroup ? '📁' : '📊'}</span>
+            <div>
+              <h2 class="text-2xl font-black text-surface-900 leading-none">${esc(item.name || '/')}</h2>
+              <p class="text-[10px] font-mono text-surface-400 mt-2 bg-surface-50 px-2 py-0.5 rounded-full inline-block border">${esc(path)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="p-4 rounded-xl border border-surface-100 bg-surface-50/50">
+            <span class="text-[9px] font-black uppercase tracking-widest text-surface-400 block mb-1">Type</span>
+            <span class="font-bold text-surface-700">${isGroup ? 'HDF5 Group' : 'HDF5 Dataset'}</span>
+          </div>
+          ${isDataset ? `
+            <div class="p-4 rounded-xl border border-surface-100 bg-surface-50/50 md:col-span-2">
+              <span class="text-[9px] font-black uppercase tracking-widest text-surface-400 block mb-1">Shape / Dimensions</span>
+              <span class="font-mono text-brand-600 font-bold text-lg">${JSON.stringify(item.shape)}</span>
+            </div>
+          ` : ''}
+        </div>
+    `;
+
+    // Attributes (Metadata)
+    const attrs = item.attrs || {};
+    const attrKeys = Object.keys(attrs);
+    if (attrKeys.length > 0) {
+      html += `
+        <div class="space-y-3">
+          <h3 class="text-xs font-black text-surface-400 uppercase tracking-widest flex items-center gap-2">
+            Attributes
+            <span class="bg-brand-100 text-brand-600 px-1.5 py-0.5 rounded-full text-[9px]">${attrKeys.length}</span>
+          </h3>
+          <div class="border rounded-xl overflow-hidden shadow-sm bg-white">
+            <table class="min-w-full text-xs">
+              <thead class="bg-surface-50 border-b border-surface-100">
+                <tr>
+                  <th class="px-4 py-3 text-left font-bold text-surface-500 uppercase tracking-tighter">Key</th>
+                  <th class="px-4 py-3 text-left font-bold text-surface-500 uppercase tracking-tighter">Value</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-surface-100">
+                ${attrKeys.map(key => `
+                  <tr class="hover:bg-brand-50/20 transition-colors">
+                    <td class="px-4 py-3 font-mono text-brand-700 font-medium">${esc(key)}</td>
+                    <td class="px-4 py-3 text-surface-600">${esc(String(attrs[key]))}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // Dataset Content & Conversion
+    if (isDataset) {
+      html += `
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-black text-surface-400 uppercase tracking-widest">Data Preview</h3>
+            <div class="flex gap-2">
+               <button id="copy-json" class="text-[10px] font-bold uppercase bg-white border px-3 py-1.5 rounded-lg hover:bg-surface-50 transition-all shadow-sm">Copy JSON</button>
+               <button id="dl-csv" class="text-[10px] font-bold uppercase bg-brand-600 text-white px-3 py-1.5 rounded-lg hover:bg-brand-700 transition-all shadow-sm">Download CSV</button>
+            </div>
+          </div>
+          <div class="p-5 bg-surface-900 rounded-xl shadow-2xl overflow-auto max-h-[450px] border border-surface-800">
+            <pre class="text-[11px] font-mono text-brand-300 leading-relaxed">${renderHdf5Data(item)}</pre>
+          </div>
+          <p class="text-[10px] text-surface-400 italic">Showing a partial preview for large scientific datasets.</p>
+        </div>
+      `;
+    } else if (isGroup) {
+      const childrenCount = Object.keys(item.children || {}).length;
+      html += `
+        <div class="p-8 border-2 border-dashed border-surface-100 rounded-2xl text-center">
+          <p class="text-sm text-surface-500">Group contains <span class="font-bold text-surface-800">${childrenCount}</span> direct child objects.</p>
+          <p class="text-xs text-surface-400 mt-1">Expand the tree on the left to explore the hierarchy.</p>
+        </div>
+      `;
+    }
+
+    html += `</div>`;
+    container.innerHTML = html;
+
+    if (isDataset) {
+      document.getElementById('copy-json').onclick = (e) => {
+        h.copyToClipboard(JSON.stringify(item.value), e.target);
+      };
+      document.getElementById('dl-csv').onclick = () => {
+        const val = item.value;
+        let csv = '';
+        if (Array.isArray(val) || ArrayBuffer.isView(val)) {
+          csv = Array.from(val).join('\n');
+        } else {
+          csv = String(val);
+        }
+        h.download(`${item.name || 'dataset'}.csv`, csv, 'text/csv');
+      };
+    }
+  }
+
+  function renderHdf5Data(dataset) {
+    const val = dataset.value;
+    if (val === undefined || val === null) return 'Empty Dataset';
+    if (dataset.shape.length === 0) return esc(String(val));
+    
+    // Preview limit
+    const MAX_ELEMENTS = 250;
+    
+    if (ArrayBuffer.isView(val) || Array.isArray(val)) {
+      const arr = Array.from(val.slice(0, MAX_ELEMENTS));
+      let out = JSON.stringify(arr, null, 2);
+      if (val.length > MAX_ELEMENTS) out += '\n\n... (Data truncated for preview)';
+      return esc(out);
+    }
+    
+    return esc(JSON.stringify(val, null, 2));
+  }
 })();
