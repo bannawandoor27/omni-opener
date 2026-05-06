@@ -1,15 +1,23 @@
 /**
  * OmniOpener — MIDI Toolkit
- * Uses OmniTool SDK and @tonejs/midi.
+ * Professional MIDI analyzer with track breakdown and timing visualization.
  */
 (function () {
   'use strict';
 
   function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
+    if (!str) return '';
     const div = document.createElement('div');
-    div.appendChild(document.createTextNode(String(str)));
+    div.textContent = String(str);
     return div.innerHTML;
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
   window.initTool = function (toolConfig, mountEl) {
@@ -29,23 +37,24 @@
           }
         },
         {
-          label: '📋 Copy JSON',
-          id: 'copy-json',
-          onClick: function (h, btn) {
-            const state = h.getState();
-            if (state.midiJson) {
-              h.copyToClipboard(JSON.stringify(state.midiJson, null, 2), btn);
-            }
-          }
-        },
-        {
           label: '📄 Download JSON',
           id: 'dl-json',
           onClick: function (h) {
             const state = h.getState();
             const file = h.getFile();
             if (state.midiJson && file) {
-              h.download(file.name.replace(/\.midi?$/i, '') + '.json', JSON.stringify(state.midiJson, null, 2), 'application/json');
+              const name = file.name.replace(/\.[^/.]+$/, "") + '.json';
+              h.download(name, JSON.stringify(state.midiJson, null, 2), 'application/json');
+            }
+          }
+        },
+        {
+          label: '📋 Copy Data',
+          id: 'copy-json',
+          onClick: function (h, btn) {
+            const state = h.getState();
+            if (state.midiJson) {
+              h.copyToClipboard(JSON.stringify(state.midiJson, null, 2), btn);
             }
           }
         }
@@ -57,76 +66,192 @@
         }
       },
 
+      onDestroy: function() {
+        // Clean up logic if any future additions require it (e.g. blobs)
+      },
+
       onFile: function _onFile(file, content, h) {
         if (typeof Midi === 'undefined') {
-          h.showLoading('Loading MIDI engine...');
-          setTimeout(function () { _onFile(file, content, h); }, 500);
+          h.showLoading('Initializing MIDI engine...');
+          setTimeout(function () { _onFile(file, content, h); }, 200);
           return;
         }
 
-        h.showLoading('Analyzing MIDI data...');
+        h.showLoading('Parsing MIDI structure...');
+        
+        // Ensure content is ArrayBuffer (binary:true handles this)
+        if (!(content instanceof ArrayBuffer)) {
+          h.showError('Invalid File Content', 'The file content was not loaded as binary data.');
+          return;
+        }
+
         try {
           const midi = new Midi(content);
-          h.setState('midiJson', midi.toJSON());
-          
-          const header = midi.header;
-          const tempo = header.tempos[0] ? Math.round(header.tempos[0].bpm) : 120;
-          const signature = header.timeSignatures[0] ? `${header.timeSignatures[0].timeSignature[0]}/${header.timeSignatures[0].timeSignature[1]}` : '4/4';
+          const midiJson = midi.toJSON();
+          h.setState('midiJson', midiJson);
+          h.setState('searchTerm', '');
 
-          let tracksHtml = midi.tracks.map((track, i) => `
-            <div class="bg-white rounded-xl border border-surface-200 shadow-sm overflow-hidden mb-4">
-              <div class="bg-surface-50 px-4 py-2 border-b border-surface-100 flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <span class="w-2.5 h-2.5 rounded-full bg-brand-500"></span>
-                  <span class="text-[11px] font-bold text-surface-700 uppercase">Track ${i + 1}: ${escapeHtml(track.name || 'Instrument')}</span>
-                </div>
-                <span class="text-[10px] font-mono text-surface-400 font-bold">${track.notes.length} Notes</span>
-              </div>
-              <div class="p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-[10px]">
-                <div>
-                  <div class="text-surface-400 font-bold uppercase mb-0.5">Instrument</div>
-                  <div class="text-surface-700 truncate font-medium">${escapeHtml(track.instrument.name)}</div>
-                </div>
-                <div>
-                  <div class="text-surface-400 font-bold uppercase mb-0.5">Channel</div>
-                  <div class="text-surface-700 font-medium">${track.channel}</div>
-                </div>
-                <div>
-                  <div class="text-surface-400 font-bold uppercase mb-0.5">Note Range</div>
-                  <div class="text-surface-700 font-medium">${track.notes.length > 0 ? `${track.notes[0].name} — ${track.notes[track.notes.length - 1].name}` : 'N/A'}</div>
-                </div>
-                <div>
-                  <div class="text-surface-400 font-bold uppercase mb-0.5">Duration</div>
-                  <div class="text-surface-700 font-medium">${track.duration.toFixed(2)}s</div>
-                </div>
-              </div>
-            </div>
-          `).join('');
+          const renderContent = () => {
+            const state = h.getState();
+            const searchTerm = (state.searchTerm || '').toLowerCase();
+            
+            const header = midi.header;
+            const tempo = header.tempos[0] ? Math.round(header.tempos[0].bpm) : 120;
+            const signature = header.timeSignatures[0] ? `${header.timeSignatures[0].timeSignature[0]}/${header.timeSignatures[0].timeSignature[1]}` : '4/4';
+            
+            const filteredTracks = midi.tracks.filter(track => {
+              const name = (track.name || '').toLowerCase();
+              const inst = (track.instrument.name || '').toLowerCase();
+              return name.includes(searchTerm) || inst.includes(searchTerm);
+            });
 
-          h.render(`
-            <div class="p-6 bg-surface-50/30 font-sans">
-              <div class="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
-                <div>
-                  <h3 class="text-xl font-black text-surface-900 tracking-tight">${escapeHtml(file.name)}</h3>
-                  <div class="flex items-center gap-3 text-[10px] font-bold text-surface-400 uppercase mt-2">
-                    <span class="bg-surface-200 text-surface-600 px-1.5 py-0.5 rounded">${escapeHtml(header.name || 'Standard MIDI')}</span>
-                    <span>•</span>
-                    <span class="text-brand-600">${midi.duration.toFixed(1)}s Length</span>
-                    <span>•</span>
-                    <span>BPM: ${tempo}</span>
-                    <span>•</span>
-                    <span>Sig: ${signature}</span>
+            const fileInfoBar = `
+              <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100">
+                <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
+                <span class="text-surface-300">|</span>
+                <span>${formatBytes(file.size)}</span>
+                <span class="text-surface-300">|</span>
+                <span class="text-surface-500">MIDI ${header.format} File</span>
+                <span class="text-surface-300">|</span>
+                <span class="px-2 py-0.5 bg-brand-50 text-brand-700 rounded-md text-xs font-medium">${midi.duration.toFixed(1)}s</span>
+              </div>
+            `;
+
+            const summaryPanel = `
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm">
+                  <div class="text-[10px] uppercase font-bold text-surface-400 mb-1">Tempo</div>
+                  <div class="text-lg font-bold text-surface-800">${tempo} <span class="text-xs font-normal text-surface-400">BPM</span></div>
+                </div>
+                <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm">
+                  <div class="text-[10px] uppercase font-bold text-surface-400 mb-1">Signature</div>
+                  <div class="text-lg font-bold text-surface-800">${signature}</div>
+                </div>
+                <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm">
+                  <div class="text-[10px] uppercase font-bold text-surface-400 mb-1">Resolution</div>
+                  <div class="text-lg font-bold text-surface-800">${header.ppq} <span class="text-xs font-normal text-surface-400">PPQ</span></div>
+                </div>
+                <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm">
+                  <div class="text-[10px] uppercase font-bold text-surface-400 mb-1">Tracks</div>
+                  <div class="text-lg font-bold text-surface-800">${midi.tracks.length}</div>
+                </div>
+              </div>
+            `;
+
+            const searchBar = `
+              <div class="flex items-center justify-between mb-4 gap-4">
+                <div class="relative flex-1">
+                  <input type="text" id="track-search" placeholder="Search tracks or instruments..." 
+                    class="w-full pl-10 pr-4 py-2 bg-white border border-surface-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all"
+                    value="${escapeHtml(state.searchTerm || '')}">
+                  <div class="absolute left-3 top-2.5 text-surface-400">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                   </div>
                 </div>
+                <span class="text-xs bg-brand-100 text-brand-700 px-3 py-1.5 rounded-full font-bold whitespace-nowrap">
+                  ${filteredTracks.length} / ${midi.tracks.length} Tracks
+                </span>
               </div>
-              <div class="space-y-4">
-                ${tracksHtml}
+            `;
+
+            let tracksHtml = filteredTracks.length > 0 ? filteredTracks.map((track, i) => {
+              const noteCount = track.notes.length;
+              const duration = track.duration.toFixed(2);
+              const instrument = track.instrument.name || 'Unknown Instrument';
+              
+              return `
+                <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:shadow-md transition-all bg-white mb-4">
+                  <div class="flex items-start justify-between mb-4">
+                    <div class="flex items-center gap-3">
+                      <div class="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600 font-bold">
+                        ${track.channel + 1}
+                      </div>
+                      <div>
+                        <h4 class="font-bold text-surface-800 leading-tight">${escapeHtml(track.name || 'Track ' + (i + 1))}</h4>
+                        <div class="text-xs text-surface-500">${escapeHtml(instrument)}</div>
+                      </div>
+                    </div>
+                    <div class="text-right">
+                      <div class="text-xs font-mono font-bold text-surface-400 uppercase">Track ${i + 1}</div>
+                      <div class="text-[10px] text-surface-400 font-medium">Channel ${track.channel}</div>
+                    </div>
+                  </div>
+                  
+                  <div class="grid grid-cols-3 gap-4 border-t border-surface-50 pt-4">
+                    <div>
+                      <div class="text-[10px] uppercase font-bold text-surface-400 mb-0.5">Notes</div>
+                      <div class="text-sm font-semibold text-surface-700">${noteCount.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div class="text-[10px] uppercase font-bold text-surface-400 mb-0.5">Range</div>
+                      <div class="text-sm font-semibold text-surface-700">${noteCount > 0 ? `${track.notes[0].name} — ${track.notes[track.notes.length - 1].name}` : 'N/A'}</div>
+                    </div>
+                    <div>
+                      <div class="text-[10px] uppercase font-bold text-surface-400 mb-0.5">Length</div>
+                      <div class="text-sm font-semibold text-surface-700">${duration}s</div>
+                    </div>
+                  </div>
+
+                  ${noteCount > 0 ? `
+                  <div class="mt-4 bg-surface-50 rounded-lg p-2 flex gap-0.5 h-3 overflow-hidden">
+                    ${track.notes.slice(0, 100).map(n => `
+                      <div class="flex-1 bg-brand-400/30 rounded-full h-full" style="opacity: ${0.3 + (n.velocity * 0.7)};"></div>
+                    `).join('')}
+                    ${noteCount > 100 ? `<div class="w-4 flex items-center justify-center text-[8px] text-surface-300">...</div>` : ''}
+                  </div>
+                  ` : ''}
+                </div>
+              `;
+            }).join('') : `
+              <div class="py-12 text-center bg-surface-50 rounded-2xl border-2 border-dashed border-surface-200">
+                <div class="text-surface-400 mb-2">
+                  <svg class="w-12 h-12 mx-auto opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 9.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <div class="text-surface-600 font-medium">${midi.tracks.length === 0 ? 'This MIDI file contains no tracks.' : 'No tracks match your search filters.'}</div>
+                <button class="mt-4 text-brand-600 font-bold text-sm hover:underline" id="clear-search">Clear search</button>
               </div>
-            </div>
-          `);
+            `;
+
+            h.render(`
+              <div class="p-4 md:p-8 bg-surface-50/20 min-h-full font-sans">
+                ${fileInfoBar}
+                ${summaryPanel}
+                ${searchBar}
+                <div class="space-y-2">
+                  ${tracksHtml}
+                </div>
+              </div>
+            `);
+
+            // Attach event listeners after render
+            const searchInput = document.getElementById('track-search');
+            if (searchInput) {
+              searchInput.addEventListener('input', (e) => {
+                h.setState('searchTerm', e.target.value);
+                renderContent();
+                // Maintain focus
+                const input = document.getElementById('track-search');
+                if (input) {
+                  input.focus();
+                  input.setSelectionRange(input.value.length, input.value.length);
+                }
+              });
+            }
+
+            const clearBtn = document.getElementById('clear-search');
+            if (clearBtn) {
+              clearBtn.addEventListener('click', () => {
+                h.setState('searchTerm', '');
+                renderContent();
+              });
+            }
+          };
+
+          renderContent();
 
         } catch (err) {
-          h.showError('Analysis Failed', 'Unable to parse this MIDI file. Ensure it is a valid Standard MIDI File (SMF). ' + err.message);
+          console.error(err);
+          h.showError('Analysis Failed', 'Unable to parse this MIDI file. Ensure it is a valid Standard MIDI File (SMF). Details: ' + err.message);
         }
       }
     });
