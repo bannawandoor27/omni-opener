@@ -28,47 +28,47 @@
       dropLabel: 'Drop a Valve Pak (.vpk) file here',
       binary: true,
       onInit: function (helpers) {
-        // No external dependencies needed for VPK parsing
+        // VPK parsing is handled by local logic
       },
-      onFile: function (file, content, helpers) {
+      onFile: async function _onFile(file, content, helpers) {
         helpers.showLoading('Parsing VPK archive tree...');
 
-        return new Promise(function (resolve, reject) {
-          // Slight delay to allow UI to update
-          setTimeout(function () {
-            try {
-              if (!(content instanceof ArrayBuffer)) {
-                throw new Error('Invalid file content: expected ArrayBuffer');
-              }
+        try {
+          if (!(content instanceof ArrayBuffer)) {
+            throw new Error('Invalid file content: expected ArrayBuffer');
+          }
 
-              const entries = parseVpk(content);
+          // Small delay to ensure the loading message is visible
+          await new Promise(resolve => setTimeout(resolve, 50));
 
-              // Calculate stats
-              const extCounts = {};
-              entries.forEach(function (f) {
-                extCounts[f.ext] = (extCounts[f.ext] || 0) + 1;
-              });
+          const entries = parseVpk(content);
 
-              helpers.setState({
-                entries: entries,
-                fileName: file.name,
-                fileSize: file.size,
-                searchTerm: '',
-                sortKey: 'fullPath',
-                sortDesc: false,
-                extCounts: extCounts
-              });
+          const extCounts = {};
+          entries.forEach(function (f) {
+            extCounts[f.ext] = (extCounts[f.ext] || 0) + 1;
+          });
 
-              renderApp(helpers);
-              resolve();
-            } catch (e) {
-              console.error('[VPK] Parse Error:', e);
-              helpers.showError('Could not open VPK file',
-                'This might be a corrupted file or an unsupported version. ' + e.message);
-              reject(e);
-            }
-          }, 50);
-        });
+          helpers.setState({
+            entries: entries,
+            fileName: file.name,
+            fileSize: file.size,
+            searchTerm: '',
+            sortKey: 'fullPath',
+            sortDesc: false,
+            extCounts: extCounts
+          });
+
+          renderApp(helpers);
+        } catch (e) {
+          console.error('[VPK] Parse Error:', e);
+          helpers.showError(
+            'Could not open VPK file',
+            'The file may be corrupted, an unsupported version, or a multi-part archive piece. If it is multi-part, ensure you open the _dir.vpk file.'
+          );
+        }
+      },
+      onDestroy: function (helpers) {
+        // Clean up if needed
       },
       actions: [
         {
@@ -122,7 +122,7 @@
 
     let headerSize = 12;
     if (version === 2) {
-      headerSize = 28; // Version 2 has extra fields
+      headerSize = 28; 
     } else if (version !== 1) {
       throw new Error('Unsupported VPK version: ' + version);
     }
@@ -146,8 +146,6 @@
       return str;
     }
 
-    // VPK Tree Structure:
-    // Extension -> Path -> Filename -> Entry Metadata
     while (offset < headerSize + treeSize) {
       const ext = readString();
       if (ext === null || ext === '') break;
@@ -170,9 +168,7 @@
           const terminator = view.getUint16(offset + 16, true);
 
           offset += 18;
-
-          // Skip preload data in the tree
-          offset += preloadBytes;
+          offset += preloadBytes; // Skip preload data
 
           const displayPath = path === ' ' ? '' : path;
           const fullPath = (displayPath ? displayPath + '/' : '') + name + (ext ? '.' + ext : '');
@@ -189,9 +185,7 @@
             preloadBytes: preloadBytes
           });
 
-          if (terminator !== 0xFFFF) {
-            // Standard VPK terminator check
-          }
+          if (terminator !== 0xFFFF) { /* end of directory entry */ }
         }
       }
     }
@@ -201,15 +195,15 @@
 
   function renderApp(helpers) {
     const state = helpers.getState();
-    const entries = state.entries;
+    const entries = state.entries || [];
     const fileName = state.fileName;
     const fileSize = state.fileSize;
-    const searchTerm = state.searchTerm;
+    const searchTerm = (state.searchTerm || '').toLowerCase();
     const sortKey = state.sortKey;
     const sortDesc = state.sortDesc;
-    const extCounts = state.extCounts;
+    const extCounts = state.extCounts || {};
 
-    if (!entries || entries.length === 0) {
+    if (entries.length === 0) {
       helpers.render(
         '<div class="flex flex-col items-center justify-center p-20 text-center">' +
           '<div class="text-6xl mb-4">📦</div>' +
@@ -223,8 +217,8 @@
     const filtered = entries
       .filter(function (f) {
         if (!searchTerm) return true;
-        const s = searchTerm.toLowerCase();
-        return f.fullPath.toLowerCase().indexOf(s) !== -1 || f.ext.toLowerCase().indexOf(s) !== -1;
+        return f.fullPath.toLowerCase().indexOf(searchTerm) !== -1 || 
+               f.ext.toLowerCase().indexOf(searchTerm) !== -1;
       })
       .sort(function (a, b) {
         let valA = a[sortKey];
@@ -244,30 +238,28 @@
       .slice(0, 5);
 
     const html =
-      '<div class="space-y-4 animate-in fade-in duration-300 p-4">' +
+      '<div class="animate-in fade-in duration-300 p-4">' +
         '<!-- File Info Bar -->' +
-        '<div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">' +
+        '<div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">' +
           '<span class="font-semibold text-surface-800">' + escapeHtml(fileName) + '</span>' +
           '<span class="text-surface-300">|</span>' +
           '<span>' + formatSize(fileSize) + '</span>' +
           '<span class="text-surface-300">|</span>' +
-          '<span class="text-surface-500">' + entries.length.toLocaleString() + ' entries</span>' +
-          '<span class="text-surface-300">|</span>' +
-          '<span class="px-2 py-0.5 bg-brand-100 text-brand-700 rounded text-xs font-medium uppercase tracking-wider">VPK Archive</span>' +
+          '<span class="text-surface-500">.vpk file</span>' +
         '</div>' +
 
         '<!-- Stats Grid -->' +
-        '<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">' +
+        '<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">' +
           '<div class="bg-white p-4 rounded-xl border border-surface-200 shadow-sm">' +
             '<div class="text-xs font-bold text-surface-400 uppercase tracking-widest mb-1">Total Files</div>' +
             '<div class="text-2xl font-bold text-surface-800">' + entries.length.toLocaleString() + '</div>' +
           '</div>' +
           '<div class="bg-white p-4 rounded-xl border border-surface-200 shadow-sm md:col-span-3">' +
-            '<div class="text-xs font-bold text-surface-400 uppercase tracking-widest mb-2">Popular Extensions</div>' +
+            '<div class="text-xs font-bold text-surface-400 uppercase tracking-widest mb-2">Common Formats</div>' +
             '<div class="flex flex-wrap gap-2">' +
               topExts.map(function (pair) {
                 return '<span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-surface-100 text-surface-700 border border-surface-200">' +
-                  '<span class="text-brand-600 font-bold mr-1.5">' + (pair[0] || 'none') + '</span>' +
+                  '<span class="text-brand-600 font-bold mr-1.5">' + escapeHtml(pair[0] || 'none') + '</span>' +
                   '<span class="text-surface-400">' + pair[1].toLocaleString() + '</span>' +
                 '</span>';
               }).join('') +
@@ -275,30 +267,30 @@
           '</div>' +
         '</div>' +
 
-        '<!-- Search -->' +
-        '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">' +
+        '<!-- Controls -->' +
+        '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">' +
           '<div class="flex items-center gap-3">' +
-            '<h3 class="font-semibold text-surface-800 text-lg">File Browser</h3>' +
-            '<span class="text-xs bg-brand-100 text-brand-700 px-2.5 py-0.5 rounded-full font-medium">' +
-              filtered.length.toLocaleString() + ' matches' +
+            '<h3 class="font-semibold text-surface-800">Archive Entries</h3>' +
+            '<span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">' +
+              filtered.length.toLocaleString() + ' files' +
             '</span>' +
           '</div>' +
           '<div class="relative w-full sm:w-72">' +
             '<input type="text" id="vpk-search" ' +
               'class="block w-full px-4 py-2 border border-surface-200 rounded-xl bg-white placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 sm:text-sm transition-all" ' +
-              'placeholder="Search files..." ' +
-              'value="' + escapeHtml(searchTerm) + '">' +
+              'placeholder="Filter files by name or ext..." ' +
+              'value="' + escapeHtml(state.searchTerm) + '">' +
           '</div>' +
         '</div>' +
 
-        '<!-- Table -->' +
+        '<!-- Table Wrapper -->' +
         '<div class="overflow-hidden rounded-xl border border-surface-200 bg-white shadow-sm">' +
-          '<div class="overflow-x-auto max-h-[600px] overflow-y-auto">' +
-            '<table class="min-w-full text-sm divide-y divide-surface-200">' +
-              '<thead class="bg-surface-50 sticky top-0 z-10">' +
-                '<tr>' +
+          '<div class="overflow-x-auto max-h-[600px]">' +
+            '<table class="min-w-full text-sm">' +
+              '<thead>' +
+                '<tr class="bg-surface-50/80 backdrop-blur sticky top-0 z-10">' +
                   renderTh('fullPath', 'File Path', 'text-left', sortKey, sortDesc) +
-                  renderTh('ext', 'Ext', 'text-left w-24', sortKey, sortDesc) +
+                  renderTh('ext', 'Type', 'text-left w-24', sortKey, sortDesc) +
                   renderTh('length', 'Size', 'text-right w-32', sortKey, sortDesc) +
                   renderTh('archiveIndex', 'Archive', 'text-center w-24', sortKey, sortDesc) +
                   renderTh('crc', 'CRC32', 'text-center w-32', sortKey, sortDesc) +
@@ -310,35 +302,38 @@
             '</table>' +
           '</div>' +
           (filtered.length === 0 ?
-            '<div class="py-12 text-center">' +
-              '<div class="text-surface-300 text-4xl mb-2">🔍</div>' +
-              '<p class="text-surface-500">No files match your search criteria.</p>' +
+            '<div class="py-16 text-center">' +
+              '<div class="text-surface-300 text-5xl mb-3">🔍</div>' +
+              '<p class="text-surface-500 font-medium">No files matching "' + escapeHtml(state.searchTerm) + '"</p>' +
+              '<button id="clear-search" class="mt-3 text-brand-600 hover:text-brand-700 text-sm font-semibold">Clear search filter</button>' +
             '</div>' : '') +
           (filtered.length > 1000 ?
-            '<div class="bg-surface-50/50 px-4 py-3 text-center text-xs text-surface-500 border-t border-surface-100 italic">' +
-              'Showing first 1,000 matches. Use search to find specific files.' +
+            '<div class="bg-surface-50 px-4 py-3 text-center text-xs text-surface-500 border-t border-surface-200 font-medium">' +
+              'Showing first 1,000 matches. Use the search box to find specific entries.' +
             '</div>' : '') +
         '</div>' +
       '</div>';
 
     helpers.render(html);
 
-    // Event listeners
+    // Re-attach event listeners
     const searchInput = document.getElementById('vpk-search');
     if (searchInput) {
-      searchInput.focus();
-      // Move cursor to end
-      const val = searchInput.value;
-      searchInput.value = '';
-      searchInput.value = val;
-
       searchInput.oninput = function (e) {
         helpers.setState({ searchTerm: e.target.value });
         renderApp(helpers);
       };
+      if (state.searchTerm) searchInput.focus();
     }
 
-    // Sorting handlers
+    const clearBtn = document.getElementById('clear-search');
+    if (clearBtn) {
+      clearBtn.onclick = function() {
+        helpers.setState({ searchTerm: '' });
+        renderApp(helpers);
+      };
+    }
+
     helpers.getRenderEl().querySelectorAll('[data-sort]').forEach(function (th) {
       th.onclick = function () {
         const key = th.getAttribute('data-sort');
@@ -354,8 +349,8 @@
 
   function renderTh(key, label, classes, currentKey, currentDesc) {
     const isCurrent = key === currentKey;
-    const arrow = isCurrent ? (currentDesc ? ' ▼' : ' ▲') : '';
-    return '<th class="px-4 py-3 font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors ' + classes + '" data-sort="' + key + '">' +
+    const arrow = isCurrent ? (currentDesc ? ' <span class="text-brand-500">▼</span>' : ' <span class="text-brand-500">▲</span>') : '';
+    return '<th class="px-4 py-3 font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors whitespace-nowrap ' + classes + '" data-sort="' + key + '">' +
         label + arrow +
       '</th>';
   }
@@ -365,20 +360,20 @@
     const displayed = files.slice(0, limit);
 
     return displayed.map(function (f) {
-      return '<tr class="even:bg-surface-50/50 hover:bg-brand-50 transition-colors group">' +
-        '<td class="px-4 py-2.5 text-surface-700 font-mono text-[13px] break-all" title="' + escapeHtml(f.fullPath) + '">' +
+      return '<tr class="even:bg-surface-50/30 hover:bg-brand-50/50 transition-colors group">' +
+        '<td class="px-4 py-3 text-surface-700 font-mono text-[13px] break-all">' +
           escapeHtml(f.fullPath) +
         '</td>' +
-        '<td class="px-4 py-2.5 text-surface-500 font-mono text-xs">' +
+        '<td class="px-4 py-3 text-surface-500 font-medium">' +
           escapeHtml(f.ext || '-') +
         '</td>' +
-        '<td class="px-4 py-2.5 text-surface-600 text-right font-mono text-xs">' +
+        '<td class="px-4 py-3 text-surface-600 text-right font-mono text-xs">' +
           formatSize(f.length) +
         '</td>' +
-        '<td class="px-4 py-2.5 text-surface-400 text-center font-mono text-xs">' +
-          (f.archiveIndex === 0x7FFF ? '<span class="text-brand-600 font-semibold">DIR</span>' : f.archiveIndex) +
+        '<td class="px-4 py-3 text-surface-400 text-center font-mono text-xs">' +
+          (f.archiveIndex === 0x7FFF ? '<span class="text-brand-600 font-bold">DIR</span>' : f.archiveIndex) +
         '</td>' +
-        '<td class="px-4 py-2.5 text-surface-400 text-center font-mono text-xs uppercase">' +
+        '<td class="px-4 py-3 text-surface-400 text-center font-mono text-xs uppercase tracking-tight">' +
           f.crc +
         '</td>' +
       '</tr>';
