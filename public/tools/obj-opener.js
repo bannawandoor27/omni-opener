@@ -5,6 +5,9 @@
 (function () {
   'use strict';
 
+  let currentObject = null;
+  let currentFile = null;
+
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
     const div = document.createElement('div');
@@ -16,20 +19,63 @@
     OmniTool.create(mountEl, toolConfig, {
       accept: '.obj',
       binary: false,
-      infoHtml: '<strong>OBJ Toolkit:</strong> Professional 3D viewer with bounding box dimensions, auto-rotation, and environment presets.',
+      infoHtml: '<strong>OBJ Toolkit:</strong> Professional 3D viewer with bounding box dimensions, auto-rotation, and environment presets. All processing is 100% client-side.',
       
+      actions: [
+        {
+          label: '📋 Copy Stats',
+          id: 'copy-stats',
+          onClick: function (h, btn) {
+            if (!currentObject) return;
+            const box = new THREE.Box3().setFromObject(currentObject);
+            const size = box.getSize(new THREE.Vector3());
+            let meshCount = 0;
+            currentObject.traverse(n => { if (n.isMesh) meshCount++; });
+            
+            const stats = `File: ${currentFile.name}\nMeshes: ${meshCount}\nDimensions: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)} units`;
+            h.copyToClipboard(stats, btn);
+          }
+        },
+        {
+          label: '📥 Download OBJ',
+          id: 'download',
+          onClick: function (h) {
+            if (h.getContent()) h.download(currentFile.name, h.getContent(), 'text/plain');
+          }
+        },
+        {
+          label: '📸 Screenshot',
+          id: 'screenshot',
+          onClick: function (h) {
+            const container = document.getElementById('three-container');
+            const canvas = container.querySelector('canvas');
+            if (canvas) {
+              const dataUrl = canvas.toDataURL('image/png');
+              h.download('screenshot.png', dataUrl, 'image/png');
+            }
+          }
+        }
+      ],
+
       onInit: function (h) {
-        h.loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js', () => {
-           h.loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/OBJLoader.js', () => {
-              h.loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js');
-           });
-        });
+        h.loadScripts([
+          'https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js',
+          'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/OBJLoader.js',
+          'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js'
+        ]);
       },
 
-      onFile: function _onFileFn(file, content, h) {
+      onFile: function (file, content, h) {
+        currentFile = file;
         if (typeof THREE === 'undefined' || typeof THREE.OBJLoader === 'undefined') {
           h.showLoading('Loading 3D engine...');
-          setTimeout(() => _onFileFn(file, content, h), 500);
+          h.loadScripts([
+            'https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js',
+            'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/OBJLoader.js',
+            'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js'
+          ], () => {
+            this.onFile(file, content, h);
+          });
           return;
         }
 
@@ -37,9 +83,10 @@
         try {
           const loader = new THREE.OBJLoader();
           const object = loader.parse(content);
+          currentObject = object;
           renderViewer(object, file, h);
         } catch (err) {
-           h.render(`<div class="p-12 text-center text-surface-400">Unable to parse this 3D model.</div>`);
+           h.showError('Parsing Error', 'Unable to parse this OBJ file. Ensure it is a valid Wavefront OBJ.');
         }
       }
     });
@@ -89,7 +136,7 @@
     `);
 
     const container = document.getElementById('three-container');
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
@@ -131,11 +178,24 @@
     document.getElementById('btn-reset').onclick = () => { camera.position.set(maxDim*2, maxDim*2, maxDim*2); controls.reset(); };
 
     const animate = () => {
-       if (!container.isConnected) { renderer.dispose(); return; }
+       if (!container.isConnected) { 
+         renderer.dispose(); 
+         return; 
+       }
        requestAnimationFrame(animate);
        controls.update();
        renderer.render(scene, camera);
     };
     animate();
+
+    // Resize observer
+    const resizeObserver = new ResizeObserver(() => {
+      if (container.clientWidth > 0 && container.clientHeight > 0) {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+      }
+    });
+    resizeObserver.observe(container);
   }
 })();
