@@ -2,6 +2,8 @@
   'use strict';
 
   window.initTool = function (toolConfig, mountEl) {
+    var _bibtexParseUrl = 'https://cdn.jsdelivr.net/npm/bibtex-parse-js@0.0.24/bibtex-parse.min.js';
+
     OmniTool.create(mountEl, toolConfig, {
       accept: '.bib',
       dropLabel: 'Drop a BibTeX (.bib) file here',
@@ -10,32 +12,41 @@
 
       onInit: function (h) {
         if (typeof bibtexParse === 'undefined') {
-          h.loadScript('https://cdn.jsdelivr.net/npm/bibtex-parse-js@0.0.24/bibtex-parse.min.js');
+          h.loadScript(_bibtexParseUrl);
         }
       },
 
-      onFile: function (file, content, h) {
+      onFile: function _onFileFn(file, content, h) {
         h.showLoading('Parsing BibTeX entries...');
-        
-        // Small delay to ensure script is ready if it was just loaded
-        setTimeout(function() {
+
+        var tryParse = function () {
+          if (typeof bibtexParse === 'undefined') {
+            // Script not ready yet, wait and try again
+            setTimeout(function() { _onFileFn(file, content, h); }, 200);
+            return;
+          }
+
           try {
-            if (typeof bibtexParse === 'undefined') {
-              // Try loading again if it missed it
-              h.loadScript('https://cdn.jsdelivr.net/npm/bibtex-parse-js@0.0.24/bibtex-parse.min.js', function() {
-                try {
-                  parseAndRender(file, content, h);
-                } catch (e) {
-                  h.showError('Could not parse BibTeX', e.message);
-                }
-              });
+            var entries = bibtexParse.toJSON(content);
+            
+            if (!entries || entries.length === 0) {
+              h.showError('No entries found', 'This file doesn\'t seem to contain valid BibTeX entries or is empty.');
               return;
             }
-            parseAndRender(file, content, h);
+
+            h.setState('entries', entries);
+            h.setState('query', '');
+            render(file, entries, h);
           } catch (err) {
-            h.showError('Could not parse BibTeX file', err.message);
+            h.showError('Could not parse BibTeX file', 'The file format might be invalid or use unsupported extensions. ' + err.message);
           }
-        }, 100);
+        };
+
+        tryParse();
+      },
+
+      onDestroy: function (h) {
+        // Cleanup if necessary
       },
 
       actions: [
@@ -52,7 +63,10 @@
           id: 'dl-json',
           onClick: function (h) {
             var entries = h.getState().entries;
-            if (entries) h.download(h.getFile().name.replace('.bib', '.json'), JSON.stringify(entries, null, 2), 'application/json');
+            if (entries) {
+              var filename = (h.getFile().name || 'references.bib').replace(/\.bib$/i, '') + '.json';
+              h.download(filename, JSON.stringify(entries, null, 2), 'application/json');
+            }
           }
         },
         {
@@ -64,112 +78,148 @@
         }
       ]
     });
-  };
 
-  function parseAndRender(file, content, h) {
-    var entries = bibtexParse.toJSON(content);
-    if (!entries || entries.length === 0) {
-      h.showError('No entries found', 'This file doesn\'t seem to contain valid BibTeX entries.');
-      return;
-    }
-    renderBib(file, entries, h);
-  }
-
-  function formatSize(b) {
-    return b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : b > 1e3 ? (b / 1024).toFixed(0) + ' KB' : b + ' B';
-  }
-
-  function renderBib(file, entries, h) {
-    h.setState('entries', entries);
-    
-    var html = '<div class="p-6">';
-    
-    // U1. File info bar
-    html += '<div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">' +
-      '<span class="font-semibold text-surface-800 truncate max-w-xs">' + file.name + '</span>' +
-      '<span class="text-surface-300">|</span>' +
-      '<span>' + formatSize(file.size) + '</span>' +
-      '<span class="text-surface-300">|</span>' +
-      '<span class="text-surface-500">.bib BibTeX references</span>' +
-    '</div>';
-
-    // U10. Section header with count + Search
-    html += '<div class="flex flex-col sm:flex-row items-center justify-between mb-6 gap-4">' +
-      '<div class="flex items-center gap-2">' +
-        '<h3 class="text-lg font-bold text-surface-800">References</h3>' +
-        '<span class="text-xs bg-brand-100 text-brand-700 px-2.5 py-1 rounded-full font-medium">' + entries.length + ' entries</span>' +
-      '</div>' +
-      '<div class="relative w-full sm:w-64">' +
-        '<input type="text" id="bib-search" placeholder="Filter entries..." class="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-surface-200 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all">' +
-        '<svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>' +
-      '</div>' +
-    '</div>';
-
-    // Entries container
-    html += '<div id="bib-entries" class="grid grid-cols-1 gap-4">';
-    html += renderEntriesList(entries);
-    html += '</div>';
-
-    html += '</div>';
-
-    h.render(html);
-
-    // Live search
-    var searchInp = document.getElementById('bib-search');
-    if (searchInp) {
-      searchInp.addEventListener('input', function (e) {
-        var q = e.target.value.toLowerCase().trim();
-        var filtered = entries.filter(function (entry) {
-          var txt = (entry.citationKey + ' ' + entry.entryType + ' ' + JSON.stringify(entry.entryTags)).toLowerCase();
-          return txt.indexOf(q) !== -1;
+    function render(file, entries, h) {
+      var query = h.getState().query || '';
+      var filtered = entries;
+      
+      if (query) {
+        var q = query.toLowerCase();
+        filtered = entries.filter(function (e) {
+          var tags = e.entryTags || {};
+          var haystack = (
+            (e.citationKey || '') + ' ' + 
+            (e.entryType || '') + ' ' + 
+            (tags.title || '') + ' ' + 
+            (tags.author || '') + ' ' + 
+            (tags.journal || '') + ' ' + 
+            (tags.year || '')
+          ).toLowerCase();
+          return haystack.indexOf(q) !== -1;
         });
-        var listEl = document.getElementById('bib-entries');
-        if (listEl) listEl.innerHTML = renderEntriesList(filtered);
-      });
-    }
-  }
+      }
 
-  function renderEntriesList(entries) {
-    if (entries.length === 0) {
-      return '<div class="text-center py-12 text-surface-400 bg-surface-50 rounded-xl border border-dashed border-surface-200">No matching entries found.</div>';
-    }
+      var html = '<div class="p-4 md:p-6 max-w-5xl mx-auto">';
+      
+      // U1. File info bar
+      html += '<div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">' +
+        '<span class="font-semibold text-surface-800 truncate max-w-[200px]" title="' + h.escape(file.name) + '">' + h.escape(file.name) + '</span>' +
+        '<span class="text-surface-300">|</span>' +
+        '<span>' + formatSize(file.size) + '</span>' +
+        '<span class="text-surface-300">|</span>' +
+        '<span class="text-surface-500">.bib file</span>' +
+      '</div>';
 
-    // Limit display for performance
-    var max = 500;
-    var displayed = entries.slice(0, max);
-    var notice = entries.length > max ? '<p class="text-xs text-center text-surface-400 py-4 italic">Showing first ' + max + ' of ' + entries.length + ' entries...</p>' : '';
-
-    return displayed.map(function (entry) {
-      var tags = entry.entryTags || {};
-      var title = (tags.title || 'Untitled').replace(/{/g, '').replace(/}/g, '');
-      var author = (tags.author || 'Unknown Author').replace(/{/g, '').replace(/}/g, '');
-      var year = tags.year || tags.date || '';
-      var type = entry.entryType || 'article';
-
-      // U9. Content cards
-      return '<div class="rounded-xl border border-surface-200 p-5 hover:border-brand-300 hover:shadow-sm transition-all bg-white shadow-sm">' +
-        '<div class="flex items-start justify-between gap-4 mb-2">' +
-          '<div class="min-w-0"><h4 class="font-bold text-surface-900 leading-snug">' + esc(title) + '</h4>' +
-          '<p class="text-sm text-surface-600 mt-1">' + esc(author) + (year ? ' (' + esc(year) + ')' : '') + '</p></div>' +
-          '<span class="shrink-0 text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded-md bg-surface-100 text-surface-500 border border-surface-200">' + esc(type) + '</span>' +
+      // U10. Section header with counts + Search
+      html += '<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">' +
+        '<div>' +
+          '<h3 class="font-bold text-xl text-surface-900">BibTeX References</h3>' +
+          '<p class="text-sm text-surface-500 mt-1">' + (filtered.length === entries.length ? entries.length + ' entries total' : 'Showing ' + filtered.length + ' of ' + entries.length + ' entries') + '</p>' +
         '</div>' +
-        '<div class="text-xs font-mono text-surface-400 mb-3 truncate select-all">@' + esc(entry.citationKey) + '</div>' +
-        '<div class="flex flex-wrap gap-2">' +
-          Object.keys(tags).filter(function(k) { return k !== 'title' && k !== 'author' && k !== 'year' && k !== 'date' && typeof tags[k] === 'string'; }).map(function(k) {
-            var val = tags[k].replace(/{/g, '').replace(/}/g, '');
-            if (val.length > 150) val = val.substring(0, 147) + '...';
-            return '<span class="text-[11px] px-2 py-0.5 rounded bg-surface-50 text-surface-500 border border-surface-100"><strong class="text-surface-600 uppercase font-semibold">' + esc(k) + ':</strong> ' + esc(val) + '</span>';
-          }).join('') +
+        '<div class="relative min-w-[280px]">' +
+          '<input type="text" id="bib-search" value="' + h.escape(query) + '" placeholder="Search title, author, key..." ' +
+          'class="w-full pl-10 pr-4 py-2.5 bg-white border border-surface-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none transition-all shadow-sm">' +
+          '<div class="absolute left-3.5 top-1/2 -translate-y-1/2 text-surface-400">' +
+            '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>' +
+          '</div>' +
         '</div>' +
       '</div>';
-    }).join('') + notice;
-  }
 
-  function esc(s) {
-    if (!s) return '';
-    var d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-  }
+      // U5. Empty state
+      if (filtered.length === 0) {
+        html += '<div class="flex flex-col items-center justify-center py-20 px-4 text-center bg-surface-50 rounded-2xl border-2 border-dashed border-surface-200">' +
+          '<div class="w-16 h-16 bg-surface-100 rounded-full flex items-center justify-center mb-4 text-surface-400">' +
+            '<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>' +
+          '</div>' +
+          '<h4 class="text-lg font-semibold text-surface-800">No entries found</h4>' +
+          '<p class="text-surface-500 max-w-xs mx-auto mt-2">Try adjusting your search terms or upload a different .bib file.</p>' +
+        '</div>';
+      } else {
+        // Entries list
+        html += '<div class="space-y-4">';
+        
+        // Truncation for performance (U7/B7)
+        var limit = 200;
+        var displayItems = filtered.slice(0, limit);
+        
+        displayItems.forEach(function (entry) {
+          var tags = entry.entryTags || {};
+          var title = stripBraces(tags.title || 'Untitled');
+          var author = stripBraces(tags.author || 'Unknown');
+          var year = tags.year || tags.date || '';
+          var type = (entry.entryType || 'article').toLowerCase();
+          
+          // U9. Content cards
+          html += '<div class="group bg-white rounded-xl border border-surface-200 p-5 hover:border-brand-400 hover:shadow-md transition-all duration-200">';
+          
+          html += '<div class="flex flex-wrap items-start justify-between gap-3 mb-3">';
+          html += '<div class="flex-1 min-w-0">';
+          html += '<h4 class="font-bold text-surface-900 leading-tight mb-1 group-hover:text-brand-600 transition-colors">' + h.escape(title) + '</h4>';
+          html += '<p class="text-sm text-surface-600 font-medium">' + h.escape(author) + (year ? ' <span class="text-surface-400">(' + h.escape(year) + ')</span>' : '') + '</p>';
+          html += '</div>';
+          html += '<span class="px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-surface-100 text-surface-500 border border-surface-200">' + h.escape(type) + '</span>';
+          html += '</div>';
+          
+          html += '<div class="text-xs font-mono text-brand-600 bg-brand-50/50 px-2 py-1 rounded inline-block mb-4 select-all">@' + h.escape(entry.citationKey) + '</div>';
+          
+          // Tags / Fields
+          html += '<div class="flex flex-wrap gap-2">';
+          var skip = ['title', 'author', 'year', 'date'];
+          Object.keys(tags).forEach(function (key) {
+            if (skip.indexOf(key.toLowerCase()) === -1 && tags[key]) {
+              var val = stripBraces(tags[key]);
+              if (val.length > 200) val = val.substring(0, 197) + '...';
+              html += '<div class="flex items-center text-[11px] bg-surface-50 text-surface-600 rounded-md border border-surface-100 overflow-hidden">';
+              html += '<span class="bg-surface-100 px-2 py-1 font-bold border-r border-surface-200 text-surface-500">' + h.escape(key.toUpperCase()) + '</span>';
+              html += '<span class="px-2 py-1">' + h.escape(val) + '</span>';
+              html += '</div>';
+            }
+          });
+          html += '</div>';
+          
+          html += '</div>';
+        });
 
+        if (filtered.length > limit) {
+          html += '<div class="py-8 text-center text-surface-500 text-sm border-t border-surface-100 mt-4">' +
+            'Showing first ' + limit + ' of ' + filtered.length + ' entries. Use search to find specific records.' +
+          '</div>';
+        }
+        
+        html += '</div>';
+      }
+
+      html += '</div>';
+
+      h.render(html);
+
+      // Search event
+      var searchInput = document.getElementById('bib-search');
+      if (searchInput) {
+        searchInput.focus();
+        // Place cursor at end
+        var val = searchInput.value;
+        searchInput.value = '';
+        searchInput.value = val;
+        
+        searchInput.addEventListener('input', function (e) {
+          h.setState('query', e.target.value);
+          render(file, entries, h);
+        });
+      }
+    }
+
+    function stripBraces(str) {
+      if (typeof str !== 'string') return '';
+      return str.replace(/\{/g, '').replace(/\}/g, '');
+    }
+
+    function formatSize(bytes) {
+      if (bytes === 0) return '0 B';
+      var k = 1024;
+      var sizes = ['B', 'KB', 'MB', 'GB'];
+      var i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+  };
 })();
