@@ -46,6 +46,11 @@
       onFile: async function (file, content, h) {
         h.showLoading('Analyzing Apple Disk Image...');
 
+        // Ensure plist library is loaded
+        if (typeof plist === 'undefined') {
+          await h.loadScript('https://cdn.jsdelivr.net/npm/plist@3.1.0/dist/plist.min.js');
+        }
+
         const buffer = content;
         const view = new DataView(buffer);
         
@@ -66,12 +71,17 @@
           
           if (kolySignature === 'koly') {
             isDMG = true;
-            // Parse Koly block
-            // XML Offset is at 0x140 (320 bytes) into the koly block
-            // XML Length is at 0x148 (328 bytes) into the koly block
-            // Use BigInt for 64-bit offsets
-            const xmlOffset = view.getBigUint64(kolyOffset + 320, false); // false for big-endian
-            const xmlLength = view.getBigUint64(kolyOffset + 328, false);
+            // UDIF Header (Koly block) offsets:
+            // XML Offset is typically at 216 or 320
+            // XML Length is typically at 224 or 328
+            let xmlOffset = view.getBigUint64(kolyOffset + 216, false);
+            let xmlLength = view.getBigUint64(kolyOffset + 224, false);
+            
+            // Check if values look like valid offsets (within file bounds)
+            if (xmlOffset === 0n || xmlOffset > BigInt(buffer.byteLength)) {
+              xmlOffset = view.getBigUint64(kolyOffset + 320, false);
+              xmlLength = view.getBigUint64(kolyOffset + 328, false);
+            }
             
             if (xmlOffset > 0n && xmlLength > 0n && (xmlOffset + xmlLength) <= BigInt(buffer.byteLength)) {
               const xmlBuffer = buffer.slice(Number(xmlOffset), Number(xmlOffset + xmlLength));
@@ -89,8 +99,8 @@
           }
         }
 
-        // 3. Hex Dump (first 2KB)
-        const hexDump = generateHexDump(buffer.slice(0, 2048));
+        // 3. Hex Dump (first 1KB)
+        const hexDump = generateHexDump(buffer.slice(0, 1024));
 
         // Render UI
         h.render(`
@@ -101,7 +111,7 @@
                 <p class="text-sm text-surface-500">${formatBytes(file.size)} • Apple Disk Image</p>
               </div>
               <div class="flex items-center gap-2">
-                ${isDMG ? '<span class="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded">VALID DMG</span>' : '<span class="px-2 py-1 bg-red-100 text-red-700 text-xs font-bold rounded">INVALID OR FLAT IMAGE</span>'}
+                ${isDMG ? '<span class="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded">VALID UDIF</span>' : '<span class="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded">FLAT/RAW IMAGE</span>'}
               </div>
             </div>
 
@@ -118,9 +128,10 @@
                 <div class="bg-surface-50 rounded-xl p-4 border border-surface-200">
                   <h4 class="text-xs font-bold text-surface-400 mb-3 uppercase tracking-wider">DMG Properties</h4>
                   <div class="space-y-2 text-sm">
-                    <div class="flex justify-between"><span class="text-surface-500">Koly Signature:</span> <span class="font-mono">${isDMG ? 'koly' : 'None'}</span></div>
-                    ${dmgInfo ? `
-                      <div class="flex justify-between"><span class="text-surface-500">Partitions:</span> <span>${dmgInfo['resource-fork']?.['blkx']?.length || 0}</span></div>
+                    <div class="flex justify-between"><span class="text-surface-500">Format:</span> <span class="font-mono">UDIF (DMG)</span></div>
+                    <div class="flex justify-between"><span class="text-surface-500">Koly Header:</span> <span class="font-mono">${isDMG ? 'Detected' : 'Not Found'}</span></div>
+                    ${dmgInfo && dmgInfo['resource-fork'] && dmgInfo['resource-fork']['blkx'] ? `
+                      <div class="flex justify-between"><span class="text-surface-500">Partitions:</span> <span>${dmgInfo['resource-fork']['blkx'].length}</span></div>
                     ` : ''}
                   </div>
                 </div>
@@ -131,7 +142,7 @@
                 ${dmgInfo && dmgInfo['resource-fork'] && dmgInfo['resource-fork']['blkx'] ? `
                   <div class="bg-white rounded-xl border border-surface-200 overflow-hidden">
                     <div class="bg-surface-50 px-4 py-2 border-b border-surface-200">
-                      <h4 class="text-xs font-bold text-surface-700 uppercase">Partitions / Blocks</h4>
+                      <h4 class="text-xs font-bold text-surface-700 uppercase">Partitions / Block Maps</h4>
                     </div>
                     <div class="overflow-x-auto">
                       <table class="w-full text-left text-sm">
@@ -139,7 +150,6 @@
                           <tr>
                             <th class="px-4 py-2">Name</th>
                             <th class="px-4 py-2">Type</th>
-                            <th class="px-4 py-2">Attributes</th>
                           </tr>
                         </thead>
                         <tbody class="divide-y divide-surface-100">
@@ -147,7 +157,6 @@
                             <tr>
                               <td class="px-4 py-2 font-medium">${block.Name || 'Untitled'}</td>
                               <td class="px-4 py-2 text-surface-500 font-mono text-xs">${block.CFName || 'Unknown'}</td>
-                              <td class="px-4 py-2 text-surface-400 text-xs italic">${block.Attributes || '-'}</td>
                             </tr>
                           `).join('')}
                         </tbody>
@@ -157,14 +166,14 @@
                 ` : `
                   <div class="bg-surface-50 rounded-xl p-8 border border-surface-200 text-center">
                     <p class="text-surface-500 italic">
-                      ${isDMG ? 'DMG header detected but no block data found in Plist.' : 'This file does not appear to be a standard UDIF (Apple Disk Image).'}
+                      ${isDMG ? 'DMG header detected but no partition map found in Plist.' : 'This file does not have a standard UDIF (Apple Disk Image) header at the end.'}
                     </p>
                   </div>
                 `}
 
                 <!-- Hex Viewer -->
                 <div class="border border-surface-200 rounded-xl overflow-hidden">
-                  <div class="bg-surface-50 px-4 py-2 border-b border-surface-200 flex justify-between items-center">
+                  <div class="bg-surface-50 px-4 py-2 border-b border-surface-200">
                     <span class="text-xs font-bold text-surface-700 uppercase">Hex Preview (Header)</span>
                   </div>
                   <pre class="p-4 font-mono text-[10px] leading-tight overflow-auto max-h-64 bg-white text-surface-800">${hexDump}</pre>
