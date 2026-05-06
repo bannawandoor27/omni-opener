@@ -9,9 +9,7 @@
       if (wavesurfer) {
         try {
           wavesurfer.destroy();
-        } catch (e) {
-          console.error('Error destroying WaveSurfer:', e);
-        }
+        } catch (e) {}
         wavesurfer = null;
       }
       if (audioUrl) {
@@ -21,10 +19,10 @@
     }
 
     function formatTime(seconds) {
-      if (isNaN(seconds)) return '0:00';
-      const minutes = Math.floor(seconds / 60);
-      const remainingSeconds = Math.floor(seconds % 60);
-      return minutes + ':' + (remainingSeconds < 10 ? '0' : '') + remainingSeconds;
+      if (!seconds || isNaN(seconds)) return '0:00';
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return mins + ':' + secs.toString().padStart(2, '0');
     }
 
     function formatSize(bytes) {
@@ -38,7 +36,7 @@
     OmniTool.create(mountEl, toolConfig, {
       accept: '.flac',
       binary: true,
-      infoHtml: '<strong>FLAC Opener:</strong> High-fidelity local audio playback with waveform analysis. No data leaves your browser.',
+      infoHtml: 'Professional-grade FLAC analyzer and player. Experience lossless audio with real-time waveform visualization and playback control.',
       onInit: function (h) {
         h.loadScript('https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js');
       },
@@ -46,73 +44,83 @@
         cleanup();
 
         if (typeof WaveSurfer === 'undefined') {
-          h.showLoading('Loading audio engine...');
+          h.showLoading('Initializing Audio Engine...');
           h.loadScript('https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js', function () {
             _onFileFn(file, content, h);
           });
           return;
         }
 
-        h.showLoading('Preparing high-fidelity audio...');
+        if (!content || content.byteLength === 0) {
+          h.render('<div class="flex flex-col items-center justify-center p-12 text-surface-500 bg-surface-50 rounded-xl border-2 border-dashed border-surface-200"><span class="text-4xl mb-4">📭</span><p class="font-medium">This FLAC file appears to be empty.</p></div>');
+          return;
+        }
+
+        h.showLoading('Decoding Lossless Audio...');
 
         try {
           const blob = new Blob([content], { type: 'audio/flac' });
           audioUrl = URL.createObjectURL(blob);
         } catch (e) {
-          h.showError('Memory Error', 'Failed to create audio blob. The file might be too large for your browser.');
+          h.showError('Memory Limit Reached', 'This FLAC file is too large to be processed in your browser memory. Try a smaller file.');
           return;
         }
 
-        const fileInfoBar = 
-          '<div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">' +
+        const infoBar = 
+          '<div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">' +
             '<span class="font-semibold text-surface-800">' + h.escapeHtml(file.name) + '</span>' +
             '<span class="text-surface-300">|</span>' +
             '<span>' + formatSize(file.size) + '</span>' +
             '<span class="text-surface-300">|</span>' +
-            '<span class="text-surface-500">.flac file</span>' +
+            '<span class="px-2 py-0.5 bg-brand-100 text-brand-700 rounded text-[10px] font-bold uppercase tracking-wider">Lossless FLAC</span>' +
           '</div>';
 
         h.render(
-          '<div class="p-6">' +
-            fileInfoBar +
-            '<div class="rounded-xl border border-surface-200 bg-white overflow-hidden shadow-sm">' +
-              '<div id="waveform" class="w-full bg-surface-50" style="min-height:128px;"></div>' +
-              '<div class="px-6 py-4 bg-white border-t border-surface-100">' +
-                '<div class="flex flex-col md:flex-row items-center justify-between gap-6">' +
-                  '<div class="flex items-center gap-4">' +
-                    '<button id="btn-play" class="w-12 h-12 flex items-center justify-center bg-brand-600 text-white rounded-full hover:bg-brand-700 transition-all shadow-md hover:scale-105 active:scale-95">' +
-                      '<svg id="play-icon" class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>' +
-                      '<svg id="pause-icon" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>' +
+          '<div class="max-w-4xl mx-auto">' +
+            infoBar +
+            '<div class="rounded-2xl border border-surface-200 bg-white shadow-sm overflow-hidden">' +
+              '<div id="waveform" class="w-full bg-surface-50 relative group" style="min-height: 160px;">' +
+                '<div id="hover-time" class="absolute top-2 left-2 px-2 py-1 bg-black/60 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">0:00</div>' +
+              '</div>' +
+              '<div class="px-6 py-5 border-t border-surface-100">' +
+                '<div class="flex flex-col lg:flex-row items-center justify-between gap-6">' +
+                  '<div class="flex items-center gap-5">' +
+                    '<button id="play-btn" class="w-14 h-14 flex items-center justify-center bg-brand-600 text-white rounded-full hover:bg-brand-700 shadow-lg transition-all hover:scale-105 active:scale-95 group">' +
+                      '<svg id="svg-play" class="w-7 h-7 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>' +
+                      '<svg id="svg-pause" class="w-7 h-7 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>' +
                     '</button>' +
-                    '<div class="flex flex-col">' +
-                      '<span id="time-display" class="font-mono text-lg font-bold text-surface-800">0:00 / 0:00</span>' +
-                      '<span class="text-xs text-surface-500 uppercase tracking-wider font-semibold">FLAC Lossless</span>' +
+                    '<div>' +
+                      '<div id="time-display" class="font-mono text-2xl font-bold text-surface-900 tracking-tight">0:00 <span class="text-surface-300">/</span> 0:00</div>' +
+                      '<div class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mt-0.5">High Resolution Playback</div>' +
                     '</div>' +
                   '</div>' +
-                  '<div class="flex flex-wrap items-center justify-center gap-4">' +
-                    '<div class="flex flex-col items-center gap-1">' +
-                      '<span class="text-[10px] font-bold text-surface-400 uppercase">Playback Speed</span>' +
-                      '<div class="flex bg-surface-100 p-1 rounded-lg">' +
-                        '<button data-rate="0.5" class="speed-btn px-3 py-1 rounded-md text-xs font-medium transition-colors hover:bg-white">0.5×</button>' +
-                        '<button data-rate="1" class="speed-btn px-3 py-1 rounded-md text-xs font-medium transition-colors bg-white shadow-sm text-brand-600">1.0×</button>' +
-                        '<button data-rate="1.5" class="speed-btn px-3 py-1 rounded-md text-xs font-medium transition-colors hover:bg-white">1.5×</button>' +
-                        '<button data-rate="2" class="speed-btn px-3 py-1 rounded-md text-xs font-medium transition-colors hover:bg-white">2.0×</button>' +
+                  '<div class="flex flex-wrap items-center justify-center gap-8">' +
+                    '<div class="flex flex-col gap-2">' +
+                      '<span class="text-[10px] font-bold text-surface-400 uppercase tracking-widest text-center">Speed Control</span>' +
+                      '<div class="flex bg-surface-100 p-1 rounded-xl" id="speed-controls">' +
+                        '<button data-rate="0.5" class="px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-white transition-all">0.5×</button>' +
+                        '<button data-rate="1" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white shadow-sm text-brand-600 transition-all">1.0×</button>' +
+                        '<button data-rate="1.5" class="px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-white transition-all">1.5×</button>' +
+                        '<button data-rate="2" class="px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-white transition-all">2.0×</button>' +
                       '</div>' +
                     '</div>' +
-                    '<div class="flex flex-col items-center gap-1">' +
-                      '<span class="text-[10px] font-bold text-surface-400 uppercase">Volume</span>' +
-                      '<input type="range" id="volume-slider" min="0" max="1" step="0.01" value="1" class="w-24 accent-brand-600">' +
+                    '<div class="flex flex-col gap-2">' +
+                      '<div class="flex items-center justify-between">' +
+                        '<span class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Volume</span>' +
+                        '<span id="vol-val" class="text-[10px] font-mono text-surface-500">100%</span>' +
+                      '</div>' +
+                      '<input type="range" id="vol-slider" min="0" max="1" step="0.05" value="1" class="w-32 accent-brand-600 cursor-pointer">' +
                     '</div>' +
                   '</div>' +
                 '</div>' +
               '</div>' +
             '</div>' +
-            '<div class="mt-6 flex flex-wrap gap-3 justify-center">' +
-              '<button id="btn-copy-meta" class="flex items-center gap-2 px-4 py-2 bg-white border border-surface-200 rounded-lg text-sm font-medium text-surface-700 hover:bg-surface-50 transition-colors">' +
+            '<div class="mt-8 flex flex-wrap items-center justify-center gap-4">' +
+              '<button id="meta-btn" class="flex items-center gap-2 px-5 py-2.5 bg-white border border-surface-200 rounded-xl text-sm font-semibold text-surface-700 hover:border-brand-300 hover:bg-brand-50 transition-all">' +
                 '<span>📋 Copy Metadata</span>' +
               '</button>' +
-              '<button id="btn-download" class="flex items-center gap-2 px-4 py-2 bg-white border border-surface-200 rounded-lg text-sm font-medium text-surface-700 hover:bg-surface-50 transition-colors">' +
-                '<span>📥 Download FLAC</span>' +
+              '<button id="dl-btn" class="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-semibold hover:bg-brand-700 shadow-md transition-all">' +
+                '<span>📥 Download Lossless</span>' +
               '</button>' +
             '</div>' +
           '</div>'
@@ -120,79 +128,100 @@
 
         wavesurfer = WaveSurfer.create({
           container: '#waveform',
-          waveColor: '#d1d5db',
+          waveColor: '#e2e8f0',
           progressColor: '#4f46e5',
           cursorColor: '#4f46e5',
           cursorWidth: 2,
           barWidth: 2,
-          barGap: 3,
-          barRadius: 3,
-          height: 128,
+          barGap: 2,
+          barRadius: 4,
+          height: 160,
           normalize: true,
-          url: audioUrl
+          url: audioUrl,
+          interact: true,
+          hideScrollbar: true
         });
 
-        const btnPlay = document.getElementById('btn-play');
-        const playIcon = document.getElementById('play-icon');
-        const pauseIcon = document.getElementById('pause-icon');
+        const playBtn = document.getElementById('play-btn');
+        const svgPlay = document.getElementById('svg-play');
+        const svgPause = document.getElementById('svg-pause');
         const timeDisplay = document.getElementById('time-display');
-        const volumeSlider = document.getElementById('volume-slider');
+        const volSlider = document.getElementById('vol-slider');
+        const volVal = document.getElementById('vol-val');
+        const hoverTime = document.getElementById('hover-time');
 
         wavesurfer.on('ready', function (duration) {
-          timeDisplay.textContent = '0:00 / ' + formatTime(duration);
+          timeDisplay.innerHTML = '0:00 <span class="text-surface-300">/</span> ' + formatTime(duration);
         });
 
         wavesurfer.on('audioprocess', function (time) {
-          timeDisplay.textContent = formatTime(time) + ' / ' + formatTime(wavesurfer.getDuration());
+          timeDisplay.innerHTML = formatTime(time) + ' <span class="text-surface-300">/</span> ' + formatTime(wavesurfer.getDuration());
         });
 
         wavesurfer.on('interaction', function () {
-          timeDisplay.textContent = formatTime(wavesurfer.getCurrentTime()) + ' / ' + formatTime(wavesurfer.getDuration());
+          timeDisplay.innerHTML = formatTime(wavesurfer.getCurrentTime()) + ' <span class="text-surface-300">/</span> ' + formatTime(wavesurfer.getDuration());
         });
 
         wavesurfer.on('play', function () {
-          playIcon.classList.add('hidden');
-          pauseIcon.classList.remove('hidden');
+          svgPlay.classList.add('hidden');
+          svgPause.classList.remove('hidden');
         });
 
         wavesurfer.on('pause', function () {
-          playIcon.classList.remove('hidden');
-          pauseIcon.classList.add('hidden');
+          svgPlay.classList.remove('hidden');
+          svgPause.classList.add('hidden');
         });
 
-        wavesurfer.on('error', function (e) {
-          h.showError('Playback Error', 'Could not decode this FLAC file. It may be corrupted or use an unsupported bit depth/sample rate.');
-          console.error(e);
+        wavesurfer.on('error', function (err) {
+          console.error('WaveSurfer Error:', err);
+          h.showError('Decoding Failed', 'The audio engine could not decode this FLAC file. It might be corrupted or use an unsupported compression level.');
         });
 
-        btnPlay.onclick = function () {
+        const waveformEl = document.getElementById('waveform');
+        waveformEl.addEventListener('mousemove', function (e) {
+          const rect = waveformEl.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const duration = wavesurfer.getDuration();
+          if (duration) {
+            const time = (x / rect.width) * duration;
+            hoverTime.textContent = formatTime(time);
+            hoverTime.style.left = x + 'px';
+          }
+        });
+
+        playBtn.onclick = function () {
           wavesurfer.playPause();
         };
 
-        volumeSlider.oninput = function (e) {
-          wavesurfer.setVolume(parseFloat(e.target.value));
+        volSlider.oninput = function (e) {
+          const val = parseFloat(e.target.value);
+          wavesurfer.setVolume(val);
+          volVal.textContent = Math.round(val * 100) + '%';
         };
 
-        document.querySelectorAll('.speed-btn').forEach(function (btn) {
-          btn.addEventListener('click', function () {
-            const rate = parseFloat(btn.getAttribute('data-rate'));
-            wavesurfer.setPlaybackRate(rate);
-            document.querySelectorAll('.speed-btn').forEach(function (b) {
-              b.className = 'speed-btn px-3 py-1 rounded-md text-xs font-medium transition-colors hover:bg-white';
-            });
-            btn.className = 'speed-btn px-3 py-1 rounded-md text-xs font-medium transition-colors bg-white shadow-sm text-brand-600';
+        document.getElementById('speed-controls').onclick = function (e) {
+          const btn = e.target.closest('button');
+          if (!btn) return;
+          const rate = parseFloat(btn.dataset.rate);
+          wavesurfer.setPlaybackRate(rate);
+          
+          btn.parentNode.querySelectorAll('button').forEach(function (b) {
+            b.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-white transition-all';
           });
-        });
+          btn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-white shadow-sm text-brand-600 transition-all';
+        };
 
-        document.getElementById('btn-copy-meta').onclick = function (e) {
-          const meta = 'File: ' + file.name + '\n' +
-            'Size: ' + formatSize(file.size) + '\n' +
-            'Type: Audio (FLAC Lossless)\n' +
-            'Duration: ' + formatTime(wavesurfer.getDuration());
+        document.getElementById('meta-btn').onclick = function (e) {
+          const meta = [
+            'File: ' + file.name,
+            'Size: ' + formatSize(file.size),
+            'Format: Free Lossless Audio Codec (FLAC)',
+            'Duration: ' + formatTime(wavesurfer.getDuration())
+          ].join('\n');
           h.copyToClipboard(meta, e.target);
         };
 
-        document.getElementById('btn-download').onclick = function () {
+        document.getElementById('dl-btn').onclick = function () {
           h.download(file.name, content, 'audio/flac');
         };
       },
