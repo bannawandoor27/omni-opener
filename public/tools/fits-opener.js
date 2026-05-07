@@ -1,180 +1,186 @@
 (function () {
   'use strict';
 
-  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  function fmtBytes(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : b > 1024 ? (b / 1024).toFixed(0) + ' KB' : b + ' B'; }
+  function esc(s) {
+    if (!s) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
       accept: '.fits,.fit,.fts,.fits.gz',
-      dropLabel: 'Drop a FITS file here (.fits, .fit, .fts)',
+      dropLabel: 'Drop a FITS file here',
+      dropSub: 'Astronomical data (.fits, .fit, .fts, .gz)',
+      
       actions: [
         {
-          label: '📥 Download', id: 'dl', onClick: function (h) {
+          label: '📋 Copy Header',
+          id: 'copy-header',
+          onClick: function (h, btn) {
+            const state = h.getState();
+            if (state.headerText) h.copyToClipboard(state.headerText, btn);
+          }
+        },
+        {
+          label: '📥 Download JSON',
+          id: 'dl-json',
+          onClick: function (h) {
+            const state = h.getState();
+            if (state.headerJson) {
+              const fileName = h.getFile().name.replace(/\.[^/.]+$/, "") + ".json";
+              h.download(fileName, JSON.stringify(state.headerJson, null, 2));
+            }
+          }
+        },
+        {
+          label: '📥 Download File',
+          id: 'dl',
+          onClick: function (h) {
             h.download(h.getFile().name, h.getContent());
           }
         }
       ],
+
+      onInit: function (h) {
+        h.loadScript('https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js');
+      },
+
       onFile: async function (file, content, h) {
         h.showLoading('Analyzing FITS file...');
 
-        const bytes = new Uint8Array(content);
-
-        // SHA-256
-        const hashBuf = await crypto.subtle.digest('SHA-256', content);
-        const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-        // FITS signature: first 8 bytes should be "SIMPLE  " (with spaces) for standard FITS
-        const first8 = String.fromCharCode(...bytes.slice(0, Math.min(8, bytes.length)));
-        const first4 = String.fromCharCode(...bytes.slice(0, Math.min(4, bytes.length)));
-
-        let sigValid = false;
-        let sigNote = '';
-        if (first8 === 'SIMPLE  ') {
-          sigValid = true;
-          sigNote = 'Standard FITS primary HDU';
-        } else if (first4 === 'FITS') {
-          sigValid = true;
-          sigNote = 'FITS variant signature';
-        } else if (first8.startsWith('SIMPLE')) {
-          sigValid = true;
-          sigNote = 'FITS (SIMPLE keyword detected)';
-        } else {
-          sigNote = 'Expected "SIMPLE  " at offset 0';
+        let data = content;
+        if (file.name.endsWith('.gz')) {
+          try {
+            if (typeof pako === 'undefined') {
+                await h.loadScript('https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js');
+            }
+            data = pako.ungzip(new Uint8Array(content)).buffer;
+          } catch (e) {
+            h.showError('Decompression failed', 'This does not appear to be a valid GZIP file.');
+            return;
+          }
         }
 
-        const first8Hex = Array.from(bytes.slice(0, Math.min(8, bytes.length)))
-          .map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
-
-        // Parse FITS primary header block (2880 bytes, 36 cards of 80 chars each)
-        const BLOCK_SIZE = 2880;
-        const CARD_SIZE = 80;
-        const KNOWN_KEYWORDS = [
-          'SIMPLE', 'BITPIX', 'NAXIS', 'NAXIS1', 'NAXIS2', 'NAXIS3',
-          'TELESCOP', 'OBJECT', 'DATE-OBS', 'INSTRUME', 'OBSERVER',
-          'ORIGIN', 'EXTEND', 'BSCALE', 'BZERO', 'BUNIT', 'EQUINOX',
-          'EPOCH', 'CRPIX1', 'CRPIX2', 'CDELT1', 'CDELT2', 'CRVAL1',
-          'CRVAL2', 'CTYPE1', 'CTYPE2', 'DATE', 'AUTHOR', 'REFERENC'
-        ];
-
-        const headerCards = [];
-        const keywords = {};
-        let endFound = false;
-
-        const headerLimit = Math.min(bytes.length, BLOCK_SIZE * 4); // scan up to 4 blocks
+        const bytes = new Uint8Array(data);
         const decoder = new TextDecoder('ascii');
+        const CARD_SIZE = 80;
 
-        for (let cardStart = 0; cardStart < headerLimit && !endFound; cardStart += CARD_SIZE) {
-          if (cardStart + CARD_SIZE > bytes.length) break;
-          const cardBytes = bytes.slice(cardStart, cardStart + CARD_SIZE);
-          const card = decoder.decode(cardBytes);
+        const keywords = {};
+        const allCards = [];
+        let headerText = '';
+        let headerEndFound = false;
 
-          const keyword = card.substring(0, 8).trimEnd();
-          if (keyword === 'END') { endFound = true; break; }
-          if (keyword === '' || keyword === ' ') continue;
-
-          const valueComment = card.substring(10); // after "KEYWORD = "
-          // Strip leading/trailing spaces and comment after /
-          let rawValue = card.substring(10, 80);
-          // For string values (surrounded by quotes)
-          let value = rawValue.trim();
-          if (value.startsWith("'")) {
-            const closeQ = value.indexOf("'", 1);
-            value = closeQ > 0 ? value.substring(1, closeQ).trim() : value.substring(1).trim();
-          } else {
-            // numeric or logical — take up to /
-            const slashIdx = value.indexOf('/');
-            value = slashIdx >= 0 ? value.substring(0, slashIdx).trim() : value.trim();
+        for (let i = 0; i < bytes.length; i += CARD_SIZE) {
+          if (i + CARD_SIZE > bytes.length) break;
+          const card = decoder.decode(bytes.slice(i, i + CARD_SIZE));
+          headerText += card + '\n';
+          
+          const key = card.substring(0, 8).trim();
+          if (key === 'END') {
+            headerEndFound = true;
+            break;
           }
-
-          if (KNOWN_KEYWORDS.includes(keyword) || keyword.startsWith('NAXIS')) {
-            keywords[keyword] = value;
-            headerCards.push({ keyword, value });
-          } else if (keyword && keyword !== 'COMMENT' && keyword !== 'HISTORY') {
-            headerCards.push({ keyword, value });
+          
+          if (key && card.substring(8, 10) === '= ') {
+            let val = '';
+            let rawVal = card.substring(10).split('/')[0].trim();
+            if (rawVal.startsWith("'")) {
+                const lastQuote = rawVal.lastIndexOf("'");
+                val = lastQuote > 0 ? rawVal.substring(1, lastQuote).trim() : rawVal.substring(1);
+            } else {
+                val = rawVal;
+            }
+            keywords[key] = val;
+            allCards.push({ key, value: val });
+          } else if (key) {
+            allCards.push({ key, value: card.substring(8).trim() });
           }
         }
 
-        // Build keyword table rows
-        let kwRows = '';
-        if (headerCards.length > 0) {
-          // prioritize known keywords first
-          const priority = ['SIMPLE', 'BITPIX', 'NAXIS', 'NAXIS1', 'NAXIS2', 'NAXIS3',
-            'OBJECT', 'TELESCOP', 'INSTRUME', 'OBSERVER', 'ORIGIN', 'DATE-OBS', 'DATE', 'AUTHOR'];
-          const shown = new Set();
-          const orderedCards = [];
+        h.setState({ 
+          headerText: headerText,
+          headerJson: keywords
+        });
 
-          for (const kw of priority) {
-            const card = headerCards.find(c => c.keyword === kw);
-            if (card && !shown.has(card.keyword)) { orderedCards.push(card); shown.add(card.keyword); }
-          }
-          for (const card of headerCards) {
-            if (!shown.has(card.keyword)) { orderedCards.push(card); shown.add(card.keyword); }
-          }
+        const bitpix = keywords['BITPIX'];
+        const naxis = parseInt(keywords['NAXIS'] || 0);
+        const dims = [];
+        for(let i=1; i<=naxis; i++) dims.push(keywords['NAXIS'+i] || '?');
 
-          for (const { keyword, value } of orderedCards.slice(0, 60)) {
-            kwRows += `<tr>
-              <td style="color:#7dd3fc;font-family:monospace;padding:3px 14px 3px 0;white-space:nowrap;vertical-align:top;">${esc(keyword)}</td>
-              <td style="font-family:monospace;font-size:.82rem;word-break:break-all;">${esc(value)}</td>
-            </tr>`;
-          }
-        } else {
-          kwRows = '<tr><td colspan="2" style="color:#94a3b8;font-style:italic;">No parseable FITS keywords found in header block</td></tr>';
-        }
+        let summaryHtml = `
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 text-left">
+            <div class="bg-surface-50 p-4 rounded-xl border border-surface-200">
+              <p class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-2">File Info</p>
+              <table class="w-full text-sm">
+                <tr><td class="text-surface-500 py-1 pr-4">Name</td><td class="font-medium truncate max-w-[150px]">${esc(file.name)}</td></tr>
+                <tr><td class="text-surface-500 py-1">Size</td><td class="font-medium">${formatBytes(data.byteLength)}</td></tr>
+                <tr><td class="text-surface-500 py-1">Format</td><td class="font-medium">${keywords['SIMPLE'] === 'T' ? 'Standard FITS' : 'FITS Extension'}</td></tr>
+              </table>
+            </div>
+            <div class="bg-surface-50 p-4 rounded-xl border border-surface-200">
+              <p class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-2">Metadata Summary</p>
+              <table class="w-full text-sm">
+                <tr><td class="text-surface-500 py-1 pr-4">BITPIX</td><td class="font-medium">${esc(bitpix || 'N/A')}</td></tr>
+                <tr><td class="text-surface-500 py-1">Dimensions</td><td class="font-medium">${naxis > 0 ? dims.join(' × ') : 'No Data'}</td></tr>
+                <tr><td class="text-surface-500 py-1">Object</td><td class="font-medium italic">${esc(keywords['OBJECT'] || 'Unknown')}</td></tr>
+              </table>
+            </div>
+          </div>
+        `;
 
-        // Image dimensions if present
-        let dimInfo = '';
-        if (keywords['NAXIS'] && keywords['NAXIS1']) {
-          const naxis = keywords['NAXIS'];
-          const n1 = keywords['NAXIS1'] || '?';
-          const n2 = keywords['NAXIS2'] || '';
-          const n3 = keywords['NAXIS3'] || '';
-          dimInfo = `<tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Dimensions</td><td>${esc(naxis)}D: ${esc(n1)}${n2 ? ' × ' + esc(n2) : ''}${n3 ? ' × ' + esc(n3) : ''} px</td></tr>`;
-        }
-        const bitpixDesc = { '8': '8-bit unsigned int', '16': '16-bit signed int', '32': '32-bit signed int', '-32': '32-bit float', '-64': '64-bit double' };
-        let bitpixInfo = '';
-        if (keywords['BITPIX']) {
-          bitpixInfo = `<tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">BITPIX</td><td>${esc(keywords['BITPIX'])} &mdash; ${esc(bitpixDesc[keywords['BITPIX']] || 'Custom')}</td></tr>`;
-        }
-
-        const validBadge = sigValid
-          ? '<span style="color:#22c55e;font-weight:bold;">✔ Valid FITS Signature</span>'
-          : '<span style="color:#ef4444;font-weight:bold;">✘ Invalid FITS Signature</span>';
+        let cardsHtml = allCards.map(c => `
+          <div class="flex border-b border-surface-100 last:border-0 hover:bg-surface-50 transition-colors">
+            <div class="w-24 shrink-0 font-mono text-brand-600 py-1.5 px-3 bg-surface-50/30 text-xs">${esc(c.key)}</div>
+            <div class="grow font-mono text-surface-700 py-1.5 px-3 break-all text-xs">${esc(c.value)}</div>
+          </div>
+        `).join('');
 
         h.render(`
-          <div style="font-family:system-ui,sans-serif;max-width:860px;margin:0 auto;padding:16px;">
-            <h2 style="margin:0 0 4px;font-size:1.3rem;">FITS File Analysis</h2>
-            <p style="margin:0 0 16px;color:#888;font-size:.9rem;">${esc(file.name)} &mdash; ${fmtBytes(file.size)}</p>
-
-            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
-              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">Signature Validation</div>
-              <div style="margin-bottom:6px;">${validBadge}</div>
-              <table style="font-size:.82rem;border-collapse:collapse;width:100%;">
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Expected</td><td style="font-family:monospace;">"SIMPLE  " (0x53 49 4D 50 4C 45 20 20)</td></tr>
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">File bytes 0–7</td><td style="font-family:monospace;">${esc(first8Hex)} &nbsp; "${esc(first8)}"</td></tr>
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">Note</td><td>${esc(sigNote)}</td></tr>
-                <tr><td style="color:#94a3b8;padding:3px 12px 3px 0;white-space:nowrap;">File Size</td><td>${fmtBytes(file.size)} (${file.size.toLocaleString()} bytes)</td></tr>
-                ${bitpixInfo}
-                ${dimInfo}
-              </table>
+          <div class="p-6 max-w-4xl mx-auto">
+            <div class="flex items-center gap-4 mb-8">
+              <div class="w-14 h-14 bg-brand-600 text-white rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-brand-100">🔭</div>
+              <div class="text-left">
+                <h2 class="text-2xl font-bold text-surface-900 leading-tight">FITS Analyzer</h2>
+                <p class="text-surface-500">Flexible Image Transport System</p>
+              </div>
             </div>
 
-            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
-              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:10px;">Primary Header Keywords</div>
-              <table style="font-size:.82rem;border-collapse:collapse;width:100%;">
-                ${kwRows}
-              </table>
-              ${!endFound ? '<div style="color:#fbbf24;font-size:.8rem;margin-top:8px;">⚠ END card not found in first 4 blocks — file may be truncated or non-standard</div>' : ''}
+            ${summaryHtml}
+
+            <div class="border border-surface-200 rounded-2xl overflow-hidden bg-white shadow-sm text-left">
+              <div class="bg-surface-50 px-4 py-3 border-b border-surface-200 flex items-center justify-between">
+                <span class="text-xs font-bold text-surface-500 uppercase tracking-wider">Primary Header HDU</span>
+                <span class="text-xs text-surface-400 font-medium">${allCards.length} Cards</span>
+              </div>
+              <div class="max-h-[500px] overflow-auto">
+                ${cardsHtml || '<div class="p-8 text-center text-surface-400">No header cards found</div>'}
+              </div>
             </div>
 
-            <div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;color:#e2e8f0;">
-              <div style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">SHA-256 Hash</div>
-              <div style="font-family:monospace;font-size:.8rem;word-break:break-all;color:#86efac;">${esc(hashHex)}</div>
-            </div>
-
-            <div style="background:#eff6ff;border:1px solid #3b82f6;border-radius:8px;padding:14px;margin-bottom:16px;color:#1e3a8a;">
-              <strong>Opening FITS Files:</strong> Use <strong>DS9</strong> (SAOImageDS9) for astronomical image viewing, <strong>Astropy</strong> in Python (<code>from astropy.io import fits</code>), or <strong>IRAF</strong> for professional reduction. FITS (Flexible Image Transport System) is the standard format for astronomical data.
+            <div class="mt-8 p-5 bg-blue-50 border border-blue-100 rounded-2xl flex gap-4 text-left">
+              <span class="text-blue-500 text-2xl shrink-0">🪐</span>
+              <div>
+                <p class="text-sm font-semibold text-blue-900 mb-1">About FITS Files</p>
+                <p class="text-sm text-blue-700 leading-relaxed">
+                  FITS is the most commonly used digital format in astronomy. This tool extracts metadata from the 
+                  header blocks. For advanced image processing or visualization, consider using 
+                  <strong>SAOImageDS9</strong> or the <strong>Astropy</strong> library.
+                </p>
+              </div>
             </div>
           </div>
         `);
