@@ -19,6 +19,7 @@
             if (!packets || packets.length === 0) return h.showError('No data', 'Load a capture file first.');
             
             h.showLoading('Formatting JSON (Top 5,000)...');
+            // Use setTimeout to allow UI to update
             setTimeout(() => {
               try {
                 const exportData = packets.slice(0, 5000).map(p => ({
@@ -87,6 +88,8 @@
       onFile: async function _onFileFn(file, content, h) {
         h.showLoading('Analyzing network capture...');
         
+        // B5: Revoke any previous URLs if we had them (not applicable here yet, but good practice)
+        
         h.setState({
           fileName: file.name,
           fileSize: file.size,
@@ -101,10 +104,14 @@
         });
 
         try {
+          // B2: ArrayBuffer safety
           let buffer = content;
           if (!(buffer instanceof ArrayBuffer)) {
-            if (buffer.buffer instanceof ArrayBuffer) buffer = buffer.buffer;
-            else throw new Error('Invalid binary data provided.');
+            if (buffer && buffer.buffer instanceof ArrayBuffer) {
+              buffer = buffer.buffer;
+            } else {
+              throw new Error('Invalid binary data provided.');
+            }
           }
 
           if (buffer.byteLength < 24) throw new Error('File is too small to be a valid PCAP capture.');
@@ -114,29 +121,34 @@
           
           if (isGzip) {
             h.showLoading('Decompressing GZIP capture...');
-            if (!_pako) {
+            // B1: Robust CDN check
+            if (!_pako && !window.pako) {
               await new Promise((resolve, reject) => {
                 let attempts = 0;
                 const check = () => { 
                   if (window.pako) { _pako = window.pako; resolve(); }
-                  else if (attempts++ > 100) reject(new Error('Pako library failed to load'));
+                  else if (attempts++ > 100) reject(new Error('Pako decompression library failed to load.'));
                   else setTimeout(check, 50); 
                 };
                 check();
               });
             }
+            if (!_pako) _pako = window.pako;
+            
             try {
               buffer = _pako.ungzip(new Uint8Array(buffer)).buffer;
             } catch (e) {
-              throw new Error('Failed to decompress GZIP file.');
+              throw new Error('Failed to decompress GZIP file. It may be corrupted.');
             }
           }
 
           h.showLoading('Decoding packets...');
+          // Yield to UI
           await new Promise(r => setTimeout(r, 16));
           
           const result = await parsePcapData(buffer);
           
+          // U5: Empty state handling
           if (!result.packets || result.packets.length === 0) {
             h.hideLoading();
             renderEmptyView(h);
@@ -148,7 +160,8 @@
           renderMainUI(h);
         } catch (err) {
           console.error('[PCAP] Error:', err);
-          h.showError('Could not open capture', err.message || 'The file may be corrupted or in an unsupported format.');
+          // U3: Friendly error message
+          h.showError('Could not open capture', err.message || 'The file may be corrupted or in an unsupported format. Try a standard PCAP or PCAPNG file.');
         }
       },
 
@@ -156,6 +169,10 @@
         h.setState({ packets: [], selectedPacket: null });
       }
     });
+
+    /**
+     * UI RENDERING
+     */
 
     function renderMainUI(h) {
       const state = h.getState();
@@ -165,6 +182,7 @@
       const sortCol = state.sortCol || 'num';
       const sortDir = state.sortDir || 1;
 
+      // Filtering logic
       const filtered = packets.filter(p => {
         const matchesText = !filter || 
           p.src.toLowerCase().includes(filter) || 
@@ -175,6 +193,7 @@
         return matchesText && matchesProto;
       });
 
+      // Sorting logic
       if (sortCol) {
         filtered.sort((a, b) => {
           let valA = a[sortCol];
@@ -183,16 +202,20 @@
             valA = valA.toLowerCase();
             valB = valB.toLowerCase();
           }
-          return valA < valB ? -1 * sortDir : valA > valB ? 1 * sortDir : 0;
+          if (valA < valB) return -1 * sortDir;
+          if (valA > valB) return 1 * sortDir;
+          return 0;
         });
       }
 
+      // Pagination
       const page = state.page || 1;
       const perPage = state.perPage || 100;
       const totalPages = Math.ceil(filtered.length / perPage);
       const startIdx = (page - 1) * perPage;
       const currentPackets = filtered.slice(startIdx, startIdx + perPage);
 
+      // Protocol distribution for cards
       const protos = {};
       packets.forEach(p => protos[p.proto] = (protos[p.proto] || 0) + 1);
       const sortedProtos = Object.entries(protos).sort((a, b) => b[1] - a[1]);
@@ -207,32 +230,35 @@
             <span class="text-surface-300">|</span>
             <span class="text-surface-500">.pcap capture</span>
             <span class="text-surface-300 ml-auto hidden md:inline">|</span>
-            <span class="font-medium text-surface-700 hidden md:inline">${packets.length.toLocaleString()} packets</span>
+            <span class="font-medium text-surface-700 hidden md:inline">${packets.length.toLocaleString()} packets total</span>
           </div>
 
           <!-- U10. Section header with count -->
           <div class="flex items-center justify-between mb-3">
             <h3 class="font-semibold text-surface-800">Protocol Distribution</h3>
-            <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${sortedProtos.length} protocols found</span>
+            <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${sortedProtos.length} types detected</span>
           </div>
 
-          <!-- U9. Content cards for quick filters -->
+          <!-- U9. Content cards for protocol filtering -->
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-8">
-            ${sortedProtos.slice(0, 6).map(([proto, count]) => `
-              <div class="p-4 bg-white border border-surface-200 rounded-xl shadow-sm hover:border-brand-300 hover:shadow-md transition-all cursor-pointer proto-quick-filter group ${protoFilter === proto ? 'ring-2 ring-brand-500 border-brand-500' : ''}" data-proto="${proto}">
-                <div class="text-[10px] font-bold text-surface-400 uppercase tracking-widest group-hover:text-brand-500 transition-colors">${proto}</div>
-                <div class="text-xl font-bold text-surface-800">${count.toLocaleString()}</div>
-                <div class="w-full bg-surface-100 h-1 mt-2 rounded-full overflow-hidden">
-                  <div class="h-full bg-brand-500" style="width: ${Math.max(5, (count / packets.length) * 100)}%"></div>
+            ${sortedProtos.slice(0, 6).map(([proto, count]) => {
+              const isActive = protoFilter === proto;
+              return `
+                <div class="p-4 bg-white border ${isActive ? 'border-brand-500 ring-2 ring-brand-500/20' : 'border-surface-200'} rounded-xl shadow-sm hover:border-brand-300 hover:shadow-md transition-all cursor-pointer proto-quick-filter group" data-proto="${proto}">
+                  <div class="text-[10px] font-bold text-surface-400 uppercase tracking-widest group-hover:text-brand-500 transition-colors">${proto}</div>
+                  <div class="text-xl font-bold text-surface-800">${count.toLocaleString()}</div>
+                  <div class="w-full bg-surface-100 h-1 mt-2 rounded-full overflow-hidden">
+                    <div class="h-full bg-brand-500" style="width: ${Math.max(2, (count / packets.length) * 100)}%"></div>
+                  </div>
                 </div>
-              </div>
-            `).join('')}
+              `;
+            }).join('')}
           </div>
 
           <div class="flex flex-col md:flex-row gap-4 mb-6">
-            <!-- Search/Filter -->
+            <!-- DATA: live search filter -->
             <div class="relative flex-grow">
-              <input type="text" id="pcap-search-input" placeholder="Live search by IP, Protocol, or Content..." 
+              <input type="text" id="pcap-search-input" placeholder="Live search by IP, Protocol, or Info..." 
                 class="block w-full pl-10 pr-4 py-3 bg-white border border-surface-200 rounded-xl text-sm focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none transition-all"
                 value="${esc(state.filter || '')}">
               <div class="absolute left-3.5 top-3.5 text-surface-400">
@@ -248,7 +274,7 @@
           </div>
 
           <div class="flex items-center justify-between mb-3">
-            <h3 class="font-semibold text-surface-800">Traffic Details</h3>
+            <h3 class="font-semibold text-surface-800">Capture Log</h3>
             <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${filtered.length.toLocaleString()} matching</span>
           </div>
 
@@ -270,23 +296,26 @@
                 ${currentPackets.length === 0 ? `
                   <tr>
                     <td colspan="7" class="px-4 py-16 text-center text-surface-400 font-sans italic">
-                      <div class="mb-2">No packets match your search filters.</div>
+                      <div class="mb-2">No packets match your current filters.</div>
                       <button id="pcap-clear-filters" class="text-brand-600 font-semibold text-xs hover:underline">Clear all filters</button>
                     </td>
                   </tr>
-                ` : currentPackets.map(p => `
-                  <tr class="packet-row hover:bg-brand-50/50 transition-colors cursor-pointer even:bg-surface-50/30 ${state.selectedPacket?.num === p.num ? 'bg-brand-50 ring-2 ring-inset ring-brand-200' : ''}" data-num="${p.num}">
-                    <td class="px-4 py-2.5 text-surface-400 text-[11px]">${p.num}</td>
-                    <td class="px-4 py-2.5 text-surface-500 whitespace-nowrap text-[11px]">${p.time.toFixed(6)}</td>
-                    <td class="px-4 py-2.5 text-surface-800 font-medium whitespace-nowrap">${esc(p.src)}</td>
-                    <td class="px-4 py-2.5 text-surface-800 font-medium whitespace-nowrap">${esc(p.dst)}</td>
-                    <td class="px-4 py-2.5">
-                      <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${getStyle(p.proto)}">${p.proto}</span>
-                    </td>
-                    <td class="px-4 py-2.5 text-surface-500">${p.len}</td>
-                    <td class="px-4 py-2.5 text-surface-600 truncate max-w-xs xl:max-w-lg font-sans text-xs" title="${esc(p.info)}">${esc(p.info)}</td>
-                  </tr>
-                `).join('')}
+                ` : currentPackets.map(p => {
+                  const isSelected = state.selectedPacket?.num === p.num;
+                  return `
+                    <tr class="packet-row hover:bg-brand-50/50 transition-colors cursor-pointer even:bg-surface-50/30 ${isSelected ? 'bg-brand-50 ring-2 ring-inset ring-brand-200' : ''}" data-num="${p.num}">
+                      <td class="px-4 py-2.5 text-surface-400 text-[11px]">${p.num}</td>
+                      <td class="px-4 py-2.5 text-surface-500 whitespace-nowrap text-[11px]">${p.time.toFixed(6)}</td>
+                      <td class="px-4 py-2.5 text-surface-800 font-medium whitespace-nowrap">${esc(p.src)}</td>
+                      <td class="px-4 py-2.5 text-surface-800 font-medium whitespace-nowrap">${esc(p.dst)}</td>
+                      <td class="px-4 py-2.5">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${getStyle(p.proto)}">${p.proto}</span>
+                      </td>
+                      <td class="px-4 py-2.5 text-surface-500">${p.len}</td>
+                      <td class="px-4 py-2.5 text-surface-600 truncate max-w-xs xl:max-w-lg font-sans text-xs" title="${esc(p.info)}">${esc(p.info)}</td>
+                    </tr>
+                  `;
+                }).join('')}
               </tbody>
             </table>
           </div>
@@ -309,7 +338,7 @@
           <div id="pcap-inspector" class="${state.selectedPacket ? 'block' : 'hidden'} mt-10 space-y-6 animate-in slide-in-from-bottom-6 duration-300 scroll-mt-8">
             <div class="flex items-center justify-between border-b border-surface-200 pb-4">
               <div class="flex items-center gap-4">
-                <div class="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white">
+                <div class="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-lg shadow-brand-500/20">
                   <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                 </div>
                 <div>
@@ -334,16 +363,16 @@
                     <button id="pcap-copy-hex" class="px-3 py-1 bg-surface-100 hover:bg-surface-200 text-surface-600 rounded-lg text-[10px] font-bold uppercase transition-colors">Copy Hex</button>
                   </div>
                 </div>
-                <!-- U8. Pre block styling -->
+                <!-- U8. Code/pre block -->
                 <div class="rounded-2xl overflow-hidden border border-surface-200 bg-gray-950 shadow-lg">
                   <pre class="p-5 text-[11px] font-mono text-gray-300 overflow-x-auto leading-relaxed selection:bg-brand-500/30" id="pcap-hex-view"></pre>
                 </div>
               </div>
 
               <div class="space-y-6">
-                <!-- U9. Content cards for analysis -->
+                <!-- U9. Content card for analysis -->
                 <div class="rounded-2xl border border-surface-200 p-5 bg-white shadow-sm">
-                  <h4 class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-4 border-b border-surface-50 pb-2">Protocol Analysis</h4>
+                  <h4 class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-4 border-b border-surface-50 pb-2">Analysis</h4>
                   <div class="space-y-5" id="pcap-analysis-content"></div>
                 </div>
                 
@@ -356,7 +385,7 @@
                   <div class="text-brand-600 mt-0.5">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                   </div>
-                  <p class="text-[11px] text-brand-800 leading-relaxed font-medium">This packet was decoded locally in your browser. No data was sent to any server.</p>
+                  <p class="text-[11px] text-brand-800 leading-relaxed font-medium">Packet decoding is performed locally. Your network data never leaves your computer.</p>
                 </div>
               </div>
             </div>
@@ -366,6 +395,7 @@
 
       h.render(html);
 
+      // Event Listeners
       const el = h.getRenderEl();
 
       const searchInput = el.querySelector('#pcap-search-input');
@@ -377,6 +407,7 @@
           debounceTimer = setTimeout(() => {
             h.setState({ filter: val, page: 1 });
             renderMainUI(h);
+            // Restore focus and cursor position after re-render
             const input = h.getRenderEl().querySelector('#pcap-search-input');
             if (input) {
               input.focus();
@@ -484,6 +515,7 @@
       
       if (!hexView) return;
 
+      // Hex Dump Generator
       const lines = [];
       const data = packet.data;
       for (let i = 0; i < data.length; i += 16) {
@@ -497,15 +529,15 @@
 
       analysis.innerHTML = `
         <div class="group">
-          <div class="text-[9px] font-bold text-surface-400 uppercase tracking-widest mb-1.5 group-hover:text-brand-500 transition-colors">Source Address</div>
+          <div class="text-[9px] font-bold text-surface-400 uppercase tracking-widest mb-1.5 group-hover:text-brand-500 transition-colors">Source</div>
           <div class="text-surface-900 font-mono text-xs p-3 bg-surface-50 rounded-xl border border-surface-100 break-all font-bold shadow-inner">${esc(packet.src)}</div>
         </div>
         <div class="group">
-          <div class="text-[9px] font-bold text-surface-400 uppercase tracking-widest mb-1.5 group-hover:text-brand-500 transition-colors">Destination Address</div>
+          <div class="text-[9px] font-bold text-surface-400 uppercase tracking-widest mb-1.5 group-hover:text-brand-500 transition-colors">Destination</div>
           <div class="text-surface-900 font-mono text-xs p-3 bg-surface-50 rounded-xl border border-surface-100 break-all font-bold shadow-inner">${esc(packet.dst)}</div>
         </div>
         <div class="group">
-          <div class="text-[9px] font-bold text-surface-400 uppercase tracking-widest mb-1.5 group-hover:text-brand-500 transition-colors">Protocol Summary</div>
+          <div class="text-[9px] font-bold text-surface-400 uppercase tracking-widest mb-1.5 group-hover:text-brand-500 transition-colors">Protocol Info</div>
           <div class="text-surface-700 text-xs italic leading-relaxed bg-brand-50/40 p-3 rounded-xl border border-brand-100/50">${esc(packet.info)}</div>
         </div>
       `;
@@ -520,7 +552,7 @@
           <span class="text-surface-900 font-bold">${packet.data.length} bytes</span>
         </div>
         <div class="flex justify-between pt-1">
-          <span class="text-surface-500">Relative Time</span>
+          <span class="text-surface-500">Epoch Time</span>
           <span class="text-surface-900 font-bold">${packet.time.toFixed(9)}s</span>
         </div>
       `;
@@ -540,15 +572,19 @@
               <svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
             </div>
             <h3 class="text-2xl font-bold text-surface-900 mb-3">No packets found</h3>
-            <p class="text-surface-500 max-w-sm mx-auto text-sm leading-relaxed">The network capture file appears to be empty or uses an unsupported format variant. Ensure it is a valid PCAP or PCAPNG file.</p>
+            <p class="text-surface-500 max-w-sm mx-auto text-sm leading-relaxed">The network capture file appears to be empty or uses an unsupported format. Try a standard PCAP or PCAPNG file.</p>
           </div>
         </div>
       `);
     }
 
+    /**
+     * PCAP PARSER LOGIC
+     */
+
     async function parsePcapData(buffer) {
       const dv = new DataView(buffer);
-      if (buffer.byteLength < 8) throw new Error('File too short');
+      if (buffer.byteLength < 8) throw new Error('File too short to be a valid capture.');
       
       const magic = dv.getUint32(0, true);
       let isLittle = true;
@@ -560,16 +596,17 @@
       else if (magic === 0xA1B23C4D) { isLittle = false; isNano = true; }
       else if (magic === 0x4D3CB2A1) { isLittle = true; isNano = true; }
       else if (magic === 0x0A0D0D0A) { isNg = true; isLittle = true; }
-      else throw new Error('Unknown PCAP format (Magic: 0x' + magic.toString(16).toUpperCase() + ')');
+      else throw new Error('Unsupported PCAP magic: 0x' + magic.toString(16).toUpperCase());
 
       if (isNg) return parseNg(buffer, isLittle);
 
-      if (buffer.byteLength < 24) throw new Error('Invalid PCAP header');
+      if (buffer.byteLength < 24) throw new Error('Invalid PCAP global header.');
       const linkType = dv.getUint32(20, isLittle);
       const packets = [];
       let offset = 24;
       let firstTs = null;
-      const MAX_PACKETS = 100000;
+      // B7: Truncate very large files for stability
+      const MAX_PACKETS = 50000;
 
       while (offset + 16 <= buffer.byteLength && packets.length < MAX_PACKETS) {
         const tsSec = dv.getUint32(offset, isLittle);
@@ -583,7 +620,7 @@
         if (firstTs === null) firstTs = time;
         
         const data = new Uint8Array(buffer, offset + 16, capLen);
-        const decoded = decode(data, linkType);
+        const decoded = decodePacket(data, linkType);
         
         packets.push({
           num: packets.length + 1,
@@ -606,16 +643,16 @@
       const packets = [];
       let firstTs = null;
       let linkType = 1;
-      const MAX_PACKETS = 100000;
+      const MAX_PACKETS = 50000;
 
       while (offset + 8 <= buffer.byteLength && packets.length < MAX_PACKETS) {
         const type = dv.getUint32(offset, isLittle);
         const len = dv.getUint32(offset + 4, isLittle);
         if (len < 8 || offset + len > buffer.byteLength) break;
 
-        if (type === 0x01) { 
+        if (type === 0x01) { // Interface Description Block
           linkType = dv.getUint16(offset + 8, isLittle);
-        } else if (type === 0x06 || type === 0x03) { 
+        } else if (type === 0x06 || type === 0x03) { // Enhanced Packet Block or Simple Packet Block
           const isEpb = type === 0x06;
           const tsH = isEpb ? dv.getUint32(offset + 12, isLittle) : 0;
           const tsL = isEpb ? dv.getUint32(offset + 16, isLittle) : 0;
@@ -625,10 +662,10 @@
           const time = (tsH * 4294967296 + tsL) / 1000000;
           if (firstTs === null) firstTs = time;
           
-          const dOff = isEpb ? 28 : 12;
-          if (offset + dOff + capL <= buffer.byteLength) {
-            const data = new Uint8Array(buffer, offset + dOff, capL);
-            const decoded = decode(data, linkType);
+          const dataOffset = isEpb ? 28 : 12;
+          if (offset + dataOffset + capL <= buffer.byteLength) {
+            const data = new Uint8Array(buffer, offset + dataOffset, capL);
+            const decoded = decodePacket(data, linkType);
             packets.push({ 
               num: packets.length + 1, 
               time: time - firstTs, 
@@ -646,105 +683,115 @@
       return { packets };
     }
 
-    function decode(data, link) {
-      let r = { src: 'Unknown', dst: 'Unknown', proto: 'DATA', info: 'Raw payload' };
-      let type = 0;
-      let off = 0;
+    function decodePacket(data, link) {
+      let res = { src: 'Unknown', dst: 'Unknown', proto: 'DATA', info: 'Raw payload' };
+      let ethType = 0;
+      let offset = 0;
 
-      if (link === 1 && data.length >= 14) { 
-        type = (data[12] << 8) | data[13];
-        off = 14;
-        r.src = fmtMAC(data.slice(6, 12));
-        r.dst = fmtMAC(data.slice(0, 6));
-        r.proto = 'ETH';
-      } else if (link === 113 && data.length >= 16) { 
-        type = (data[14] << 8) | data[15];
-        off = 16;
-        r.proto = 'SLL';
-      } else return r;
-
-      if (type === 0x0800 && data.length >= off + 20) { 
-        const ihl = (data[off] & 0x0F) * 4;
-        const p = data[off + 9];
-        r.src = data.slice(off + 12, off + 16).join('.');
-        r.dst = data.slice(off + 16, off + 20).join('.');
-        r.proto = 'IPv4';
-        decL4(data, off + ihl, p, r);
-      } else if (type === 0x86DD && data.length >= off + 40) { 
-        const next = data[off + 6];
-        r.src = fmtIPv6(data.slice(off + 8, off + 24));
-        r.dst = fmtIPv6(data.slice(off + 24, off + 40));
-        r.proto = 'IPv6';
-        decL4(data, off + 40, next, r);
-      } else if (type === 0x0806 && data.length >= off + 28) { 
-        r.proto = 'ARP';
-        const op = data[off + 7];
-        const spa = data.slice(off + 14, off + 18).join('.');
-        const tpa = data.slice(off + 24, off + 28).join('.');
-        r.info = op === 1 ? `Who has ${tpa}? Tell ${spa}` : `Reply: ${spa} is at ${fmtMAC(data.slice(off + 8, off + 14))}`;
+      // Link Layers
+      if (link === 1 && data.length >= 14) { // Ethernet
+        ethType = (data[12] << 8) | data[13];
+        offset = 14;
+        res.src = fmtMAC(data.slice(6, 12));
+        res.dst = fmtMAC(data.slice(0, 6));
+        res.proto = 'ETH';
+      } else if (link === 113 && data.length >= 16) { // Linux Cooked (SLL)
+        ethType = (data[14] << 8) | data[15];
+        offset = 16;
+        res.proto = 'SLL';
+      } else {
+        return res;
       }
-      return r;
+
+      // Network Layer
+      if (ethType === 0x0800 && data.length >= offset + 20) { // IPv4
+        const ihl = (data[offset] & 0x0F) * 4;
+        const proto = data[offset + 9];
+        res.src = data.slice(offset + 12, offset + 16).join('.');
+        res.dst = data.slice(offset + 16, offset + 20).join('.');
+        res.proto = 'IPv4';
+        decodeL4(data, offset + ihl, proto, res);
+      } else if (ethType === 0x86DD && data.length >= offset + 40) { // IPv6
+        const nextHeader = data[offset + 6];
+        res.src = fmtIPv6(data.slice(offset + 8, offset + 24));
+        res.dst = fmtIPv6(data.slice(offset + 24, offset + 40));
+        res.proto = 'IPv6';
+        decodeL4(data, offset + 40, nextHeader, res);
+      } else if (ethType === 0x0806 && data.length >= offset + 28) { // ARP
+        res.proto = 'ARP';
+        const op = data[offset + 7];
+        const spa = data.slice(offset + 14, offset + 18).join('.');
+        const tpa = data.slice(offset + 24, offset + 28).join('.');
+        res.info = op === 1 ? `Who has ${tpa}? Tell ${spa}` : `Reply: ${spa} is at ${fmtMAC(data.slice(offset + 8, offset + 14))}`;
+      }
+      return res;
     }
 
-    function decL4(data, off, proto, r) {
-      if (data.length < off + 4) return;
-      const sp = (data[off] << 8) | data[off + 1];
-      const dp = (data[off + 2] << 8) | data[off + 3];
+    function decodeL4(data, offset, proto, res) {
+      if (data.length < offset + 4) return;
+      const srcPort = (data[offset] << 8) | data[offset + 1];
+      const dstPort = (data[offset + 2] << 8) | data[offset + 3];
 
-      if (proto === 6) { 
-        r.proto = 'TCP';
-        r.src += `:${sp}`;
-        r.dst += `:${dp}`;
-        if (data.length >= off + 14) {
-          const f = data[off + 13];
+      if (proto === 6) { // TCP
+        res.proto = 'TCP';
+        res.src += `:${srcPort}`;
+        res.dst += `:${dstPort}`;
+        if (data.length >= offset + 14) {
+          const f = data[offset + 13];
           const flags = [];
           if (f & 0x02) flags.push('SYN');
           if (f & 0x10) flags.push('ACK');
           if (f & 0x01) flags.push('FIN');
           if (f & 0x04) flags.push('RST');
           if (f & 0x08) flags.push('PSH');
-          r.info = flags.join(' ') || 'TCP Segment';
+          res.info = flags.join(' ') || 'TCP Segment';
           
-          const dOff = (data[off + 12] >> 4) * 4;
-          if (data.length > off + dOff) {
-            const first = data[off + dOff];
-            if (dp === 80 || sp === 80) r.proto = 'HTTP';
-            else if (dp === 443 || sp === 443 || first === 0x16) r.proto = 'TLS';
-            else if (dp === 21 || sp === 21) r.proto = 'FTP';
-            else if (dp === 22 || sp === 22) r.proto = 'SSH';
+          const tcpDataOffset = (data[offset + 12] >> 4) * 4;
+          if (data.length > offset + tcpDataOffset) {
+            const firstByte = data[offset + tcpDataOffset];
+            if (dstPort === 80 || srcPort === 80) res.proto = 'HTTP';
+            else if (dstPort === 443 || srcPort === 443 || firstByte === 0x16) res.proto = 'TLS';
+            else if (dstPort === 21 || srcPort === 21) res.proto = 'FTP';
+            else if (dstPort === 22 || srcPort === 22) res.proto = 'SSH';
           }
         }
-      } else if (proto === 17) { 
-        r.proto = 'UDP';
-        r.src += `:${sp}`;
-        r.dst += `:${dp}`;
-        if (dp === 53 || sp === 53) r.proto = 'DNS';
-        else if (dp === 67 || dp === 68 || sp === 67 || sp === 68) r.proto = 'DHCP';
-        else if (dp === 123 || sp === 123) r.proto = 'NTP';
-        else if (dp === 5353 || sp === 5353) r.proto = 'mDNS';
-        else r.info = 'UDP Payload';
-      } else if (proto === 1) {
-        r.proto = 'ICMP';
-        const t = data[off];
-        r.info = t === 8 ? 'Echo Request' : t === 0 ? 'Echo Reply' : `Type ${t}`;
-      } else if (proto === 58) {
-        r.proto = 'ICMPv6';
-        r.info = `Type ${data[off]}`;
+      } else if (proto === 17) { // UDP
+        res.proto = 'UDP';
+        res.src += `:${srcPort}`;
+        res.dst += `:${dstPort}`;
+        if (dstPort === 53 || srcPort === 53) res.proto = 'DNS';
+        else if (dstPort === 67 || dstPort === 68 || srcPort === 67 || srcPort === 68) res.proto = 'DHCP';
+        else if (dstPort === 123 || srcPort === 123) res.proto = 'NTP';
+        else if (dstPort === 5353 || srcPort === 5353) res.proto = 'mDNS';
+        else res.info = 'UDP Payload';
+      } else if (proto === 1) { // ICMP
+        res.proto = 'ICMP';
+        const type = data[offset];
+        res.info = type === 8 ? 'Echo Request' : type === 0 ? 'Echo Reply' : `Type ${type}`;
+      } else if (proto === 58) { // ICMPv6
+        res.proto = 'ICMPv6';
+        res.info = `Type ${data[offset]}`;
       }
     }
 
-    function fmtIPv6(b) {
-      const p = [];
-      for (let i = 0; i < 16; i += 2) p.push(((b[i] << 8) | b[i + 1]).toString(16));
-      return p.join(':').replace(/(^|:)0(:0)+(:|$)/, '::');
+    /**
+     * HELPERS
+     */
+
+    function fmtIPv6(bytes) {
+      const parts = [];
+      for (let i = 0; i < 16; i += 2) {
+        parts.push(((bytes[i] << 8) | bytes[i + 1]).toString(16));
+      }
+      return parts.join(':').replace(/(^|:)0(:0)+(:|$)/, '::');
     }
 
-    function fmtMAC(b) {
-      return Array.from(b).map(x => x.toString(16).padStart(2, '0')).join(':');
+    function fmtMAC(bytes) {
+      return Array.from(bytes).map(x => x.toString(16).padStart(2, '0')).join(':');
     }
 
     function getStyle(p) {
-      const s = {
+      const styles = {
         'TCP': 'bg-blue-50 text-blue-600 border border-blue-200',
         'UDP': 'bg-sky-50 text-sky-600 border border-sky-200',
         'ICMP': 'bg-purple-50 text-purple-600 border border-purple-200',
@@ -755,20 +802,22 @@
         'DHCP': 'bg-yellow-50 text-yellow-600 border border-yellow-200',
         'SSH': 'bg-slate-50 text-slate-600 border border-slate-200'
       };
-      return s[p] || 'bg-surface-50 text-surface-500 border border-surface-200';
+      return styles[p] || 'bg-surface-50 text-surface-500 border border-surface-200';
     }
 
-    function fmtSize(b) {
-      if (!b) return '0 B';
+    function fmtSize(bytes) {
+      if (!bytes) return '0 B';
       const k = 1024;
-      const s = ['B', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(b) / Math.log(k));
-      return parseFloat((b / Math.pow(k, i)).toFixed(1)) + ' ' + s[i];
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     }
 
-    function esc(s) {
-      if (!s) return '';
-      return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+    function esc(str) {
+      if (!str) return '';
+      return String(str).replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[m]));
     }
   };
 })();
