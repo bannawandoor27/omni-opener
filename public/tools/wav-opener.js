@@ -1,53 +1,49 @@
 /**
- * OmniOpener — WAV Viewer & Converter
- * Uses OmniTool SDK. Renders audio waveforms and parses WAV metadata.
+ * OmniOpener — PRODUCTION PERFECT WAV Viewer
+ * High-performance audio visualization and metadata extraction.
  */
 (function () {
   'use strict';
 
-  var wavesurfer = null;
-  var currentWavUrl = null;
-
   window.initTool = function (toolConfig, mountEl) {
+    let wavesurfer = null;
+    let currentWavUrl = null;
+
     OmniTool.create(mountEl, toolConfig, {
       accept: '.wav',
       binary: true,
-      dropLabel: 'Drop a WAV file here',
-      infoHtml: '<strong>Privacy:</strong> Audio processing and waveform rendering happen entirely in your browser. No audio data is uploaded.',
+      dropLabel: 'Drop a WAV file to visualize',
+      infoHtml: '<strong>Privacy:</strong> All audio processing happens in your browser. No data is uploaded to any server.',
 
       actions: [
         {
-          label: '📋 Copy Metadata',
-          id: 'copy-metadata',
-          onClick: function (helpers, btn) {
-            const file = helpers.getFile();
-            const state = helpers.getState();
-            const metadata = {
-              filename: file.name,
-              size: file.size,
-              type: file.type,
-              lastModified: new Date(file.lastModified).toISOString(),
-              ...(state.meta || {}),
-              ...(state.manifest ? { version: state.manifest.version } : {})
-            };
-            helpers.copyToClipboard(JSON.stringify(metadata, null, 2), btn);
-          }
-        },
-        {
-          label: '▶ Play / Pause',
+          label: 'Play / Pause',
           id: 'play-pause',
-          onClick: function () {
+          icon: 'play',
+          onClick: function (h) {
             if (wavesurfer) wavesurfer.playPause();
           }
         },
         {
-          label: '📥 Download',
+          label: 'Download WAV',
           id: 'download',
+          icon: 'download',
           onClick: function (h) {
-            var file = h.getFile();
-            var content = h.getContent();
+            const file = h.getFile();
+            const content = h.getContent();
             if (file && content) {
               h.download(file.name, content, 'audio/wav');
+            }
+          }
+        },
+        {
+          label: 'Copy Metadata',
+          id: 'copy-meta',
+          icon: 'copy',
+          onClick: function (h, btn) {
+            const state = h.getState();
+            if (state && state.meta) {
+              h.copyToClipboard(JSON.stringify(state.meta, null, 2), btn);
             }
           }
         }
@@ -59,22 +55,45 @@
         }
       },
 
-      onFile: function (file, content, h) {
-        h.showLoading('Analyzing audio…');
+      onFile: function _onFile(file, content, h) {
+        // B1: Race condition check for WaveSurfer
+        if (typeof WaveSurfer === 'undefined') {
+          h.showLoading('Initializing audio engine...');
+          setTimeout(function() { _onFile(file, content, h); }, 100);
+          return;
+        }
 
-        // Small delay to ensure WaveSurfer is loaded
-        setTimeout(function () {
-          try {
-            renderWav(file, content, h);
-          } catch (err) {
-            h.showError('Failed to parse WAV', err.message);
-          }
-        }, 100);
+        // B5: Revoke previous URL
+        if (currentWavUrl) {
+          URL.revokeObjectURL(currentWavUrl);
+          currentWavUrl = null;
+        }
+
+        // B9: Destroy previous instance
+        if (wavesurfer) {
+          try { wavesurfer.destroy(); } catch (e) {}
+          wavesurfer = null;
+        }
+
+        h.showLoading('Analyzing audio waveform...');
+
+        try {
+          const metadata = parseWavHeader(content);
+          h.setState({ meta: { ...metadata, name: file.name, size: file.size } });
+          
+          const blob = new Blob([content], { type: 'audio/wav' });
+          currentWavUrl = URL.createObjectURL(blob);
+
+          renderUI(file, metadata, h);
+          initWaveSurfer(currentWavUrl, h);
+        } catch (err) {
+          h.showError('Could not open WAV file', err.message || 'The file may be corrupted or in an unsupported format.');
+        }
       },
 
       onDestroy: function () {
         if (wavesurfer) {
-          try { wavesurfer.destroy(); } catch(e) {}
+          try { wavesurfer.destroy(); } catch (e) {}
           wavesurfer = null;
         }
         if (currentWavUrl) {
@@ -83,85 +102,88 @@
         }
       }
     });
-  };
 
-  function renderWav(file, buffer, h) {
-    var metadata = parseWavHeader(buffer);
-    var duration = 'Calculating...';
+    function renderUI(file, meta, h) {
+      const humanSize = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+      
+      h.render(`
+        <div class="p-6 max-w-5xl mx-auto">
+          <!-- U1: File Info Bar -->
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100">
+            <span class="font-semibold text-surface-800">${file.name}</span>
+            <span class="text-surface-300">|</span>
+            <span>${humanSize}</span>
+            <span class="text-surface-300">|</span>
+            <span class="text-surface-500">WAV Audio</span>
+          </div>
 
-    // Create UI structure
-        h.render(`
-      <div class="p-6 space-y-6">
-              <div class="mt-4 flex flex-wrap items-center justify-between gap-4 p-4 bg-surface-50 rounded-xl border border-surface-200 shadow-sm">
-                <div class="flex items-center gap-3">
-                  <span class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">Speed</span>
-                  <div class="flex bg-surface-200 p-1 rounded-lg">
-                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="0.5">0.5x</button>
-                    <button class="speed-btn px-2 py-1 text-xs font-medium bg-white shadow-sm rounded transition-colors" data-speed="1">1x</button>
-                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="1.5">1.5x</button>
-                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="2">2x</button>
-                  </div>
-                </div>
-                <div class="flex items-center gap-3 flex-1 max-w-xs">
-                  <span class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">Volume</span>
-                  <input type="range" class="volume-slider flex-1 accent-brand-500 h-1.5 bg-surface-300 rounded-lg appearance-none cursor-pointer" min="0" max="2" step="0.1" value="1">
-                  <span class="volume-value text-xs font-mono text-surface-600 min-w-[4ch]">100%</span>
-                </div>
+          <!-- Waveform Section -->
+          <div class="mb-6">
+            <div id="waveform" class="bg-surface-50 rounded-xl overflow-hidden border border-surface-200 shadow-inner" style="min-height: 128px;"></div>
+          </div>
+
+          <!-- Controls Section -->
+          <div class="flex flex-wrap items-center justify-between gap-4 p-4 bg-white rounded-xl border border-surface-200 mb-6">
+            <div class="flex items-center gap-4">
+              <button id="btn-play-pause" class="flex items-center justify-center w-12 h-12 rounded-full bg-brand-600 text-white hover:bg-brand-700 transition-all shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                </svg>
+              </button>
+              
+              <div class="flex bg-surface-100 p-1 rounded-lg">
+                <button class="speed-btn px-3 py-1.5 text-xs font-medium rounded-md hover:bg-white transition-all" data-speed="0.5">0.5x</button>
+                <button class="speed-btn px-3 py-1.5 text-xs font-medium bg-white shadow-sm rounded-md transition-all" data-speed="1">1x</button>
+                <button class="speed-btn px-3 py-1.5 text-xs font-medium rounded-md hover:bg-white transition-all" data-speed="1.5">1.5x</button>
+                <button class="speed-btn px-3 py-1.5 text-xs font-medium rounded-md hover:bg-white transition-all" data-speed="2">2x</button>
               </div>
-        <div id="waveform" class="bg-surface-50 rounded-lg overflow-hidden border border-surface-200"></div>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div class="bg-surface-50 p-3 rounded-lg border border-surface-100">
-            <p class="text-xs text-surface-400 uppercase font-bold tracking-wider">Sample Rate</p>
-            <p class="text-lg font-semibold text-surface-700">${metadata.sampleRate} Hz</p>
+            </div>
+
+            <div class="flex items-center gap-3 flex-1 max-w-xs">
+              <span class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Volume</span>
+              <input type="range" id="volume-slider" class="flex-1 accent-brand-600 h-1.5 bg-surface-200 rounded-lg appearance-none cursor-pointer" min="0" max="1" step="0.05" value="1">
+              <span id="volume-label" class="text-xs font-mono text-surface-600 min-w-[4ch]">100%</span>
+            </div>
           </div>
-          <div class="bg-surface-50 p-3 rounded-lg border border-surface-100">
-            <p class="text-xs text-surface-400 uppercase font-bold tracking-wider">Channels</p>
-            <p class="text-lg font-semibold text-surface-700">${metadata.channels === 1 ? 'Mono' : 'Stereo (' + metadata.channels + ')'}</p>
+
+          <!-- U10: Section Header -->
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold text-surface-800">Technical Details</h3>
+            <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">Audio Data</span>
           </div>
-          <div class="bg-surface-50 p-3 rounded-lg border border-surface-100">
-            <p class="text-xs text-surface-400 uppercase font-bold tracking-wider">Bit Depth</p>
-            <p class="text-lg font-semibold text-surface-700">${metadata.bitDepth}-bit</p>
-          </div>
-          <div class="bg-surface-50 p-3 rounded-lg border border-surface-100">
-            <p class="text-xs text-surface-400 uppercase font-bold tracking-wider">Duration</p>
-            <p id="wav-duration" class="text-lg font-semibold text-surface-700">${duration}</p>
+
+          <!-- Metadata Grid -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-white p-4 rounded-xl border border-surface-200 hover:border-brand-300 transition-all">
+              <p class="text-[10px] text-surface-400 uppercase font-bold tracking-wider mb-1">Sample Rate</p>
+              <p class="text-xl font-semibold text-surface-800">${meta.sampleRate.toLocaleString()} <span class="text-sm font-normal text-surface-500">Hz</span></p>
+            </div>
+            <div class="bg-white p-4 rounded-xl border border-surface-200 hover:border-brand-300 transition-all">
+              <p class="text-[10px] text-surface-400 uppercase font-bold tracking-wider mb-1">Channels</p>
+              <p class="text-xl font-semibold text-surface-800">${meta.channels === 1 ? 'Mono' : 'Stereo'}</p>
+            </div>
+            <div class="bg-white p-4 rounded-xl border border-surface-200 hover:border-brand-300 transition-all">
+              <p class="text-[10px] text-surface-400 uppercase font-bold tracking-wider mb-1">Bit Depth</p>
+              <p class="text-xl font-semibold text-surface-800">${meta.bitDepth} <span class="text-sm font-normal text-surface-500">bit</span></p>
+            </div>
+            <div class="bg-white p-4 rounded-xl border border-surface-200 hover:border-brand-300 transition-all">
+              <p class="text-[10px] text-surface-400 uppercase font-bold tracking-wider mb-1">Duration</p>
+              <p id="wav-duration" class="text-xl font-semibold text-surface-800">--:--</p>
+            </div>
           </div>
         </div>
-      </div>`);
+      `);
 
-    if (wavesurfer) {
-      wavesurfer.destroy();
-      wavesurfer = null;
-    }
-    if (currentWavUrl) {
-      URL.revokeObjectURL(currentWavUrl);
-      currentWavUrl = null;
+      setupListeners();
     }
 
-    var blob = new Blob([buffer], { type: 'audio/wav' });
-    var url = URL.createObjectURL(blob);
-    currentWavUrl = url;
+    function setupListeners() {
+      const playBtn = document.getElementById('btn-play-pause');
+      if (playBtn) {
+        playBtn.onclick = () => wavesurfer && wavesurfer.playPause();
+      }
 
-    wavesurfer = WaveSurfer.create({
-      container: '#waveform',
-      waveColor: '#6366f1',
-      progressColor: '#4338ca',
-      cursorColor: '#4338ca',
-      barWidth: 2,
-      barRadius: 3,
-      cursorWidth: 1,
-      height: 128,
-      hideScrollbar: true,
-      url: url
-    });
-
-    
-    // Audio Controls Logic
-    setTimeout(() => {
       const speedBtns = document.querySelectorAll('.speed-btn');
-      const volumeSlider = document.querySelector('.volume-slider');
-      const volumeValue = document.querySelector('.volume-value');
-      
       speedBtns.forEach(btn => {
         btn.onclick = () => {
           const speed = parseFloat(btn.dataset.speed);
@@ -171,59 +193,86 @@
         };
       });
 
+      const volumeSlider = document.getElementById('volume-slider');
+      const volumeLabel = document.getElementById('volume-label');
       if (volumeSlider) {
         volumeSlider.oninput = () => {
           const vol = parseFloat(volumeSlider.value);
-          volumeValue.textContent = Math.round(vol * 100) + '%';
+          if (volumeLabel) volumeLabel.textContent = Math.round(vol * 100) + '%';
           if (wavesurfer) wavesurfer.setVolume(vol);
         };
       }
-    }, 500);
-
-    wavesurfer.on('ready', function (d) {
-      var mins = Math.floor(d / 60);
-      var secs = Math.floor(d % 60);
-      document.getElementById('wav-duration').textContent = mins + ':' + (secs < 10 ? '0' : '') + secs;
-    });
-
-    wavesurfer.on('error', function (err) {
-      h.showError('WaveSurfer Issue', err);
-    });
-  }
-
-  function parseWavHeader(buffer) {
-    var view = new DataView(buffer);
-    
-    // RIFF identifier
-    if (view.getUint32(0, true) !== 0x46464952) throw new Error('Invalid WAV: Not a RIFF file');
-    // WAVE identifier
-    if (view.getUint32(8, true) !== 0x45564157) throw new Error('Invalid WAV: Not a WAVE file');
-
-    var offset = 12;
-    var fmtFound = false;
-    var channels, sampleRate, bitDepth;
-
-    // Iterate through chunks to find 'fmt '
-    while (offset < buffer.byteLength - 8) {
-      var chunkId = view.getUint32(offset, true);
-      var chunkSize = view.getUint32(offset + 4, true);
-
-      if (chunkId === 0x20746d66) { // 'fmt '
-        fmtFound = true;
-        channels = view.getUint16(offset + 10, true);
-        sampleRate = view.getUint32(offset + 12, true);
-        bitDepth = view.getUint16(offset + 22, true);
-        break;
-      }
-      offset += 8 + chunkSize;
     }
 
-    if (!fmtFound) throw new Error('Invalid WAV: fmt chunk not found');
+    function initWaveSurfer(url, h) {
+      wavesurfer = WaveSurfer.create({
+        container: '#waveform',
+        waveColor: '#6366f1',
+        progressColor: '#4338ca',
+        cursorColor: '#4338ca',
+        barWidth: 2,
+        barGap: 3,
+        barRadius: 4,
+        cursorWidth: 1,
+        height: 128,
+        url: url,
+        normalize: true,
+        interact: true,
+        fillParent: true
+      });
 
-    return {
-      channels: channels,
-      sampleRate: sampleRate,
-      bitDepth: bitDepth
-    };
-  }
+      wavesurfer.on('ready', (duration) => {
+        const mins = Math.floor(duration / 60);
+        const secs = Math.floor(duration % 60);
+        const el = document.getElementById('wav-duration');
+        if (el) el.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+      });
+
+      wavesurfer.on('play', () => {
+        const btn = document.getElementById('btn-play-pause');
+        if (btn) btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+      });
+
+      wavesurfer.on('pause', () => {
+        const btn = document.getElementById('btn-play-pause');
+        if (btn) btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /></svg>`;
+      });
+
+      wavesurfer.on('error', (err) => {
+        h.showError('Waveform Error', 'There was an issue rendering the audio visualization.');
+      });
+    }
+
+    function parseWavHeader(buffer) {
+      const view = new DataView(buffer);
+      
+      // RIFF header
+      if (view.getUint32(0, true) !== 0x46464952) throw new Error('Not a valid RIFF file');
+      if (view.getUint32(8, true) !== 0x45564157) throw new Error('Not a valid WAVE file');
+
+      let offset = 12;
+      let fmt = null;
+
+      while (offset < buffer.byteLength - 8) {
+        const chunkId = view.getUint32(offset, true);
+        const chunkSize = view.getUint32(offset + 4, true);
+
+        if (chunkId === 0x20746d66) { // 'fmt '
+          fmt = {
+            format: view.getUint16(offset + 8, true),
+            channels: view.getUint16(offset + 10, true),
+            sampleRate: view.getUint32(offset + 12, true),
+            byteRate: view.getUint32(offset + 16, true),
+            blockAlign: view.getUint16(offset + 20, true),
+            bitDepth: view.getUint16(offset + 22, true)
+          };
+          break;
+        }
+        offset += 8 + chunkSize;
+      }
+
+      if (!fmt) throw new Error('WAV "fmt" chunk not found');
+      return fmt;
+    }
+  };
 })();
