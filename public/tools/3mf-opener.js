@@ -64,15 +64,12 @@
       dropLabel: 'Drop a .3mf 3D model',
       binary: true,
       onInit: function(h) {
-        h.loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js', () => {
-          h.loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js', () => {
-            // JSZip must be global for 3MFLoader
-            window.JSZip = window.JSZip || JSZip;
-            h.loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/3MFLoader.js', () => {
-              h.loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js');
-            });
-          });
-        });
+        h.loadScripts([
+          'https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js',
+          'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
+          'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/3MFLoader.js',
+          'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js'
+        ]);
       },
       onDestroy: function() {
         cleanupThree();
@@ -86,6 +83,9 @@
           setTimeout(function() { _onFile(file, content, h); }, 300);
           return;
         }
+
+        // Ensure JSZip is available for the loader
+        window.JSZip = window.JSZip || JSZip;
 
         // Large file protection
         if (file.size > 50 * 1024 * 1024 && !h.getState().confirmedLargeFile) {
@@ -160,8 +160,8 @@
 
           // Render UI
           h.render(`
-            <div class="flex flex-col h-full max-h-[90vh]">
-              <!-- U1. File info bar -->
+            <div class="flex flex-col h-full">
+              <!-- File info bar -->
               <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-100">
                 <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
                 <span class="text-surface-300">|</span>
@@ -214,7 +214,7 @@
                 </div>
               </div>
 
-              <!-- U10. Section headers with counts -->
+              <!-- Section stats -->
               <div class="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div class="bg-surface-50 p-4 rounded-2xl border border-surface-100">
                   <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Total Vertices</div>
