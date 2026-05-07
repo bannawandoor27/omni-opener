@@ -1,13 +1,29 @@
 (function() {
+  'use strict';
+
   window.initTool = function(toolConfig, mountEl) {
     let lastPreviewUrl = null;
 
+    /**
+     * @typedef {Object} DDSResult
+     * @property {HTMLCanvasElement} canvas
+     * @property {number} width
+     * @property {number} height
+     * @property {string} format
+     * @property {number} mipmapCount
+     * @property {string} fourCC
+     * @property {number} rgbBitCount
+     * @property {number} caps
+     * @property {number} flags
+     * @property {number} headerSize
+     */
+
     OmniTool.create(mountEl, toolConfig, {
       accept: '.dds',
-      dropLabel: 'Drop a .dds file here',
+      dropLabel: 'Drop a .dds texture here',
       binary: true,
       onInit: function(helpers) {
-        // Self-contained parser
+        // No external dependencies to load
       },
       onDestroy: function() {
         if (lastPreviewUrl) {
@@ -15,7 +31,7 @@
           lastPreviewUrl = null;
         }
       },
-      onFile: async function _onFile(file, content, helpers) {
+      onFile: async function _onFileFn(file, content, helpers) {
         if (lastPreviewUrl) {
           URL.revokeObjectURL(lastPreviewUrl);
           lastPreviewUrl = null;
@@ -23,14 +39,18 @@
 
         helpers.showLoading('Analyzing DirectDraw Surface header...');
         
-        // Ensure UI updates
-        await new Promise(r => setTimeout(r, 16));
+        // Small delay to ensure UI updates before heavy lifting
+        await new Promise(r => setTimeout(r, 50));
 
         try {
+          if (!content || content.byteLength < 128) {
+            throw new Error('File too small to be a valid DDS texture.');
+          }
+
           const dds = parseDDS(content);
           
           if (!dds || dds.width === 0 || dds.height === 0) {
-            helpers.showError('Empty Image', 'The DDS file appears to have no dimensions.');
+            helpers.showError('Invalid Image', 'The DDS file appears to have no dimensions or is corrupted.');
             return;
           }
 
@@ -41,9 +61,9 @@
           };
 
           const html = `
-            <div class="p-4 md:p-6 max-w-6xl mx-auto">
+            <div class="max-w-6xl mx-auto p-4 md:p-6">
               <!-- U1: File info bar -->
-              <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100 shadow-sm">
+              <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-200">
                 <span class="font-semibold text-surface-800">${esc(file.name)}</span>
                 <span class="text-surface-300">|</span>
                 <span>${humanSize(file.size)}</span>
@@ -53,8 +73,8 @@
                 <span class="px-2 py-0.5 bg-brand-100 text-brand-700 rounded text-[10px] font-bold uppercase tracking-tight">${esc(dds.format)}</span>
               </div>
 
-              <!-- Main Preview Section -->
-              <div class="flex flex-col gap-6">
+              <div class="space-y-6">
+                <!-- Preview Card -->
                 <div class="rounded-2xl border border-surface-200 overflow-hidden bg-white shadow-sm">
                   <div class="px-5 py-3.5 border-b border-surface-100 flex items-center justify-between bg-surface-50/50">
                     <div class="flex items-center gap-2">
@@ -73,20 +93,20 @@
                       <button id="btn-rotate" class="p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-surface-200 text-surface-600 transition-all active:scale-95" title="Rotate 90°">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                       </button>
-                      <button id="btn-bg-toggle" class="p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-surface-200 text-surface-600 transition-all active:scale-95" title="Toggle Transparency Grid">
+                      <button id="btn-bg-toggle" class="p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-surface-200 text-surface-600 transition-all active:scale-95 text-brand-600" title="Toggle Transparency Grid">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                       </button>
                     </div>
                   </div>
-                  <div id="preview-viewport" class="relative overflow-auto bg-surface-100 min-h-[400px] flex items-center justify-center p-8 transition-colors">
+                  <div id="preview-viewport" class="relative overflow-auto bg-surface-100 min-h-[500px] flex items-center justify-center p-8 transition-colors">
                     <div id="checkerboard-bg" class="absolute inset-0 opacity-40 pointer-events-none" style="background-image: conic-gradient(#fff 0.25turn, #e5e7eb 0.25turn 0.5turn, #fff 0.5turn 0.75turn, #e5e7eb 0.75turn); background-size: 24px 24px;"></div>
                     <div id="img-container" class="relative transition-transform duration-200 ease-out will-change-transform shadow-2xl bg-white ring-1 ring-black/5">
-                      <!-- Canvas inserted here -->
+                      <!-- Canvas inserted here via JS -->
                     </div>
                   </div>
                 </div>
 
-                <!-- U10: Metadata Section -->
+                <!-- Metadata Sections -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div class="bg-white p-5 rounded-2xl border border-surface-200 shadow-sm">
                     <div class="flex items-center justify-between mb-4">
@@ -133,7 +153,7 @@
                       </div>
                       <div class="flex justify-between items-center py-2 hover:bg-surface-50 px-2 rounded-lg transition-colors">
                         <span class="text-surface-400 uppercase tracking-tighter">Caps/Flags</span>
-                        <span class="font-bold text-surface-700">0x${dds.caps.toString(16)} / 0x${dds.flags.toString(16)}</span>
+                        <span class="font-bold text-surface-700">0x${dds.caps.toString(16).toUpperCase()} / 0x${dds.flags.toString(16).toUpperCase()}</span>
                       </div>
                     </div>
                   </div>
@@ -162,8 +182,8 @@
           };
 
           const el = (id) => document.getElementById(id);
-          if (el('btn-zoom-in')) el('btn-zoom-in').onclick = () => { scale = Math.min(scale + 0.2, 8); updateTransform(); };
-          if (el('btn-zoom-out')) el('btn-zoom-out').onclick = () => { scale = Math.max(scale - 0.2, 0.1); updateTransform(); };
+          if (el('btn-zoom-in')) el('btn-zoom-in').onclick = () => { scale = Math.min(scale * 1.25, 16); updateTransform(); };
+          if (el('btn-zoom-out')) el('btn-zoom-out').onclick = () => { scale = Math.max(scale * 0.8, 0.05); updateTransform(); };
           if (el('btn-zoom-reset')) el('btn-zoom-reset').onclick = () => { scale = 1; updateTransform(); };
           if (el('btn-rotate')) el('btn-rotate').onclick = () => { rotation = (rotation + 90) % 360; updateTransform(); };
           if (el('btn-bg-toggle')) el('btn-bg-toggle').onclick = () => {
@@ -171,24 +191,25 @@
             const bg = el('checkerboard-bg');
             if (bg) bg.style.visibility = bgVisible ? 'visible' : 'hidden';
             el('btn-bg-toggle').classList.toggle('text-brand-600', bgVisible);
+            el('btn-bg-toggle').classList.toggle('text-surface-400', !bgVisible);
           };
 
           helpers.hideLoading();
 
         } catch (err) {
-          console.error('DDS Parse Error:', err);
-          helpers.showError('Rendering Failed', 'Our browser-based decoder could not process this DDS file. It may use an unsupported compression like BC7/DX10 or be corrupted.');
+          console.error('[DDS Opener] Error:', err);
+          helpers.showError('Could not open DDS file', 'The browser-based decoder failed. This file might use an unsupported compression (like BC6/BC7/DX10) or be corrupted.');
         }
       },
       actions: [
         {
-          label: 'Export as PNG',
+          label: 'Download as PNG',
           id: 'dl-png',
           icon: 'download',
           onClick: function(helpers) {
             const canvas = helpers.getRenderEl().querySelector('canvas');
             if (!canvas) return;
-            helpers.showLoading('Generating PNG...');
+            helpers.showLoading('Compressing PNG...');
             canvas.toBlob(function(blob) {
               helpers.hideLoading();
               if (blob) {
@@ -199,30 +220,65 @@
           }
         },
         {
+          label: 'Download as JPG',
+          id: 'dl-jpg',
+          icon: 'download',
+          onClick: function(helpers) {
+            const canvas = helpers.getRenderEl().querySelector('canvas');
+            if (!canvas) return;
+            helpers.showLoading('Generating JPG...');
+            
+            // Create a temporary canvas with white background for JPG (removes transparency)
+            const tmp = document.createElement('canvas');
+            tmp.width = canvas.width;
+            tmp.height = canvas.height;
+            const tctx = tmp.getContext('2d');
+            tctx.fillStyle = '#FFFFFF';
+            tctx.fillRect(0, 0, tmp.width, tmp.height);
+            tctx.drawImage(canvas, 0, 0);
+
+            tmp.toBlob(function(blob) {
+              helpers.hideLoading();
+              if (blob) {
+                const name = helpers.getFile().name.replace(/\.[^/.]+$/, "") + ".jpg";
+                helpers.download(name, blob, 'image/jpeg');
+              }
+            }, 'image/jpeg', 0.92);
+          }
+        },
+        {
           label: 'Copy Details',
           id: 'copy-meta',
           icon: 'copy',
           onClick: function(helpers, btn) {
             const lines = Array.from(helpers.getRenderEl().querySelectorAll('.flex.justify-between'))
               .map(el => {
-                const key = el.querySelector('span:first-child').innerText.trim();
-                const val = el.querySelector('span:last-child').innerText.trim();
+                const key = el.querySelector('span:first-child')?.innerText.trim() || '';
+                const val = el.querySelector('span:last-child')?.innerText.trim() || '';
                 return `${key}: ${val}`;
-              });
+              }).filter(l => l !== ': ');
             helpers.copyToClipboard(lines.join('\n'), btn);
           }
         }
       ],
-      infoHtml: '<strong>Fast & Private:</strong> DDS textures are decoded using optimized JavaScript in your browser. No image data ever leaves your device.'
+      infoHtml: '<strong>Secure & Private:</strong> DirectDraw Surface textures are processed entirely in your browser using local resources. No data is ever uploaded.'
     });
 
+    /**
+     * @param {string} str 
+     */
     function esc(str) {
       if (!str) return '';
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    /**
+     * @param {ArrayBuffer} buffer 
+     * @returns {DDSResult}
+     */
     function parseDDS(buffer) {
       const header = new Int32Array(buffer, 0, 31);
+      // 'DDS ' signature
       if (header[0] !== 0x20534444) throw new Error('Invalid DDS signature');
 
       const headerSize = header[1];
@@ -244,7 +300,10 @@
 
       let format = fourCC || (rgbBitCount + '-bit RGB');
       let offset = 128;
-      if (fourCC === 'DX10') offset += 20;
+      if (fourCC === 'DX10') {
+        // Handle DX10 header extension if present
+        offset += 20;
+      }
 
       const canvas = document.createElement('canvas');
       canvas.width = width;
@@ -260,7 +319,7 @@
         decompressDXT3(data, width, height, pixels);
       } else if (fourCC === 'DXT5') {
         decompressDXT5(data, width, height, pixels);
-      } else if (pfFlags & 0x40) {
+      } else if (pfFlags & 0x40) { // Uncompressed RGB
         decodeUncompressed(data, width, height, rgbBitCount, pfFlags, pixelFormat, pixels);
       } else {
         throw new Error('Unsupported format: ' + format);
@@ -282,7 +341,10 @@
       for (let i = 0; i < width * height; i++) {
         let val = 0;
         const base = i * bytesPerPixel;
-        for (let b = 0; b < bytesPerPixel; b++) val |= (data[base + b] << (b * 8));
+        // Read little-endian value
+        for (let b = 0; b < bytesPerPixel; b++) {
+          if (base + b < data.length) val |= (data[base + b] << (b * 8));
+        }
         const target = i * 4;
         pixels[target + 0] = ((val & rMask) >>> rShift) & 0xFF;
         pixels[target + 1] = ((val & gMask) >>> gShift) & 0xFF;
@@ -294,7 +356,7 @@
     function getShift(mask) {
       if (!mask) return 0;
       let shift = 0;
-      while (!(mask & (1 << shift))) shift++;
+      while (shift < 32 && !(mask & (1 << shift))) shift++;
       return shift;
     }
 
@@ -315,16 +377,16 @@
           unpack565(c0, colors, 0);
           unpack565(c1, colors, 4);
           if (c0 > c1) {
-            colors[8] = (2 * colors[0] + colors[4]) / 3;
-            colors[9] = (2 * colors[1] + colors[5]) / 3;
-            colors[10] = (2 * colors[2] + colors[6]) / 3;
-            colors[12] = (colors[0] + 2 * colors[4]) / 3;
-            colors[13] = (colors[1] + 2 * colors[5]) / 3;
-            colors[14] = (colors[2] + 2 * colors[6]) / 3;
+            colors[8] = ((2 * colors[0] + colors[4]) / 3) | 0;
+            colors[9] = ((2 * colors[1] + colors[5]) / 3) | 0;
+            colors[10] = ((2 * colors[2] + colors[6]) / 3) | 0;
+            colors[12] = ((colors[0] + 2 * colors[4]) / 3) | 0;
+            colors[13] = ((colors[1] + 2 * colors[5]) / 3) | 0;
+            colors[14] = ((colors[2] + 2 * colors[6]) / 3) | 0;
           } else {
-            colors[8] = (colors[0] + colors[4]) / 2;
-            colors[9] = (colors[1] + colors[5]) / 2;
-            colors[10] = (colors[2] + colors[6]) / 2;
+            colors[8] = ((colors[0] + colors[4]) / 2) | 0;
+            colors[9] = ((colors[1] + colors[5]) / 2) | 0;
+            colors[10] = ((colors[2] + colors[6]) / 2) | 0;
             colors[12] = 0; colors[13] = 0; colors[14] = 0;
           }
           const indices = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
@@ -354,8 +416,8 @@
           const c0 = data[offset] | (data[offset + 1] << 8), c1 = data[offset + 2] | (data[offset + 3] << 8);
           offset += 4;
           unpack565(c0, colors, 0); unpack565(c1, colors, 4);
-          colors[8] = (2 * colors[0] + colors[4]) / 3; colors[9] = (2 * colors[1] + colors[5]) / 3; colors[10] = (2 * colors[2] + colors[6]) / 3;
-          colors[12] = (colors[0] + 2 * colors[4]) / 3; colors[13] = (colors[1] + 2 * colors[5]) / 3; colors[14] = (colors[2] + 2 * colors[6]) / 3;
+          colors[8] = ((2 * colors[0] + colors[4]) / 3) | 0; colors[9] = ((2 * colors[1] + colors[5]) / 3) | 0; colors[10] = ((2 * colors[2] + colors[6]) / 3) | 0;
+          colors[12] = ((colors[0] + 2 * colors[4]) / 3) | 0; colors[13] = ((colors[1] + 2 * colors[5]) / 3) | 0; colors[14] = ((colors[2] + 2 * colors[6]) / 3) | 0;
           const indices = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
           offset += 4;
           for (let i = 0; i < 16; i++) {
@@ -377,8 +439,9 @@
       for (let y = 0; y < height; y += 4) {
         for (let x = 0; x < width; x += 4) {
           alpha[0] = data[offset]; alpha[1] = data[offset + 1];
-          if (alpha[0] > alpha[1]) for (let i = 1; i < 7; i++) alpha[i + 1] = (((7 - i) * alpha[0] + i * alpha[1]) / 7) | 0;
-          else {
+          if (alpha[0] > alpha[1]) {
+            for (let i = 1; i < 7; i++) alpha[i + 1] = (((7 - i) * alpha[0] + i * alpha[1]) / 7) | 0;
+          } else {
             for (let i = 1; i < 5; i++) alpha[i + 1] = (((5 - i) * alpha[0] + i * alpha[1]) / 5) | 0;
             alpha[6] = 0; alpha[7] = 255;
           }
@@ -386,8 +449,8 @@
           const c0 = data[offset] | (data[offset + 1] << 8), c1 = data[offset + 2] | (data[offset + 3] << 8);
           offset += 4;
           unpack565(c0, colors, 0); unpack565(c1, colors, 4);
-          colors[8] = (2 * colors[0] + colors[4]) / 3; colors[9] = (2 * colors[1] + colors[5]) / 3; colors[10] = (2 * colors[2] + colors[6]) / 3;
-          colors[12] = (colors[0] + 2 * colors[4]) / 3; colors[13] = (colors[1] + 2 * colors[5]) / 3; colors[14] = (colors[2] + 2 * colors[6]) / 3;
+          colors[8] = ((2 * colors[0] + colors[4]) / 3) | 0; colors[9] = ((2 * colors[1] + colors[5]) / 3) | 0; colors[10] = ((2 * colors[2] + colors[6]) / 3) | 0;
+          colors[12] = ((colors[0] + 2 * colors[4]) / 3) | 0; colors[13] = ((colors[1] + 2 * colors[5]) / 3) | 0; colors[14] = ((colors[2] + 2 * colors[6]) / 3) | 0;
           const colorIndices = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
           offset += 4;
           for (let i = 0; i < 16; i++) {
