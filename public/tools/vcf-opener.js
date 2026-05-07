@@ -1,76 +1,94 @@
 /**
- * OmniOpener — vCard (VCF) Toolkit
- * Uses OmniTool SDK, qrcode.js, and PapaParse.
+ * OmniOpener — vCard (VCF) Professional Toolkit
+ * A high-performance, secure browser-based VCF viewer and converter.
  */
 (function () {
   'use strict';
 
+  // Helper for HTML escaping to prevent XSS
+  const e = (str) => {
+    if (str === undefined || str === null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  const formatSize = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
   /**
-   * Simple but robust VCF Parser
-   * Handles folded lines, multiple cards, and common fields.
+   * Robust vCard Parser
+   * Handles line unfolding, quoted-printable, and multiple entries.
    */
   const vCardParser = {
     parse: function (content) {
       const cards = [];
-      // Split by BEGIN:VCARD, but keep it in mind that we might have empty first element
-      const rawBlocks = content.split(/BEGIN:VCARD/i);
+      // Normalize line endings and unfold lines
+      // VCF unfolding: any line starting with a space or horizontal tab is a continuation
+      const unfolded = content.replace(/\r?\n[ \t]/g, '');
+      const sections = unfolded.split(/BEGIN:VCARD/i);
 
-      for (let i = 0; i < rawBlocks.length; i++) {
-        let block = rawBlocks[i].trim();
-        if (!block || !block.toUpperCase().includes('END:VCARD')) continue;
+      sections.forEach(section => {
+        if (!section.toUpperCase().includes('END:VCARD')) return;
 
-        // Clean up the block to only contain the card data
-        const endIdx = block.toUpperCase().indexOf('END:VCARD');
-        const cardContent = block.substring(0, endIdx).trim();
-        const raw = 'BEGIN:VCARD\r\n' + cardContent + '\r\nEND:VCARD';
-
+        const lines = section.split(/\r?\n/);
         const data = {};
-        // Unfold lines: VCF lines starting with space or tab are continuations
-        const unfolded = cardContent.replace(/\r?\n[ \t]/g, '');
-        const lines = unfolded.split(/\r?\n/);
+        const rawLines = ['BEGIN:VCARD'];
 
         lines.forEach(line => {
+          if (!line.trim()) return;
+          rawLines.push(line);
           const colonIdx = line.indexOf(':');
           if (colonIdx === -1) return;
 
           const keyPart = line.substring(0, colonIdx);
-          const value = line.substring(colonIdx + 1).trim();
+          let value = line.substring(colonIdx + 1).trim();
 
-          // Split key and parameters (e.g., TEL;TYPE=CELL)
-          const keyMatch = keyPart.split(';');
-          const key = keyMatch[0].toUpperCase().trim();
+          // Split key and params (e.g. TEL;TYPE=WORK,VOICE)
+          const params = keyPart.split(';');
+          const key = params[0].toUpperCase();
 
-          if (!data[key]) {
-            data[key] = value;
-          } else {
-            // Handle multiple entries for the same key (like TEL or EMAIL)
-            if (Array.isArray(data[key])) {
-              data[key].push(value);
-            } else {
-              data[key] = [data[key], value];
-            }
+          // Basic Quoted-Printable decoding if ENCODING=QUOTED-PRINTABLE is present
+          if (keyPart.toUpperCase().includes('ENCODING=QUOTED-PRINTABLE')) {
+            try {
+              value = value.replace(/=([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+            } catch (err) { /* ignore decode errors */ }
           }
+
+          // Store data
+          if (!data[key]) {
+            data[key] = [];
+          }
+          data[key].push({
+            value: value,
+            params: params.slice(1)
+          });
         });
 
-        cards.push({ data, raw });
-      }
+        if (Object.keys(data).length > 0) {
+          cards.push({
+            data,
+            raw: rawLines.join('\r\n') + (rawLines[rawLines.length - 1].toUpperCase().includes('END:VCARD') ? '' : '\r\nEND:VCARD')
+          });
+        }
+      });
+
       return cards;
     }
   };
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = String(str);
-    return div.innerHTML;
-  }
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       accept: '.vcf',
       binary: false,
-      infoHtml: '<strong>VCF Toolkit:</strong> Securely view, search, and convert vCard files. All processing happens locally in your browser.',
-
       onInit: function (h) {
         h.loadScripts([
           'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
@@ -78,195 +96,311 @@
         ]);
       },
 
+      onDestroy: function (h) {
+        // Cleanup if necessary
+      },
+
       actions: [
         {
-          label: '📋 Copy as JSON',
+          label: '📋 Copy JSON',
           id: 'copy-json',
           onClick: function (h, btn) {
-            const cards = h.getState().cards;
-            if (cards) h.copyToClipboard(JSON.stringify(cards.map(c => c.data), null, 2), btn);
+            const state = h.getState();
+            if (!state.cards) return;
+            const json = JSON.stringify(state.cards.map(c => {
+              const obj = {};
+              for (const k in c.data) obj[k] = c.data[k].map(v => v.value);
+              return obj;
+            }), null, 2);
+            h.copyToClipboard(json, btn);
           }
         },
         {
           label: '📥 Export CSV',
           id: 'export-csv',
           onClick: function (h) {
-            const cards = h.getState().cards;
-            if (cards && typeof Papa !== 'undefined') {
-              const flatData = cards.map(c => {
-                const row = {};
-                for (const k in c.data) {
-                  row[k] = Array.isArray(c.data[k]) ? c.data[k].join('; ') : c.data[k];
-                }
-                return row;
-              });
-              const csv = Papa.unparse(flatData);
-              h.download(h.getFile().name.replace(/\.vcf$/i, '') + '.csv', csv, 'text/csv');
+            const state = h.getState();
+            if (!state.cards || typeof Papa === 'undefined') {
+              h.showError('Export Failed', 'Required libraries not loaded yet. Please wait a moment.');
+              return;
             }
+            const flat = state.cards.map(c => {
+              const row = {};
+              for (const k in c.data) {
+                row[k] = c.data[k].map(v => v.value).join('; ');
+              }
+              return row;
+            });
+            const csv = Papa.unparse(flat);
+            h.download(h.getFile().name.replace(/\.vcf$/i, '') + '.csv', csv, 'text/csv');
           }
         }
       ],
 
-      onFile: function (file, content, h) {
-        const cards = vCardParser.parse(content);
-        h.setState('cards', cards);
+      onFile: function _onFile(file, content, h) {
+        h.showLoading('Parsing vCards...');
 
-        if (cards.length === 0) {
-          h.showError('No Contacts Found', 'The file does not appear to contain valid vCard data.');
-          return;
-        }
-
-        const renderList = (filtered) => {
-          if (filtered.length === 0) {
-            return `<div class="p-12 text-center text-surface-400">No contacts match your search.</div>`;
+        // Delay slightly to ensure UI updates before heavy parsing
+        setTimeout(function() {
+          const cards = vCardParser.parse(content);
+          if (cards.length === 0) {
+            h.showError('No Contacts Found', 'The file does not appear to contain any valid vCard entries.');
+            return;
           }
-          return `
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
-              ${filtered.map((c, i) => {
-                const name = c.data.FN || c.data.N || 'Unnamed Contact';
-                const sub = c.data.TEL || c.data.EMAIL || c.data.ORG || '';
-                const displaySub = Array.isArray(sub) ? sub[0] : sub;
-                const initial = String(name).trim().charAt(0).toUpperCase() || '?';
+
+          h.setState('cards', cards);
+          h.setState('filtered', cards);
+          
+          _renderMain(file, cards, h);
+        }, 50);
+      }
+    });
+
+    function _renderMain(file, cards, h) {
+      h.render(`
+        <div class="flex flex-col h-full bg-white font-sans text-surface-900">
+          <!-- U1: File Info Bar -->
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 mx-4 mt-4 border border-surface-100">
+            <span class="font-semibold text-surface-800">${e(file.name)}</span>
+            <span class="text-surface-300">|</span>
+            <span>${formatSize(file.size)}</span>
+            <span class="text-surface-300">|</span>
+            <span class="text-surface-500">vCard File</span>
+            <div class="ml-auto flex items-center gap-2">
+              <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-medium" id="contact-count">${cards.length} contacts</span>
+            </div>
+          </div>
+
+          <!-- Search & Filter Area -->
+          <div class="px-4 pb-4">
+            <div class="relative group">
+              <span class="absolute left-4 top-1/2 -translate-y-1/2 text-surface-400 group-focus-within:text-brand-500 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              </span>
+              <input type="text" id="vcf-search" placeholder="Search by name, email, phone or company..." 
+                class="w-full pl-12 pr-4 py-3 bg-surface-50 border border-surface-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all">
+            </div>
+          </div>
+
+          <!-- Content Area -->
+          <div id="vcf-grid" class="flex-1 overflow-y-auto px-4 pb-8 min-h-0">
+            ${_renderGrid(cards)}
+          </div>
+
+          <!-- Detail Modal (Hidden by default) -->
+          <div id="vcf-modal" class="fixed inset-0 bg-surface-950/40 backdrop-blur-sm z-[50] flex items-center justify-center hidden p-4 animate-in fade-in duration-200">
+            <div class="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+              <div class="relative h-32 bg-gradient-to-br from-brand-500 to-brand-700">
+                 <button id="close-modal" class="absolute top-4 right-4 p-2 bg-black/10 hover:bg-black/20 text-white rounded-full transition-colors backdrop-blur-md">
+                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                 </button>
+                 <div class="absolute -bottom-10 left-8">
+                    <div id="modal-avatar" class="w-24 h-24 rounded-2xl bg-white shadow-xl flex items-center justify-center text-3xl font-bold text-brand-600 border-4 border-white"></div>
+                 </div>
+              </div>
+              
+              <div class="pt-14 px-8 pb-6">
+                <h2 id="modal-name" class="text-2xl font-bold text-surface-900 leading-tight"></h2>
+                <p id="modal-org" class="text-surface-500 font-medium"></p>
                 
-                return `
-                  <div class="contact-card bg-white p-4 rounded-xl border border-surface-200 shadow-sm hover:shadow-md transition-all cursor-pointer group flex items-center gap-4" data-index="${cards.indexOf(c)}">
-                    <div class="w-12 h-12 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center font-bold text-lg group-hover:bg-brand-600 group-hover:text-white transition-colors flex-shrink-0">
-                      ${escapeHtml(initial)}
-                    </div>
-                    <div class="min-w-0 flex-1">
-                      <div class="font-bold text-surface-900 truncate">${escapeHtml(name)}</div>
-                      <div class="text-xs text-surface-500 truncate">${escapeHtml(displaySub)}</div>
-                    </div>
+                <div class="mt-8 space-y-6 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar" id="modal-fields"></div>
+                
+                <div class="mt-8 pt-6 border-t border-surface-100 flex items-center justify-between gap-6">
+                  <div id="modal-qrcode" class="w-24 h-24 bg-surface-50 rounded-xl p-1 border border-surface-100 flex items-center justify-center overflow-hidden flex-shrink-0"></div>
+                  <div class="flex-1 flex flex-col gap-2">
+                    <button id="btn-copy-vcf" class="w-full py-2.5 px-4 bg-surface-100 hover:bg-surface-200 text-surface-700 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+                      Copy vCard
+                    </button>
+                    <button id="btn-download-single" class="w-full py-2.5 px-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-brand-500/20 transition-all flex items-center justify-center gap-2">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                      Download .vcf
+                    </button>
                   </div>
-                `;
-              }).join('')}
-            </div>
-          `;
-        };
-
-        h.render(`
-          <div class="flex flex-col h-[700px] max-h-[85vh] font-sans">
-            <div class="p-6 border-b border-surface-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-surface-50/50">
-              <div>
-                <h3 class="font-bold text-lg text-surface-900">${escapeHtml(file.name)}</h3>
-                <p class="text-sm text-surface-500">${cards.length} contacts loaded</p>
-              </div>
-              <div class="relative">
-                <input type="text" id="vcf-search" placeholder="Search contacts..." 
-                  class="pl-10 pr-4 py-2 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500 w-full sm:w-64 bg-white">
-                <span class="absolute left-3 top-2.5 text-surface-400">🔍</span>
-              </div>
-            </div>
-            
-            <div id="vcf-container" class="flex-1 overflow-auto bg-surface-50/20">
-              ${renderList(cards)}
-            </div>
-
-            <!-- Detail Overlay -->
-            <div id="vcf-modal" class="fixed inset-0 bg-surface-900/60 backdrop-blur-sm z-[2000] flex items-center justify-center hidden p-4">
-              <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
-                <div class="p-6 bg-surface-50 border-b border-surface-100 flex justify-between items-start">
-                  <div class="flex items-center gap-4">
-                    <div id="modal-initial" class="w-16 h-16 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-2xl"></div>
-                    <div>
-                      <h2 id="modal-name" class="text-xl font-bold text-surface-900"></h2>
-                      <p id="modal-org" class="text-sm text-surface-500"></p>
-                    </div>
-                  </div>
-                  <button id="close-modal" class="p-2 hover:bg-surface-200 rounded-full transition-colors text-surface-400">✕</button>
-                </div>
-                <div class="p-6 space-y-6 overflow-auto max-h-[60vh]">
-                  <div class="flex flex-col md:flex-row gap-6">
-                    <div id="modal-qrcode" class="flex-shrink-0 bg-white p-2 rounded-lg border border-surface-100 w-[144px] h-[144px] flex items-center justify-center"></div>
-                    <div id="modal-fields" class="flex-1 space-y-4"></div>
-                  </div>
-                </div>
-                <div class="p-4 bg-surface-50 border-t border-surface-100 flex gap-3">
-                  <button id="btn-copy-vcf" class="flex-1 py-2.5 bg-white border border-surface-200 text-surface-700 rounded-xl font-bold text-sm hover:bg-surface-100 transition-colors">📋 Copy vCard</button>
-                  <button id="btn-download-vcf" class="flex-1 py-2.5 bg-brand-600 text-white rounded-xl font-bold text-sm hover:bg-brand-700 transition-colors">📥 Download</button>
                 </div>
               </div>
             </div>
           </div>
-        `);
+        </div>
 
-        const container = document.getElementById('vcf-container');
-        const search = document.getElementById('vcf-search');
-        const modal = document.getElementById('vcf-modal');
-        const qrContainer = document.getElementById('modal-qrcode');
-        let activeCard = null;
+        <style>
+          .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+          .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+          .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+          .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+        </style>
+      `);
 
-        const openCard = (idx) => {
-          activeCard = cards[idx];
-          const name = activeCard.data.FN || activeCard.data.N || 'Unnamed Contact';
-          
-          document.getElementById('modal-name').textContent = name;
-          document.getElementById('modal-initial').textContent = name.charAt(0).toUpperCase();
-          document.getElementById('modal-org').textContent = activeCard.data.ORG || (activeCard.data.TITLE || 'Contact Detail');
-          
-          const fields = document.getElementById('modal-fields');
-          fields.innerHTML = '';
-          
-          const importantKeys = ['TEL', 'EMAIL', 'ADR', 'URL', 'BDAY', 'NOTE'];
-          const allKeys = Object.keys(activeCard.data).filter(k => !['FN', 'N', 'PHOTO', 'PRODID', 'REV', 'VERSION'].includes(k));
-          
-          // Sort keys to put important ones first
-          const displayKeys = [...new Set([...importantKeys.filter(k => activeCard.data[k]), ...allKeys])];
+      const grid = document.getElementById('vcf-grid');
+      const searchInput = document.getElementById('vcf-search');
+      const modal = document.getElementById('vcf-modal');
+      const countEl = document.getElementById('contact-count');
+      let activeCard = null;
 
-          displayKeys.forEach(k => {
-            if (!activeCard.data[k]) return;
-            const val = activeCard.data[k];
-            const displayVal = Array.isArray(val) ? val.join('\n') : val;
-            
-            const div = document.createElement('div');
-            div.className = 'border-b border-surface-50 pb-2';
-            div.innerHTML = `
-              <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-0.5">${escapeHtml(k)}</div>
-              <div class="text-sm text-surface-800 whitespace-pre-wrap break-all">${escapeHtml(displayVal)}</div>
-            `;
-            fields.appendChild(div);
-          });
-
-          qrContainer.innerHTML = "";
-          if (typeof QRCode !== 'undefined') {
-            try {
-              new QRCode(qrContainer, { text: activeCard.raw, width: 128, height: 128 });
-            } catch (e) {
-              qrContainer.innerHTML = '<span class="text-[10px] text-surface-300">QR Error</span>';
-            }
-          }
-          
-          modal.classList.remove('hidden');
-        };
-
-        container.addEventListener('click', (e) => {
-          const card = e.target.closest('.contact-card');
-          if (card) openCard(parseInt(card.dataset.index));
+      // Search Logic
+      searchInput.addEventListener('input', (event) => {
+        const query = event.target.value.toLowerCase().trim();
+        const filtered = cards.filter(c => {
+          if (!query) return true;
+          // Search in common fields
+          const searchable = [
+            c.data.FN?.[0]?.value,
+            c.data.N?.[0]?.value,
+            c.data.ORG?.[0]?.value,
+            ...(c.data.TEL || []).map(t => t.value),
+            ...(c.data.EMAIL || []).map(e => e.value)
+          ].join(' ').toLowerCase();
+          return searchable.includes(query);
         });
+        
+        h.setState('filtered', filtered);
+        grid.innerHTML = _renderGrid(filtered);
+        countEl.textContent = `${filtered.length} matches`;
+      });
 
-        search.addEventListener('input', (e) => {
-          const term = e.target.value.toLowerCase();
-          const filtered = cards.filter(c => {
-            const searchStr = JSON.stringify(c.data).toLowerCase();
-            return searchStr.includes(term);
-          });
-          container.innerHTML = renderList(filtered);
-        });
+      // Delegate click for grid cards
+      grid.addEventListener('click', (e) => {
+        const cardEl = e.target.closest('.contact-card');
+        if (!cardEl) return;
+        const index = parseInt(cardEl.dataset.index);
+        const filtered = h.getState().filtered;
+        activeCard = filtered[index];
+        if (activeCard) _openModal(activeCard, modal, h);
+      });
 
-        document.getElementById('close-modal').onclick = () => modal.classList.add('hidden');
-        modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
+      // Modal interactions
+      document.getElementById('close-modal').onclick = () => modal.classList.add('hidden');
+      modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
+      
+      document.getElementById('btn-copy-vcf').onclick = (e) => {
+        if (activeCard) h.copyToClipboard(activeCard.raw, e.currentTarget);
+      };
+      
+      document.getElementById('btn-download-single').onclick = () => {
+        if (activeCard) {
+          const name = (activeCard.data.FN?.[0]?.value || 'contact').replace(/[^a-z0-9]/gi, '_');
+          h.download(`${name}.vcf`, activeCard.raw, 'text/vcard');
+        }
+      };
+    }
 
-        document.getElementById('btn-copy-vcf').onclick = (e) => {
-          if (activeCard) h.copyToClipboard(activeCard.raw, e.target);
-        };
-
-        document.getElementById('btn-download-vcf').onclick = () => {
-          if (activeCard) {
-            const filename = (activeCard.data.FN || 'contact').replace(/[^a-z0-9]/gi, '_') + '.vcf';
-            h.download(filename, activeCard.raw, 'text/vcard');
-          }
-        };
+    function _renderGrid(cards) {
+      if (cards.length === 0) {
+        return `
+          <div class="flex flex-col items-center justify-center py-20 text-surface-400">
+            <svg class="w-16 h-16 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            <p class="text-lg font-medium">No contacts found</p>
+            <p class="text-sm">Try adjusting your search criteria</p>
+          </div>
+        `;
       }
-    });
+
+      return `
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          ${cards.map((c, i) => {
+            const fn = c.data.FN?.[0]?.value || c.data.N?.[0]?.value || 'Unknown Contact';
+            const org = c.data.ORG?.[0]?.value || '';
+            const email = c.data.EMAIL?.[0]?.value || '';
+            const tel = c.data.TEL?.[0]?.value || '';
+            const initial = fn.trim().charAt(0).toUpperCase() || '?';
+
+            return `
+              <div class="contact-card group p-4 bg-white border border-surface-200 rounded-2xl hover:border-brand-400 hover:shadow-xl hover:shadow-brand-500/5 transition-all cursor-pointer flex items-center gap-4" data-index="${i}">
+                <div class="w-12 h-12 rounded-xl bg-surface-50 text-surface-400 group-hover:bg-brand-50 group-hover:text-brand-600 flex items-center justify-center font-bold text-xl transition-colors flex-shrink-0">
+                  ${e(initial)}
+                </div>
+                <div class="min-w-0 flex-1">
+                  <h4 class="font-bold text-surface-900 truncate group-hover:text-brand-700 transition-colors">${e(fn)}</h4>
+                  <p class="text-xs text-surface-500 truncate">${e(org || email || tel || 'No details')}</p>
+                </div>
+                <div class="opacity-0 group-hover:opacity-100 transition-opacity text-brand-500">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    function _openModal(card, modal, h) {
+      const fn = card.data.FN?.[0]?.value || card.data.N?.[0]?.value || 'Unknown Contact';
+      const org = card.data.ORG?.[0]?.value || card.data.TITLE?.[0]?.value || '';
+      
+      document.getElementById('modal-name').textContent = fn;
+      document.getElementById('modal-avatar').textContent = fn.trim().charAt(0).toUpperCase();
+      document.getElementById('modal-org').textContent = org;
+      
+      const fieldsContainer = document.getElementById('modal-fields');
+      fieldsContainer.innerHTML = '';
+      
+      const fieldConfig = [
+        { key: 'TEL', label: 'Phone', icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>' },
+        { key: 'EMAIL', label: 'Email', icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>' },
+        { key: 'ADR', label: 'Address', icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>' },
+        { key: 'URL', label: 'Website', icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>' },
+        { key: 'BDAY', label: 'Birthday', icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>' },
+        { key: 'NOTE', label: 'Notes', icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>' }
+      ];
+
+      fieldConfig.forEach(conf => {
+        const values = card.data[conf.key];
+        if (!values) return;
+        
+        values.forEach(v => {
+          const item = document.createElement('div');
+          item.className = 'flex items-start gap-4';
+          item.innerHTML = `
+            <div class="mt-1 p-2 bg-surface-50 text-surface-400 rounded-lg flex-shrink-0">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">${conf.icon}</svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">${e(conf.label)}</p>
+              <p class="text-sm text-surface-800 break-words whitespace-pre-wrap">${e(v.value)}</p>
+            </div>
+          `;
+          fieldsContainer.appendChild(item);
+        });
+      });
+
+      // Show other fields not in config
+      Object.keys(card.data).forEach(key => {
+        if (['FN', 'N', 'ORG', 'TITLE', 'PHOTO', 'PRODID', 'REV', 'VERSION', ...fieldConfig.map(c => c.key)].includes(key)) return;
+        card.data[key].forEach(v => {
+          const item = document.createElement('div');
+          item.className = 'flex items-start gap-4';
+          item.innerHTML = `
+            <div class="mt-1 p-2 bg-surface-50 text-surface-300 rounded-lg flex-shrink-0">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">${e(key)}</p>
+              <p class="text-sm text-surface-700 break-words">${e(v.value)}</p>
+            </div>
+          `;
+          fieldsContainer.appendChild(item);
+        });
+      });
+
+      // QR Code
+      const qrContainer = document.getElementById('modal-qrcode');
+      qrContainer.innerHTML = '';
+      if (typeof QRCode !== 'undefined') {
+        try {
+          new QRCode(qrContainer, {
+            text: card.raw,
+            width: 88,
+            height: 88,
+            colorDark: "#0f172a",
+            colorLight: "#f8fafc",
+            correctLevel: QRCode.CorrectLevel.L
+          });
+        } catch (err) {
+          qrContainer.innerHTML = '<span class="text-[8px] text-surface-400 uppercase font-bold">QR Fail</span>';
+        }
+      }
+
+      modal.classList.remove('hidden');
+    }
   };
 })();
