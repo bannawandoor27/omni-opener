@@ -5,10 +5,14 @@
 (function () {
   'use strict';
 
+  /**
+   * Escape HTML to prevent XSS.
+   * @param {string} str 
+   */
   function esc(str) {
     if (str === null || str === undefined) return '';
     const div = document.createElement('div');
-    div.appendChild(document.createTextNode(String(str)));
+    div.textContent = String(str);
     return div.innerHTML;
   }
 
@@ -19,8 +23,8 @@
       binary: false,
       infoHtml: '<strong>Security Toolkit:</strong> Professional certificate decoder with expiry analysis, fingerprints, and public key extraction. All processing is 100% client-side.',
 
-      onInit: function (h) {
-        return h.loadScript('https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js');
+      onInit: function (helpers) {
+        return helpers.loadScript('https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js');
       },
 
       actions: [
@@ -48,26 +52,24 @@
       onFile: function (file, content, h) {
         h.showLoading('Analyzing security file...');
 
-        const run = () => {
+        // Ensure dependency is loaded (especially for global drop handoff)
+        h.loadScript('https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js').then(() => {
           try {
             processPem(file, content, h);
           } catch (err) {
             console.error(err);
             h.showError('Decoding Error', 'Failed to parse PEM data. Ensure it is a valid PEM-encoded certificate or key.');
           }
-        };
-
-        if (typeof forge === 'undefined') {
-          h.loadScript('https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js')
-            .then(run)
-            .catch(err => h.showError('Dependency Error', 'Could not load node-forge library.'));
-        } else {
-          run();
-        }
+        }).catch(err => {
+          h.showError('Dependency Error', 'Could not load node-forge library.');
+        });
       }
     });
   };
 
+  /**
+   * Core logic for parsing PEM files and rendering the results.
+   */
   function processPem(file, content, h) {
     let type = "Unknown PEM";
     let detailsHtml = "";
@@ -151,6 +153,7 @@
       detailsHtml = `<div class="p-6 bg-surface-50 border border-surface-100 rounded-xl text-surface-600 text-sm leading-relaxed mb-6">Unknown PEM format. Raw source displayed below.</div>`;
     }
 
+    // Save public key in state for download action
     h.setState({ pubKeyPem: pubKeyPem });
 
     h.render(`
