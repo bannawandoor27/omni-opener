@@ -2,26 +2,20 @@
   'use strict';
 
   window.initTool = function (toolConfig, mountEl) {
+    let _filesize = null;
+
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
-      dropLabel: 'Drop a Shared Object (.so) file here',
-      infoHtml: '<strong>Security:</strong> Analysis is performed entirely in your browser. No binary data is ever uploaded to a server.',
+      dropLabel: 'Drop a Shared Object (.so) or ELF file',
+      infoHtml: '<strong>Security:</strong> ELF analysis is performed locally in your browser. No binary data is ever uploaded.',
 
       actions: [
         {
           label: '📋 Copy SHA-256',
           id: 'copy-hash',
           onClick: function (h, btn) {
-            const state = h.getState();
-            if (state.hash) h.copyToClipboard(state.hash, btn);
-          }
-        },
-        {
-          label: '📝 Copy Hex',
-          id: 'copy-hex',
-          onClick: function (h, btn) {
-            const state = h.getState();
-            if (state.hex) h.copyToClipboard(state.hex, btn);
+            const { hash } = h.getState();
+            if (hash) h.copyToClipboard(hash, btn);
           }
         },
         {
@@ -34,63 +28,59 @@
       ],
 
       onInit: function (h) {
-        // Load helper for pretty file sizes
-        h.loadScript('https://cdn.jsdelivr.net/npm/filesize@10.1.0/dist/filesize.min.js');
+        h.loadScript('https://cdn.jsdelivr.net/npm/filesize@10.1.0/dist/filesize.min.js', () => {
+          if (window.filesize) _filesize = window.filesize;
+        });
       },
 
-      onFile: async function (file, content, h) {
+      onFile: async function _onFile(file, content, h) {
         h.showLoading('Analyzing ELF structure...');
 
         try {
           const buffer = content;
+          if (buffer.byteLength < 16) throw new Error('File too small to be a valid ELF binary.');
+          
           const view = new DataView(buffer);
           const bytes = new Uint8Array(buffer);
           
-          // Verify ELF Magic: 0x7F 'E' 'L' 'F'
-          if (buffer.byteLength < 16 || view.getUint32(0, false) !== 0x7F454C46) {
-            throw new Error('Not a valid ELF file. Missing expected magic bytes.');
+          // ELF Magic: 0x7F 'E' 'L' 'F'
+          if (view.getUint32(0, false) !== 0x7F454C46) {
+            throw new Error('Invalid ELF magic bytes. This does not appear to be a Linux shared object or executable.');
           }
 
-          // Compute SHA-256 Hash
-          const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-          const hashHex = Array.from(new Uint8Array(hashBuffer))
-            .map(b => b.toString(16).padStart(2, '0')).join('');
-          
-          h.setState({ hash: hashHex });
-
-          // ELF Header Parsing
           const is64 = view.getUint8(4) === 2;
           const isLittle = view.getUint8(5) === 1;
           const type = view.getUint16(16, isLittle);
           const machine = view.getUint16(18, isLittle);
           const entry = is64 ? view.getBigUint64(24, isLittle) : BigInt(view.getUint32(24, isLittle));
           
+          const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+          const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+          
           const elfInfo = {
-            class: is64 ? '64-bit' : '32-bit',
-            data: isLittle ? 'Little Endian' : 'Big Endian',
-            type: getElfType(type),
-            machine: getElfMachine(machine),
-            entry: '0x' + entry.toString(16)
+            'Format': is64 ? 'ELF64' : 'ELF32',
+            'Endian': isLittle ? 'Little Endian' : 'Big Endian',
+            'Type': getElfType(type),
+            'Machine': getElfMachine(machine),
+            'Entry Point': '0x' + entry.toString(16)
           };
 
-          // Entropy Calculation
-          const entropy = calculateEntropy(bytes);
-
-          // Parse Section Headers
           const sections = [];
+          const symbols = [];
+          
           const shoff = is64 ? Number(view.getBigUint64(40, isLittle)) : view.getUint32(32, isLittle);
           const shnum = is64 ? view.getUint16(60, isLittle) : view.getUint16(48, isLittle);
           const shentsize = is64 ? view.getUint16(58, isLittle) : view.getUint16(46, isLittle);
           const shstrndx = is64 ? view.getUint16(62, isLittle) : view.getUint16(50, isLittle);
 
-          if (shoff > 0 && shoff < buffer.byteLength && shnum > 0) {
-            // Locate the section name string table (.shstrtab)
+          if (shoff > 0 && shoff < buffer.byteLength) {
             const shstrtabEntryOff = shoff + shstrndx * shentsize;
-            const strTabOff = is64 ? 
-              Number(view.getBigUint64(shstrtabEntryOff + 24, isLittle)) : 
-              view.getUint32(shstrtabEntryOff + 16, isLittle);
+            const strTabOff = is64 ? Number(view.getBigUint64(shstrtabEntryOff + 24, isLittle)) : view.getUint32(shstrtabEntryOff + 16, isLittle);
             
-            for (let i = 0; i < Math.min(shnum, 128); i++) {
+            let symTabSection = null;
+            let strTabSection = null;
+
+            for (let i = 0; i < Math.min(shnum, 512); i++) {
               const off = shoff + i * shentsize;
               if (off + shentsize > buffer.byteLength) break;
               
@@ -99,162 +89,242 @@
               const sAddr = is64 ? view.getBigUint64(off + 16, isLittle) : BigInt(view.getUint32(off + 12, isLittle));
               const sSize = is64 ? view.getBigUint64(off + 32, isLittle) : BigInt(view.getUint32(off + 20, isLittle));
               
-              let name = '(unknown)';
-              if (strTabOff > 0 && strTabOff + nameOff < buffer.byteLength) {
-                let n = '';
-                for (let j = 0; j < 64; j++) {
+              let name = '';
+              if (strTabOff > 0) {
+                for (let j = 0; j < 128; j++) {
                   const b = bytes[strTabOff + nameOff + j];
-                  if (!b || b === 0) break;
-                  n += String.fromCharCode(b);
+                  if (!b) break;
+                  name += String.fromCharCode(b);
                 }
-                name = n || '(null)';
               }
               
-              sections.push({ 
-                name, 
-                type: getSectionType(sType), 
-                addr: '0x' + sAddr.toString(16), 
-                size: Number(sSize) 
-              });
+              const section = { name: name || `section_${i}`, type: getSectionType(sType), addr: '0x' + sAddr.toString(16), size: Number(sSize) };
+              sections.push(section);
+
+              if (sType === 2 || sType === 11) { // SYMTAB or DYNSYM
+                symTabSection = { off: is64 ? Number(view.getBigUint64(off + 24, isLittle)) : view.getUint32(off + 16, isLittle), size: Number(sSize), entsize: is64 ? 24 : 16, link: view.getUint32(off + (is64 ? 44 : 28), isLittle) };
+              }
+            }
+
+            if (symTabSection) {
+              const strTabEntryOff = shoff + symTabSection.link * shentsize;
+              const symStrTabOff = is64 ? Number(view.getBigUint64(strTabEntryOff + 24, isLittle)) : view.getUint32(strTabEntryOff + 16, isLittle);
+              
+              const numSyms = Math.floor(symTabSection.size / symTabSection.entsize);
+              for (let i = 0; i < Math.min(numSyms, 1000); i++) {
+                const off = symTabSection.off + i * symTabSection.entsize;
+                const nameOff = view.getUint32(off, isLittle);
+                const info = is64 ? view.getUint8(off + 4) : view.getUint8(off + 12);
+                const value = is64 ? view.getBigUint64(off + 8, isLittle) : view.getUint32(off + 4, isLittle);
+                
+                let sName = '';
+                if (symStrTabOff > 0) {
+                  for (let j = 0; j < 256; j++) {
+                    const b = bytes[symStrTabOff + nameOff + j];
+                    if (!b) break;
+                    sName += String.fromCharCode(b);
+                  }
+                }
+                if (sName) {
+                  symbols.push({ name: sName, value: '0x' + value.toString(16), type: getSymbolType(info & 0xf), bind: getSymbolBind(info >> 4) });
+                }
+              }
             }
           }
 
-          const hex = generateHexDump(buffer.slice(0, 4096));
-          h.setState({ hex: hex });
+          const entropy = (function(data) {
+            const f = new Uint32Array(256);
+            for (let i = 0; i < data.length; i++) f[data[i]]++;
+            let e = 0;
+            for (let i = 0; i < 256; i++) { if (f[i] > 0) { const p = f[i] / data.length; e -= p * Math.log2(p); } }
+            return e;
+          })(bytes);
 
-          const sizeFormatter = (typeof filesize !== 'undefined') ? filesize.format : (s) => s + ' B';
+          const hex = generateHexDump(buffer.slice(0, 2048));
+          h.setState({ hash: hashHex, sections, symbols });
 
-          h.render(`
-            <div class="p-6 space-y-8 font-sans">
-              <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="lg:col-span-2 space-y-6">
-                  <!-- ELF Header Card -->
-                  <div class="bg-surface-50 rounded-2xl border border-surface-200 overflow-hidden">
-                    <div class="bg-surface-100 px-4 py-2 border-b border-surface-200">
-                      <span class="text-[10px] font-bold text-surface-500 uppercase tracking-widest">System Header</span>
-                    </div>
-                    <div class="p-4 grid grid-cols-2 sm:grid-cols-3 gap-4">
-                      ${Object.entries(elfInfo).map(([k, v]) => `
-                        <div>
-                          <p class="text-[10px] text-surface-400 uppercase font-semibold mb-1">${k}</p>
-                          <p class="text-sm font-mono text-surface-900">${v}</p>
-                        </div>
-                      `).join('')}
-                    </div>
-                  </div>
+          const humanSize = _filesize ? _filesize.format(file.size) : (file.size / 1024).toFixed(1) + ' KB';
 
-                  <!-- Sections Table -->
-                  <div class="bg-white rounded-2xl border border-surface-200 overflow-hidden">
-                    <div class="bg-surface-100 px-4 py-2 border-b border-surface-200 flex justify-between items-center">
-                      <span class="text-[10px] font-bold text-surface-500 uppercase tracking-widest">Section Headers (${sections.length})</span>
-                      <span class="text-[10px] text-surface-400 italic">Showing up to 128 entries</span>
-                    </div>
-                    <div class="overflow-x-auto">
-                      <table class="w-full text-left text-[11px]">
-                        <thead class="bg-surface-50 text-surface-500 border-b border-surface-200">
-                          <tr>
-                            <th class="px-4 py-2 font-semibold">Name</th>
-                            <th class="px-4 py-2 font-semibold">Type</th>
-                            <th class="px-4 py-2 font-semibold">Address</th>
-                            <th class="px-4 py-2 font-semibold text-right">Size</th>
-                          </tr>
-                        </thead>
-                        <tbody class="divide-y divide-surface-100">
-                          ${sections.map(s => `
-                            <tr class="hover:bg-surface-50 transition-colors">
-                              <td class="px-4 py-2 font-mono text-brand-600 font-medium">${s.name}</td>
-                              <td class="px-4 py-2 text-surface-500">${s.type}</td>
-                              <td class="px-4 py-2 font-mono text-surface-400">${s.addr}</td>
-                              <td class="px-4 py-2 text-right text-surface-700 font-mono">${sizeFormatter(s.size)}</td>
-                            </tr>
-                          `).join('')}
-                          ${sections.length === 0 ? '<tr><td colspan="4" class="px-4 py-8 text-center text-surface-400 italic">No section headers found. This might be a stripped binary.</td></tr>' : ''}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+          const renderContent = (filter = '') => {
+            const term = filter.toLowerCase();
+            const filteredSections = sections.filter(s => s.name.toLowerCase().includes(term) || s.type.toLowerCase().includes(term));
+            const filteredSymbols = symbols.filter(s => s.name.toLowerCase().includes(term) || s.type.toLowerCase().includes(term));
+
+            return `
+              <div class="p-6 max-w-7xl mx-auto">
+                <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">
+                  <span class="font-semibold text-surface-800">${h.escapeHtml(file.name)}</span>
+                  <span class="text-surface-300">|</span>
+                  <span>${humanSize}</span>
+                  <span class="text-surface-300">|</span>
+                  <span class="text-surface-500">Shared Object / ELF</span>
                 </div>
 
-                <div class="space-y-6">
-                  <!-- Binary Analysis Card -->
-                  <div class="bg-surface-900 text-white rounded-2xl p-5 space-y-4 shadow-lg">
-                    <h4 class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Binary Analysis</h4>
-                    <div class="space-y-4">
-                      <div>
-                        <div class="flex justify-between text-xs mb-1.5">
-                          <span class="text-surface-400 font-medium">Data Entropy</span>
-                          <span class="font-mono text-brand-400">${entropy.toFixed(4)} <span class="text-[10px] text-surface-500">bits/byte</span></span>
-                        </div>
-                        <div class="h-2 bg-surface-800 rounded-full overflow-hidden">
-                          <div class="h-full bg-brand-500 transition-all duration-500" style="width: ${(entropy / 8) * 100}%"></div>
-                        </div>
-                        <p class="text-[9px] text-surface-500 mt-2">Higher entropy often indicates compressed or encrypted data sections.</p>
+                <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+                  <div class="lg:col-span-1 space-y-6">
+                    <div class="bg-white rounded-2xl border border-surface-200 p-5 shadow-sm">
+                      <h3 class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-4">Header Info</h3>
+                      <div class="space-y-4">
+                        ${Object.entries(elfInfo).map(([k, v]) => `
+                          <div>
+                            <p class="text-[10px] text-surface-400 uppercase font-semibold mb-0.5">${k}</p>
+                            <p class="text-sm font-mono text-surface-900">${v}</p>
+                          </div>
+                        `).join('')}
                       </div>
-                      <div class="pt-2 border-t border-surface-800">
-                        <p class="text-[10px] text-surface-400 uppercase font-semibold mb-1.5">SHA-256 Signature</p>
-                        <p class="text-[10px] font-mono break-all text-surface-300 leading-relaxed bg-black/30 p-2 rounded-lg">${hashHex}</p>
+                    </div>
+
+                    <div class="bg-surface-900 text-white rounded-2xl p-5 shadow-lg">
+                      <h3 class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-4">Binary Entropy</h3>
+                      <div class="space-y-3">
+                        <div class="flex justify-between items-end">
+                          <span class="text-2xl font-mono text-brand-400">${entropy.toFixed(3)}</span>
+                          <span class="text-[10px] text-surface-500 mb-1">bits/byte</span>
+                        </div>
+                        <div class="h-1.5 bg-surface-800 rounded-full overflow-hidden">
+                          <div class="h-full bg-brand-500 transition-all duration-700" style="width: ${(entropy / 8) * 100}%"></div>
+                        </div>
+                        <p class="text-[10px] text-surface-500 leading-relaxed">
+                          ${entropy > 7.5 ? 'Very high entropy: Likely compressed or encrypted.' : 'Normal entropy for code binaries.'}
+                        </p>
                       </div>
                     </div>
                   </div>
 
-                  <!-- Hex View -->
-                  <div class="bg-surface-50 rounded-2xl border border-surface-200 overflow-hidden">
-                    <div class="bg-surface-100 px-4 py-2 border-b border-surface-200">
-                      <span class="text-[10px] font-bold text-surface-500 uppercase tracking-widest">Hex Preview (4KB)</span>
+                  <div class="lg:col-span-3 space-y-6">
+                    <div class="relative">
+                      <input type="text" id="elf-search" placeholder="Search sections or symbols..." 
+                             class="w-full pl-10 pr-4 py-2.5 bg-white border border-surface-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all outline-none"
+                             value="${h.escapeHtml(filter)}">
+                      <svg class="absolute left-3 top-3 w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                     </div>
-                    <div class="bg-white p-4 overflow-x-auto">
-                      <pre class="font-mono text-[9px] leading-[1.2] text-surface-600">${hex}</pre>
+
+                    <div class="space-y-6">
+                      <section>
+                        <div class="flex items-center justify-between mb-3">
+                          <h3 class="font-semibold text-surface-800">Sections</h3>
+                          <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${filteredSections.length}</span>
+                        </div>
+                        <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm">
+                          <table class="min-w-full text-sm">
+                            <thead class="bg-surface-50 border-b border-surface-200">
+                              <tr>
+                                <th class="px-4 py-3 text-left font-semibold text-surface-700">Name</th>
+                                <th class="px-4 py-3 text-left font-semibold text-surface-700">Type</th>
+                                <th class="px-4 py-3 text-left font-semibold text-surface-700">Address</th>
+                                <th class="px-4 py-3 text-right font-semibold text-surface-700">Size</th>
+                              </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-surface-100">
+                              ${filteredSections.map(s => `
+                                <tr class="hover:bg-brand-50 transition-colors">
+                                  <td class="px-4 py-2.5 font-mono text-brand-600 font-medium">${h.escapeHtml(s.name)}</td>
+                                  <td class="px-4 py-2.5 text-surface-500 text-xs">${s.type}</td>
+                                  <td class="px-4 py-2.5 font-mono text-surface-400 text-xs">${s.addr}</td>
+                                  <td class="px-4 py-2.5 text-right text-surface-700 font-mono text-xs">${_filesize ? _filesize.format(s.size) : s.size + ' B'}</td>
+                                </tr>
+                              `).join('')}
+                              ${filteredSections.length === 0 ? '<tr><td colspan="4" class="px-4 py-12 text-center text-surface-400 italic">No matching sections found.</td></tr>' : ''}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+
+                      ${symbols.length > 0 ? `
+                      <section>
+                        <div class="flex items-center justify-between mb-3">
+                          <h3 class="font-semibold text-surface-800">Symbols</h3>
+                          <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${filteredSymbols.length}</span>
+                        </div>
+                        <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm max-h-[400px]">
+                          <table class="min-w-full text-sm">
+                            <thead class="sticky top-0 bg-white/95 backdrop-blur border-b border-surface-200 z-10">
+                              <tr>
+                                <th class="px-4 py-3 text-left font-semibold text-surface-700">Symbol</th>
+                                <th class="px-4 py-3 text-left font-semibold text-surface-700">Type</th>
+                                <th class="px-4 py-3 text-left font-semibold text-surface-700">Bind</th>
+                                <th class="px-4 py-3 text-right font-semibold text-surface-700">Value</th>
+                              </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-surface-100">
+                              ${filteredSymbols.slice(0, 500).map(s => `
+                                <tr class="hover:bg-brand-50 transition-colors">
+                                  <td class="px-4 py-2 font-mono text-surface-900 text-xs truncate max-w-[300px]" title="${h.escapeHtml(s.name)}">${h.escapeHtml(s.name)}</td>
+                                  <td class="px-4 py-2"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${s.type === 'FUNC' ? 'bg-blue-100 text-blue-700' : 'bg-surface-100 text-surface-600'}">${s.type}</span></td>
+                                  <td class="px-4 py-2 text-surface-500 text-[11px]">${s.bind}</td>
+                                  <td class="px-4 py-2 text-right font-mono text-surface-400 text-xs">${s.value}</td>
+                                </tr>
+                              `).join('')}
+                              ${filteredSymbols.length > 500 ? `<tr><td colspan="4" class="px-4 py-3 text-center bg-surface-50 text-[11px] text-surface-500 italic">... showing first 500 of ${filteredSymbols.length} symbols ...</td></tr>` : ''}
+                              ${filteredSymbols.length === 0 ? '<tr><td colspan="4" class="px-4 py-12 text-center text-surface-400 italic">No matching symbols found.</td></tr>' : ''}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                      ` : ''}
                     </div>
+
+                    <section>
+                      <h3 class="font-semibold text-surface-800 mb-3">Hex Preview <span class="text-xs font-normal text-surface-400 ml-2">(first 2KB)</span></h3>
+                      <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm">
+                        <pre class="p-4 text-[11px] font-mono bg-gray-950 text-gray-300 overflow-x-auto leading-relaxed">${hex}</pre>
+                      </div>
+                    </section>
                   </div>
                 </div>
               </div>
-            </div>
-          `);
+            `;
+          };
+
+          h.render(renderContent());
+
+          const searchInput = mountEl.querySelector('#elf-search');
+          if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+              const term = e.target.value;
+              const contentEl = mountEl.querySelector('.lg\\:col-span-3');
+              if (contentEl) {
+                // We re-render just the data parts to maintain focus on search
+                const newHtml = renderContent(term);
+                const temp = document.createElement('div');
+                temp.innerHTML = newHtml;
+                const newCol = temp.querySelector('.lg\\:col-span-3');
+                if (newCol) {
+                  // Carefully replace children except search input to keep focus
+                  const sectionsList = contentEl.querySelector('.space-y-6');
+                  const newSectionsList = newCol.querySelector('.space-y-6');
+                  if (sectionsList && newSectionsList) sectionsList.innerHTML = newSectionsList.innerHTML;
+                }
+              }
+            });
+          }
+
         } catch (err) {
-          h.showError('ELF Analysis Failed', err.message);
+          h.showError('Analysis Failed', err.message);
         }
       }
     });
 
-    // --- Data Mapping Helpers ---
-
     function getElfType(t) {
-      return { 1: 'Relocatable (REL)', 2: 'Executable (EXEC)', 3: 'Shared Object (DYN)', 4: 'Core (CORE)' }[t] || 'Unknown (' + t + ')';
+      return { 0: 'NONE', 1: 'Relocatable (REL)', 2: 'Executable (EXEC)', 3: 'Shared Object (DYN)', 4: 'Core (CORE)' }[t] || 'Unknown (' + t + ')';
     }
 
     function getElfMachine(m) {
-      const machines = { 
-        0x03: 'x86', 
-        0x28: 'ARM', 
-        0x3E: 'x86-64', 
-        0xB7: 'AArch64', 
-        0xF3: 'RISC-V',
-        0x14: 'PowerPC',
-        0x2B: 'SPARC',
-        0x32: 'IA-64'
-      };
+      const machines = { 0x03: 'x86', 0x28: 'ARM', 0x3E: 'x86-64', 0xB7: 'AArch64', 0xF3: 'RISC-V', 0x14: 'PowerPC', 0x2B: 'SPARC' };
       return machines[m] || 'Unknown (0x' + m.toString(16) + ')';
     }
 
     function getSectionType(t) {
-      const types = { 
-        0: 'NULL', 1: 'PROGBITS', 2: 'SYMTAB', 3: 'STRTAB', 4: 'RELA', 5: 'HASH', 
-        6: 'DYNAMIC', 7: 'NOTE', 8: 'NOBITS', 9: 'REL', 10: 'SHLIB', 11: 'DYNSYM' 
-      };
+      const types = { 0: 'NULL', 1: 'PROGBITS', 2: 'SYMTAB', 3: 'STRTAB', 4: 'RELA', 5: 'HASH', 6: 'DYNAMIC', 7: 'NOTE', 8: 'NOBITS', 9: 'REL', 10: 'SHLIB', 11: 'DYNSYM' };
       return types[t] || 'Other (' + t + ')';
     }
 
-    function calculateEntropy(data) {
-      const freq = new Uint32Array(256);
-      for (let i = 0; i < data.length; i++) freq[data[i]]++;
-      let entropy = 0;
-      for (let i = 0; i < 256; i++) {
-        if (freq[i] > 0) {
-          const p = freq[i] / data.length;
-          entropy -= p * Math.log2(p);
-        }
-      }
-      return entropy;
+    function getSymbolType(t) {
+      return { 0: 'NOTYPE', 1: 'OBJECT', 2: 'FUNC', 3: 'SECTION', 4: 'FILE', 5: 'COMMON', 6: 'TLS' }[t] || 'OTHER';
+    }
+
+    function getSymbolBind(b) {
+      return { 0: 'LOCAL', 1: 'GLOBAL', 2: 'WEAK' }[b] || 'OTHER';
     }
 
     function generateHexDump(buffer) {
