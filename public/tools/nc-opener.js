@@ -2,7 +2,7 @@
   'use strict';
 
   function esc(s) {
-    if (!s) return '';
+    if (s === null || s === undefined) return '';
     return String(s)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -28,12 +28,14 @@
       const hex = Array.from(chunk).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
       const ascii = Array.from(chunk).map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
       const hexPadded = hex.padEnd(16 * 3 - 1, ' ');
-      lines.push(offset + '  ' + hexPadded + '  |' + ascii + '|');
+      lines.push(`${offset}  ${hexPadded}  |${ascii}|`);
     }
     return lines.join('\n');
   }
 
   window.initTool = function (toolConfig, mountEl) {
+    let currentMetadata = null;
+
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
       accept: '.nc,.cdf,.netcdf,.nc3,.nc4',
@@ -53,8 +55,9 @@
           label: '📋 Copy Metadata JSON',
           id: 'copy-json',
           onClick: function (h, btn) {
-            const data = h.getState().metadata;
-            if (data) h.copyToClipboard(JSON.stringify(data, null, 2), btn);
+            if (currentMetadata) {
+              h.copyToClipboard(JSON.stringify(currentMetadata, null, 2), btn);
+            }
           }
         }
       ],
@@ -63,188 +66,258 @@
         h.loadScript('https://cdn.jsdelivr.net/npm/netcdfjs@3.0.0/dist/netcdfjs.min.js');
       },
 
-      onFile: async function (file, content, h) {
-        h.showLoading('Analyzing NetCDF file...');
+      onFile: async function _onFile(file, content, h) {
+        h.showLoading('Analyzing NetCDF structure...');
 
-        // Wait for dependency
-        await h.loadScript('https://cdn.jsdelivr.net/npm/netcdfjs@3.0.0/dist/netcdfjs.min.js');
-
-        const bytes = new Uint8Array(content);
-        
-        // HDF5 Magic: 89 48 44 46 0D 0A 1A 0A
-        const isHDF5 = bytes.length >= 8 &&
-          bytes[0] === 0x89 && bytes[1] === 0x48 && bytes[2] === 0x44 && bytes[3] === 0x46 &&
-          bytes[4] === 0x0D && bytes[5] === 0x0A && bytes[6] === 0x1A && bytes[7] === 0x0A;
-
-        // SHA-256 Hash
-        const hashBuf = await crypto.subtle.digest('SHA-256', content);
-        const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-        let metadata = {
-          filename: file.name,
-          size: file.size,
-          sha256: hashHex,
-          format: isHDF5 ? 'NetCDF-4 (HDF5)' : 'NetCDF-3 (Classic)',
-          dimensions: [],
-          variables: [],
-          attributes: []
-        };
-
-        let renderHtml = '';
-
-        if (!isHDF5 && typeof netcdfjs !== 'undefined') {
-          try {
-            const reader = new netcdfjs.NetCDFReader(content);
-            metadata.dimensions = reader.dimensions;
-            metadata.variables = reader.variables;
-            metadata.attributes = reader.globalAttributes;
-            h.setState({ metadata });
-
-            renderHtml = renderNetCDFView(metadata, h);
-          } catch (err) {
-            console.error('NetCDF Parse Error:', err);
-            renderHtml = renderFallbackView(file, bytes, 'NetCDF-3 (Parsing Error: ' + err.message + ')', h, hashHex);
+        try {
+          if (typeof netcdfjs === 'undefined') {
+            await h.loadScript('https://cdn.jsdelivr.net/npm/netcdfjs@3.0.0/dist/netcdfjs.min.js');
           }
-        } else if (isHDF5) {
-          h.setState({ metadata });
-          renderHtml = renderFallbackView(file, bytes, 'NetCDF-4 (HDF5-based)', h, hashHex);
-        } else {
-          renderHtml = renderFallbackView(file, bytes, 'Unknown/Unsupported NetCDF Variant', h, hashHex);
-        }
 
-        h.render(renderHtml);
+          const bytes = new Uint8Array(content);
+          
+          // Detect HDF5 (NetCDF-4) magic bytes: \x89HDF\r\n\x1a\n
+          const isHDF5 = bytes.length >= 8 &&
+            bytes[0] === 0x89 && bytes[1] === 0x48 && bytes[2] === 0x44 && bytes[3] === 0x46 &&
+            bytes[4] === 0x0D && bytes[5] === 0x0A && bytes[6] === 0x1A && bytes[7] === 0x0A;
+
+          const isClassic = bytes.length >= 3 &&
+            bytes[0] === 0x43 && bytes[1] === 0x44 && bytes[2] === 0x46; // 'CDF'
+
+          const hashBuf = await crypto.subtle.digest('SHA-256', content);
+          const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+          let metadata = {
+            filename: file.name,
+            size: file.size,
+            sha256: hashHex,
+            format: isHDF5 ? 'NetCDF-4 (HDF5)' : (isClassic ? 'NetCDF-3 (Classic)' : 'Unknown NetCDF Variant'),
+            dimensions: [],
+            variables: [],
+            globalAttributes: []
+          };
+
+          let error = null;
+          if (isClassic && typeof netcdfjs !== 'undefined') {
+            try {
+              const reader = new netcdfjs.NetCDFReader(content);
+              metadata.dimensions = reader.dimensions || [];
+              metadata.variables = reader.variables || [];
+              metadata.globalAttributes = reader.globalAttributes || [];
+            } catch (err) {
+              console.error('NetCDF Parse Error:', err);
+              error = `Failed to parse classic NetCDF: ${err.message}`;
+            }
+          }
+
+          currentMetadata = metadata;
+          renderView(metadata, error, h);
+
+        } catch (fatal) {
+          h.showError('Could not process file', fatal.message);
+        }
+      },
+
+      onDestroy: function() {
+        currentMetadata = null;
       }
     });
-  };
 
-  function renderNetCDFView(data, h) {
-    return `
-      <div class="p-6 space-y-6">
-        <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div>
-            <h2 class="text-xl font-bold text-surface-900">${esc(data.filename)}</h2>
-            <p class="text-sm text-surface-500">${fmtBytes(data.size)} — ${esc(data.format)}</p>
+    function renderView(data, error, h) {
+      const file = h.getFile();
+      
+      let html = `
+        <div class="p-4 max-w-6xl mx-auto">
+          <!-- U1: File Info Bar -->
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-100">
+            <span class="font-semibold text-surface-800">${esc(file.name)}</span>
+            <span class="text-surface-300">|</span>
+            <span>${fmtBytes(file.size)}</span>
+            <span class="text-surface-300">|</span>
+            <span class="text-surface-500 font-medium">${esc(data.format)}</span>
           </div>
-          <div class="text-[10px] font-mono text-surface-400 bg-surface-50 p-2 rounded border">
-            SHA256: ${data.sha256}
+      `;
+
+      if (error) {
+        html += `
+          <div class="bg-red-50 border border-red-100 rounded-xl p-6 mb-6">
+            <div class="flex items-center gap-3 text-red-800 font-bold mb-2">
+              <span class="text-xl">⚠️</span>
+              <span>Parsing Error</span>
+            </div>
+            <p class="text-red-700 text-sm">${esc(error)}</p>
+            <p class="text-red-600 text-xs mt-4 italic">Note: Only NetCDF-3 (Classic) files are fully parsable in-browser. NetCDF-4/HDF5 files show limited metadata.</p>
+          </div>
+        `;
+      }
+
+      if (data.format.includes('HDF5')) {
+        html += `
+          <div class="bg-brand-50 border border-brand-100 rounded-xl p-6 mb-6">
+            <div class="flex items-center gap-3 text-brand-800 font-bold mb-2">
+              <span class="text-xl">ℹ️</span>
+              <span>NetCDF-4 (HDF5) Detected</span>
+            </div>
+            <p class="text-brand-700 text-sm leading-relaxed">
+              This file uses the HDF5 storage layer. Browser-based NetCDF libraries currently prioritize NetCDF-3. 
+              You can still inspect the header signature and hex dump below, or use the <strong>Download</strong> action to use it with desktop tools.
+            </p>
+          </div>
+        `;
+      }
+
+      // Metadata Stats
+      html += `
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div class="bg-white rounded-xl border border-surface-200 p-4 shadow-sm">
+            <div class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-1">Dimensions</div>
+            <div class="text-2xl font-bold text-surface-800">${data.dimensions.length}</div>
+          </div>
+          <div class="bg-white rounded-xl border border-surface-200 p-4 shadow-sm">
+            <div class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-1">Variables</div>
+            <div class="text-2xl font-bold text-surface-800">${data.variables.length}</div>
+          </div>
+          <div class="bg-white rounded-xl border border-surface-200 p-4 shadow-sm">
+            <div class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-1">Global Attrs</div>
+            <div class="text-2xl font-bold text-surface-800">${data.globalAttributes.length}</div>
           </div>
         </div>
+      `;
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <section class="space-y-3">
-            <h3 class="text-xs font-bold uppercase tracking-widest text-surface-400">Dimensions</h3>
-            <div class="border rounded-xl overflow-hidden bg-white">
-              <table class="w-full text-sm border-collapse">
-                <thead class="bg-surface-50 border-b">
-                  <tr>
-                    <th class="px-4 py-2 text-left text-xs font-semibold text-surface-600">Name</th>
-                    <th class="px-4 py-2 text-right text-xs font-semibold text-surface-600">Size</th>
+      // Main Content
+      html += `<div class="space-y-8">`;
+
+      // Dimensions Table
+      if (data.dimensions.length > 0) {
+        html += `
+          <section>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-bold text-surface-800 text-lg">Dimensions</h3>
+              <span class="text-xs bg-surface-100 text-surface-600 px-2 py-0.5 rounded-full border border-surface-200">${data.dimensions.length} items</span>
+            </div>
+            <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm bg-white">
+              <table class="min-w-full text-sm">
+                <thead>
+                  <tr class="bg-surface-50 border-b border-surface-200">
+                    <th class="px-4 py-3 text-left font-semibold text-surface-700">Name</th>
+                    <th class="px-4 py-3 text-right font-semibold text-surface-700">Size</th>
                   </tr>
                 </thead>
-                <tbody class="divide-y text-surface-700">
+                <tbody class="divide-y divide-surface-100">
                   ${data.dimensions.map(d => `
-                    <tr class="hover:bg-surface-50">
-                      <td class="px-4 py-2 font-mono text-xs">${esc(d.name)}</td>
-                      <td class="px-4 py-2 text-right">${d.size}</td>
-                    </tr>
-                  `).join('') || '<tr><td colspan="2" class="px-4 py-8 text-center text-surface-400">No dimensions defined</td></tr>'}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="space-y-3">
-            <h3 class="text-xs font-bold uppercase tracking-widest text-surface-400">Global Attributes</h3>
-            <div class="border rounded-xl p-4 space-y-3 max-h-64 overflow-auto bg-white">
-              ${data.attributes.length > 0 ? data.attributes.map(a => `
-                <div class="text-xs flex flex-col gap-0.5">
-                  <span class="font-bold text-surface-700 underline decoration-surface-200 decoration-2">${esc(a.name)}</span>
-                  <span class="text-surface-600 whitespace-pre-wrap">${esc(a.value)}</span>
-                </div>
-              `).join('') : '<p class="text-xs text-surface-400 italic">No global attributes found</p>'}
-            </div>
-          </section>
-        </div>
-
-        <section class="space-y-3">
-          <h3 class="text-xs font-bold uppercase tracking-widest text-surface-400">Variables</h3>
-          <div class="border rounded-xl overflow-hidden bg-white shadow-sm">
-            <div class="overflow-x-auto">
-              <table class="w-full text-sm border-collapse">
-                <thead class="bg-surface-50 border-b">
-                  <tr>
-                    <th class="px-4 py-2 text-left text-xs font-semibold text-surface-600">Variable Name</th>
-                    <th class="px-4 py-2 text-left text-xs font-semibold text-surface-600">Type</th>
-                    <th class="px-4 py-2 text-left text-xs font-semibold text-surface-600">Dimensions</th>
-                    <th class="px-4 py-2 text-right text-xs font-semibold text-surface-600">Attrs</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y text-surface-700">
-                  ${data.variables.map(v => `
-                    <tr class="hover:bg-surface-50">
-                      <td class="px-4 py-2 font-bold text-brand-700">${esc(v.name)}</td>
-                      <td class="px-4 py-2 text-xs text-surface-500 font-mono">${esc(v.type)}</td>
-                      <td class="px-4 py-2 text-xs text-surface-500">
-                        ${v.dimensions.map(di => `<span class="bg-surface-100 px-1.5 py-0.5 rounded text-surface-700 mr-1">${esc(data.dimensions[di].name)}</span>`).join('') || '<span class="text-surface-300">scalar</span>'}
-                      </td>
-                      <td class="px-4 py-2 text-right text-surface-400 text-xs">${v.attributes.length}</td>
+                    <tr class="hover:bg-brand-50/30 transition-colors">
+                      <td class="px-4 py-3 font-mono text-xs text-brand-700 font-bold">${esc(d.name)}</td>
+                      <td class="px-4 py-3 text-right text-surface-600 font-mono">${d.size}</td>
                     </tr>
                   `).join('')}
                 </tbody>
               </table>
             </div>
+          </section>
+        `;
+      }
+
+      // Variables Section with Search
+      if (data.variables.length > 0) {
+        html += `
+          <section>
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+              <div class="flex items-center gap-2">
+                <h3 class="font-bold text-surface-800 text-lg">Variables</h3>
+                <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-medium">${data.variables.length} items</span>
+              </div>
+              <div class="relative">
+                <input type="text" id="var-search" placeholder="Search variables..." 
+                  class="text-xs border border-surface-300 rounded-lg px-3 py-2 w-full sm:w-64 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all"
+                />
+              </div>
+            </div>
+            <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm bg-white">
+              <table class="min-w-full text-sm" id="vars-table">
+                <thead>
+                  <tr class="bg-surface-50 border-b border-surface-200">
+                    <th class="px-4 py-3 text-left font-semibold text-surface-700">Name</th>
+                    <th class="px-4 py-3 text-left font-semibold text-surface-700">Type</th>
+                    <th class="px-4 py-3 text-left font-semibold text-surface-700">Dimensions</th>
+                    <th class="px-4 py-3 text-right font-semibold text-surface-700">Attributes</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-100">
+                  ${data.variables.map(v => {
+                    const dims = v.dimensions.map(di => {
+                      const d = data.dimensions[di];
+                      return d ? `<span class="inline-block bg-surface-100 text-surface-600 px-1.5 py-0.5 rounded text-[10px] mr-1 mb-1 border border-surface-200">${esc(d.name)}</span>` : '';
+                    }).join('');
+                    
+                    return `
+                      <tr class="var-row hover:bg-brand-50/30 transition-colors">
+                        <td class="px-4 py-3 font-bold text-surface-800">${esc(v.name)}</td>
+                        <td class="px-4 py-3 text-xs font-mono text-surface-500">${esc(v.type)}</td>
+                        <td class="px-4 py-3">${dims || '<span class="text-surface-300 italic text-xs">scalar</span>'}</td>
+                        <td class="px-4 py-3 text-right">
+                          <span class="text-xs font-medium text-surface-400 bg-surface-50 px-2 py-0.5 rounded-full border border-surface-100">
+                            ${v.attributes.length}
+                          </span>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        `;
+      }
+
+      // Global Attributes
+      if (data.globalAttributes.length > 0) {
+        html += `
+          <section>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-bold text-surface-800 text-lg">Global Attributes</h3>
+              <span class="text-xs bg-surface-100 text-surface-600 px-2 py-0.5 rounded-full border border-surface-200">${data.globalAttributes.length} items</span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              ${data.globalAttributes.map(attr => `
+                <div class="bg-white border border-surface-200 rounded-xl p-4 hover:border-brand-300 transition-all shadow-sm">
+                  <div class="text-[10px] font-bold text-surface-400 uppercase tracking-tighter mb-1">${esc(attr.name)}</div>
+                  <div class="text-sm text-surface-700 whitespace-pre-wrap leading-relaxed">${esc(attr.value)}</div>
+                </div>
+              `).join('')}
+            </div>
+          </section>
+        `;
+      }
+
+      // Binary Preview
+      html += `
+        <section>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-surface-800 text-lg">Binary Preview</h3>
+            <span class="text-xs text-surface-400">First 512 bytes</span>
+          </div>
+          <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm">
+            <pre class="p-4 text-[10px] font-mono bg-surface-900 text-brand-100 overflow-x-auto leading-normal">${esc(generateHexDump(new Uint8Array(h.getContent()), 512))}</pre>
           </div>
         </section>
+      `;
 
-        <section class="space-y-3">
-          <h3 class="text-xs font-bold uppercase tracking-widest text-surface-400">Binary Preview (First 512 bytes)</h3>
-          <pre class="bg-surface-900 text-surface-300 p-4 rounded-xl text-[10px] leading-relaxed overflow-x-auto shadow-inner">${esc(generateHexDump(new Uint8Array(h.getContent()), 512))}</pre>
-        </section>
-      </div>
-    `;
-  }
+      html += `</div></div>`; // End main space-y-8 and p-4 container
 
-  function renderFallbackView(file, bytes, formatInfo, h, hash) {
-    return `
-      <div class="p-6 space-y-6">
-        <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div>
-            <h2 class="text-xl font-bold text-surface-900">${esc(file.name)}</h2>
-            <p class="text-sm text-surface-500">${fmtBytes(file.size)} — ${esc(formatInfo)}</p>
-          </div>
-          <div class="text-[10px] font-mono text-surface-400 bg-surface-50 p-2 rounded border">
-            SHA256: ${hash}
-          </div>
-        </div>
+      h.render(html);
 
-        <div class="bg-blue-50 border border-blue-100 rounded-xl p-5 text-blue-800 text-sm flex gap-4 items-start">
-          <span class="text-xl">ℹ️</span>
-          <div>
-            ${formatInfo.includes('HDF5') ?
-              `<strong>NetCDF-4 (HDF5) Detected:</strong> This file format uses HDF5 for storage. While detailed browser-side parsing for complex HDF5 structures is limited, you can inspect the raw binary header below or download the file for use with tools like <code>ncdump</code> or Python's <code>xarray</code>.` :
-              `<strong>Unsupported NetCDF Variant:</strong> This file version or variant is not directly parsable by the current browser library. Showing the binary signature and header preview for inspection.`
-            }
-          </div>
-        </div>
-
-        <section class="space-y-3">
-          <h3 class="text-xs font-bold uppercase tracking-widest text-surface-400">Header Signature & Hex Dump</h3>
-          <div class="bg-surface-50 p-4 rounded-xl border border-surface-200 mb-4">
-            <table class="text-xs w-full">
-              <tr>
-                <td class="py-1 text-surface-400 w-32 uppercase font-semibold">Magic Bytes</td>
-                <td class="font-mono text-brand-700 font-bold">${Array.from(bytes.slice(0, 8)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')}</td>
-              </tr>
-              <tr>
-                <td class="py-1 text-surface-400 uppercase font-semibold">ASCII Trace</td>
-                <td class="font-mono text-surface-600">${esc(String.fromCharCode(...bytes.slice(0, 16)).replace(/[^\x20-\x7E]/g, '.'))}</td>
-              </tr>
-            </table>
-          </div>
-          <pre class="bg-surface-900 text-surface-300 p-4 rounded-xl text-[10px] leading-relaxed overflow-x-auto shadow-inner">${esc(generateHexDump(bytes, 1024))}</pre>
-        </section>
-      </div>
-    `;
-  }
-
+      // Add Search Logic
+      const searchInput = document.getElementById('var-search');
+      if (searchInput) {
+        searchInput.addEventListener('input', function(e) {
+          const q = e.target.value.toLowerCase();
+          const rows = document.querySelectorAll('.var-row');
+          rows.forEach(row => {
+            const name = row.cells[0].textContent.toLowerCase();
+            row.style.display = name.includes(q) ? '' : 'none';
+          });
+        });
+      }
+    }
+  };
 })();
