@@ -5,10 +5,12 @@
 (function () {
   'use strict';
 
+  var lastPreviewUrl = null;
+
   function esc(s) {
     if (s === null || s === undefined) return '';
     var d = document.createElement('div');
-    d.appendChild(document.createTextNode(String(s)));
+    d.textContent = String(s);
     return d.innerHTML;
   }
 
@@ -16,6 +18,13 @@
     if (b > 1048576) return (b / 1048576).toFixed(1) + ' MB';
     if (b > 1024) return (b / 1024).toFixed(0) + ' KB';
     return b + ' B';
+  }
+
+  function cleanup() {
+    if (lastPreviewUrl) {
+      URL.revokeObjectURL(lastPreviewUrl);
+      lastPreviewUrl = null;
+    }
   }
 
   window.initTool = function (toolConfig, mountEl) {
@@ -26,7 +35,7 @@
 
       actions: [
         {
-          label: '➕ Zoom In',
+          label: '🔍+ Zoom In',
           id: 'zoom-in',
           onClick: function (h) {
             var s = h.getState();
@@ -36,7 +45,7 @@
           }
         },
         {
-          label: '➖ Zoom Out',
+          label: '🔍− Zoom Out',
           id: 'zoom-out',
           onClick: function (h) {
             var s = h.getState();
@@ -85,54 +94,55 @@
         {
           label: '📥 Original WebP',
           id: 'dl-webp',
-          onClick: function (h) { h.download(h.getState().filename, h.getContent(), 'image/webp'); }
+          onClick: function (h) { h.download(h.getFile().name, h.getContent(), 'image/webp'); }
         }
       ],
 
       onInit: function (h) {
-        // ExifReader supports WebP metadata (unlike exif-js)
+        cleanup();
         return h.loadScript('https://cdn.jsdelivr.net/npm/exifreader/dist/exif-reader.min.js');
       },
 
       onFile: function (file, content, h) {
         h.showLoading('Loading WebP image...');
-        
-        var s = h.getState();
-        if (s.previewUrl) URL.revokeObjectURL(s.previewUrl);
+        cleanup();
 
-        var blob = new Blob([content], { type: 'image/webp' });
-        var url = URL.createObjectURL(blob);
+        return h.loadScript('https://cdn.jsdelivr.net/npm/exifreader/dist/exif-reader.min.js').then(function () {
+          return new Promise(function (resolve, reject) {
+            var blob = new Blob([content], { type: 'image/webp' });
+            lastPreviewUrl = URL.createObjectURL(blob);
 
-        var metadata = null;
-        if (window.ExifReader) {
-          try {
-            metadata = ExifReader.load(content);
-            // Clean up metadata for display
-            for (var key in metadata) {
-              if (metadata[key] && metadata[key].description) {
-                metadata[key] = metadata[key].description;
-              }
+            var metadata = null;
+            if (window.ExifReader) {
+              try {
+                metadata = ExifReader.load(content);
+                for (var key in metadata) {
+                  if (metadata[key] && metadata[key].description) {
+                    metadata[key] = metadata[key].description;
+                  }
+                }
+              } catch (e) { console.warn('ExifReader error:', e); }
             }
-          } catch (e) { console.warn('ExifReader error:', e); }
-        }
 
-        h.setState({
-          previewUrl: url,
-          zoom: 1,
-          rotate: 0,
-          filename: file.name,
-          metadata: metadata
+            var img = new Image();
+            img.onload = function () {
+              h.setState({
+                previewUrl: lastPreviewUrl,
+                zoom: 1,
+                rotate: 0,
+                width: img.width,
+                height: img.height,
+                metadata: metadata
+              });
+              renderUI(h);
+              resolve();
+            };
+            img.onerror = function () {
+              reject(new Error('The file is either corrupted or not a valid WebP image.'));
+            };
+            img.src = lastPreviewUrl;
+          });
         });
-
-        var img = new Image();
-        img.onload = function () {
-          h.setState({ width: img.width, height: img.height });
-          renderUI(h);
-        };
-        img.onerror = function () {
-          h.showError('Load Error', 'The file is either corrupted or not a valid WebP image.');
-        };
-        img.src = url;
       }
     });
   };
@@ -164,7 +174,7 @@
     h.render(
       '<div class="flex flex-col items-center p-6 md:p-10 bg-white">' +
         '<div class="flex flex-wrap justify-center gap-3 mb-8 text-[11px]">' +
-          '<div class="px-3 py-1.5 bg-surface-50 border border-surface-200 rounded-lg shadow-sm text-surface-600 font-medium"><strong>File:</strong> ' + esc(s.filename) + '</div>' +
+          '<div class="px-3 py-1.5 bg-surface-50 border border-surface-200 rounded-lg shadow-sm text-surface-600 font-medium"><strong>File:</strong> ' + esc(h.getFile().name) + '</div>' +
           '<div class="px-3 py-1.5 bg-surface-50 border border-surface-200 rounded-lg shadow-sm text-surface-600 font-medium"><strong>Size:</strong> ' + s.width + ' × ' + s.height + ' px</div>' +
           '<div class="px-3 py-1.5 bg-surface-50 border border-surface-200 rounded-lg shadow-sm text-surface-600 font-medium"><strong>Format:</strong> WebP (' + fmtBytes(h.getFile().size) + ')</div>' +
         '</div>' +
@@ -196,7 +206,7 @@
       var ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
       canvas.toBlob(function (blob) {
-        var name = s.filename.replace(/\.[^/.]+$/, "") + "." + ext;
+        var name = h.getFile().name.replace(/\.[^/.]+$/, "") + "." + ext;
         h.download(name, blob, mime);
       }, mime, 0.92);
     };
