@@ -1,22 +1,23 @@
 /**
  * OmniOpener — OpenEXR (EXR) Toolkit
- * Professional HDR viewer with tone mapping and exposure controls.
+ * Professional HDR viewer with tone mapping, exposure controls, and metadata extraction.
  */
 (function () {
   'use strict';
 
-  function formatBytes(bytes, decimals = 2) {
-    if (!+bytes) return '0 Bytes';
+  // Helper for human-readable file sizes
+  function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
     const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
+  // Helper to escape HTML and prevent XSS
   function escapeHtml(str) {
-    if (!str) return '';
-    return String(str)
+    if (typeof str !== 'string') str = String(str);
+    return str
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
@@ -25,63 +26,65 @@
   }
 
   window.initTool = function (toolConfig, mountEl) {
+    let currentResources = null;
+
     OmniTool.create(mountEl, toolConfig, {
       accept: '.exr',
       binary: true,
-      dropLabel: 'Drop an EXR HDR file here',
-      infoHtml: 'Professional High Dynamic Range (HDR) image viewer with real-time tone mapping, exposure control, and metadata extraction.',
+      dropLabel: 'Drop an EXR image here',
+      infoHtml: 'Professional High Dynamic Range (HDR) image viewer with multi-algorithm tone mapping and full metadata inspection.',
 
       onInit: function (h) {
-        h.setState('libsLoaded', false);
-        // Load Three.js first, then EXRLoader
+        h.setState('libsReady', false);
+        // Load Three.js core and EXRLoader from CDN
         h.loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js', () => {
           h.loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/EXRLoader.js', () => {
-            h.setState('libsLoaded', true);
+            h.setState('libsReady', true);
           });
         });
       },
 
-      onFile: async function (file, content, h) {
-        // Wait for libs if not yet loaded
-        if (!h.getState('libsLoaded')) {
-          h.showLoading('Initialising HDR engine...');
-          let checks = 0;
-          while (!h.getState('libsLoaded') && checks < 20) {
-            await new Promise(r => setTimeout(r, 250));
-            checks++;
+      onFile: async function _onFileFn(file, content, h) {
+        // B1. Handle library loading state
+        if (!h.getState('libsReady')) {
+          h.showLoading('Initializing HDR engine...');
+          let retries = 0;
+          while (!h.getState('libsReady') && retries < 20) {
+            await new Promise(r => setTimeout(r, 200));
+            retries++;
           }
-          if (!h.getState('libsLoaded')) {
-            h.showError('Failed to load viewer engine', 'Please check your internet connection and try again.');
+          if (!h.getState('libsReady')) {
+            h.showError('Engine Timeout', 'The 3D rendering engine failed to load. Please check your connection.');
             return;
           }
         }
 
-        h.showLoading('Decoding HDR data...');
+        h.showLoading('Decoding HDR image data...');
 
-        // Large file warning handling
-        if (file.size > 50 * 1024 * 1024) {
-          h.showLoading('Processing large file (' + formatBytes(file.size) + ')...');
-        }
+        // B8. Use a small timeout to allow UI thread to breathe for large files
+        setTimeout(() => {
+          try {
+            const loader = new THREE.EXRLoader();
+            // B2. content is an ArrayBuffer (binary: true)
+            const texData = loader.parse(content);
 
-        try {
-          // Wrap in timeout to ensure UI updates before heavy CPU work
-          setTimeout(() => {
-            try {
-              const loader = new THREE.EXRLoader();
-              const texData = loader.parse(content);
-              
-              if (!texData || !texData.data) {
-                throw new Error('Incomplete or corrupted EXR data.');
-              }
-
-              renderEXR(file, texData, h);
-            } catch (err) {
-              console.error(err);
-              h.showError('Could not render EXR', 'The file format might be unsupported or corrupted. ' + err.message);
+            if (!texData || !texData.data) {
+              throw new Error('No image data found in file.');
             }
-          }, 50);
-        } catch (err) {
-          h.showError('Parsing error', err.message);
+
+            renderView(file, texData, h);
+          } catch (err) {
+            console.error('[EXR] Parse error:', err);
+            h.showError('Could not open EXR', 'The file might be corrupted or uses an unsupported OpenEXR feature. ' + err.message);
+          }
+        }, 50);
+      },
+
+      onDestroy: function () {
+        // B5. Global cleanup
+        if (currentResources) {
+          currentResources.dispose();
+          currentResources = null;
         }
       },
 
@@ -90,19 +93,23 @@
           label: '📸 Save as PNG',
           id: 'save-png',
           onClick: function (h) {
-            const canvas = document.querySelector('#exr-viewport canvas');
+            const canvas = document.querySelector('#exr-canvas-container canvas');
             if (!canvas) return;
-            const link = document.createElement('a');
-            link.download = h.getFile().name.replace(/\.exr$/i, '') + '.png';
-            link.href = canvas.toDataURL('image/png');
-            link.click();
+            
+            h.showLoading('Converting to PNG...');
+            // B10. Use toBlob instead of toDataURL for downloads
+            canvas.toBlob((blob) => {
+              h.showLoading(false);
+              const filename = h.getFile().name.replace(/\.[^/.]+$/, "") + ".png";
+              h.helpers.download(filename, blob, 'image/png');
+            }, 'image/png');
           }
         },
         {
           label: '📋 Copy Metadata',
           id: 'copy-meta',
           onClick: function (h, btn) {
-            const meta = h.getState('exr_meta');
+            const meta = h.getState('metadata');
             if (meta) {
               h.copyToClipboard(JSON.stringify(meta, null, 2), btn);
             }
@@ -110,221 +117,270 @@
         }
       ]
     });
-  };
 
-  function renderEXR(file, texData, h) {
-    // Basic EXR info
-    const isRGBA = texData.format === 1023; // THREE.RGBAFormat
-    const isFloat = texData.type === 1015;  // THREE.FloatType
-    
-    const meta = {
-      filename: file.name,
-      width: texData.width,
-      height: texData.height,
-      channels: isRGBA ? 'RGBA' : 'RGB',
-      depth: isFloat ? '32-bit Float' : '16-bit Half-Float',
-      aspectRatio: (texData.width / texData.height).toFixed(3)
-    };
-    
-    h.setState('exr_meta', meta);
+    function renderView(file, texData, h) {
+      // B5. Cleanup previous file's resources if any
+      if (currentResources) {
+        currentResources.dispose();
+      }
 
-    h.render(`
-      <div class="flex flex-col h-full animate-in fade-in duration-500">
-        <!-- U1. File info bar -->
-        <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-100">
-          <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
-          <span class="text-surface-300">|</span>
-          <span>${formatBytes(file.size)}</span>
-          <span class="text-surface-300">|</span>
-          <span class="text-surface-500">${meta.width} × ${meta.height}px</span>
-          <span class="text-surface-300">|</span>
-          <span class="bg-brand-50 text-brand-700 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider">${meta.depth}</span>
-        </div>
+      const meta = texData.header || {};
+      const stats = {
+        name: file.name,
+        size: formatBytes(file.size),
+        dimensions: `${texData.width} × ${texData.height}`,
+        channels: texData.format === 1023 ? 'RGBA' : 'RGB',
+        depth: texData.type === 1015 ? '32-bit Float' : '16-bit Half'
+      };
 
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 min-h-0">
-          <!-- Main Viewport -->
-          <div class="lg:col-span-3 flex flex-col min-h-0 space-y-4">
-            <div id="exr-viewport" class="relative flex-1 bg-slate-950 rounded-2xl overflow-hidden border border-surface-200 shadow-inner flex items-center justify-center group">
-              <!-- Canvas will be injected here -->
-              
-              <!-- Floating Overlay Controls -->
-              <div class="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-white/90 backdrop-blur-md shadow-2xl rounded-2xl border border-white/20 p-5 space-y-4 z-10 transition-all opacity-90 hover:opacity-100 ring-1 ring-black/5">
-                <div class="flex justify-between items-center">
-                  <span class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Exposure Control</span>
-                  <span id="exp-val" class="text-xs font-mono font-black text-brand-600 bg-brand-50 px-2 py-0.5 rounded">1.0</span>
-                </div>
-                <input type="range" id="exr-exposure" min="0.1" max="8" step="0.1" value="1.0" 
-                  class="w-full h-1.5 bg-surface-200 rounded-lg appearance-none cursor-pointer accent-brand-600">
+      h.setState('metadata', meta);
+
+      h.render(`
+        <div class="flex flex-col h-full overflow-hidden">
+          <!-- U1. File info bar -->
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-100">
+            <span class="font-semibold text-surface-800">${escapeHtml(stats.name)}</span>
+            <span class="text-surface-300">|</span>
+            <span>${stats.size}</span>
+            <span class="text-surface-300">|</span>
+            <span class="text-surface-500">${stats.dimensions}</span>
+            <span class="text-surface-300">|</span>
+            <span class="bg-brand-100 text-brand-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">${stats.depth}</span>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-0">
+            <!-- Viewport (8/12) -->
+            <div class="lg:col-span-8 flex flex-col min-h-0 space-y-4">
+              <div id="exr-canvas-container" class="relative flex-1 bg-slate-950 rounded-2xl overflow-hidden border border-surface-200 shadow-2xl flex items-center justify-center">
+                <!-- Three.js Canvas will be here -->
                 
-                <div class="grid grid-cols-2 gap-3">
-                  <div>
-                    <label class="block text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-1.5">Tone Mapping</label>
-                    <select id="exr-tonemap" class="w-full text-xs p-2 bg-white border border-surface-200 rounded-lg outline-none font-semibold text-surface-700 focus:ring-2 focus:ring-brand-500/20 transition-all cursor-pointer">
-                      <option value="none">Linear (Raw)</option>
-                      <option value="reinhard" selected>Reinhard</option>
-                      <option value="cineon">Cineon</option>
-                      <option value="aces">ACES Filmic</option>
-                    </select>
+                <!-- Floating HUD Controls -->
+                <div class="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-white/95 backdrop-blur-xl shadow-2xl rounded-2xl border border-white/40 p-5 space-y-4 z-10 transition-all ring-1 ring-black/5">
+                  <div class="flex justify-between items-center mb-1">
+                    <span class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Exposure & Gamma</span>
+                    <span id="exp-label" class="text-xs font-mono font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded">1.0</span>
                   </div>
-                  <div class="flex items-end">
-                    <button id="exr-reset" class="w-full h-[34px] bg-surface-100 hover:bg-surface-200 text-surface-700 text-[10px] font-bold rounded-lg transition-all uppercase tracking-wider border border-surface-200">
-                      Reset View
-                    </button>
+                  
+                  <input type="range" id="exp-slider" min="0.1" max="10" step="0.1" value="1.0" 
+                    class="w-full h-1.5 bg-surface-200 rounded-lg appearance-none cursor-pointer accent-brand-600 mb-4">
+                  
+                  <div class="grid grid-cols-2 gap-4">
+                    <div class="space-y-1.5">
+                      <label class="block text-[10px] font-bold text-surface-400 uppercase tracking-widest">Algorithm</label>
+                      <select id="tm-select" class="w-full text-xs p-2.5 bg-white border border-surface-200 rounded-xl outline-none font-medium text-surface-700 focus:ring-2 focus:ring-brand-500/20 transition-all">
+                        <option value="reinhard" selected>Reinhard</option>
+                        <option value="aces">ACES Filmic</option>
+                        <option value="cineon">Cineon</option>
+                        <option value="linear">No Tone Mapping</option>
+                      </select>
+                    </div>
+                    <div class="flex items-end">
+                      <button id="reset-view" class="w-full h-[40px] bg-surface-100 hover:bg-surface-200 text-surface-700 text-[10px] font-bold rounded-xl transition-all uppercase tracking-wider border border-surface-200">
+                        Reset Defaults
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <!-- Sidebar Info -->
-          <div class="lg:col-span-1 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
-            <div>
-              <div class="flex items-center justify-between mb-3">
-                <h3 class="font-bold text-surface-800 flex items-center gap-2">
-                  <svg class="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                  Specifications
-                </h3>
+            <!-- Sidebar (4/12) -->
+            <div class="lg:col-span-4 flex flex-col min-h-0 space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="font-bold text-surface-800">EXR Metadata</h3>
+                <span class="text-[10px] bg-surface-100 text-surface-500 px-2 py-1 rounded-full uppercase font-bold tracking-tight">${Object.keys(meta).length} tags</span>
               </div>
-              <div class="space-y-2">
-                ${Object.entries(meta).map(([key, val]) => `
-                  <div class="p-3 rounded-xl border border-surface-100 bg-surface-50/50 flex flex-col gap-1">
-                    <span class="text-[10px] font-bold text-surface-400 uppercase tracking-tighter">${key.replace(/([A-Z])/g, ' $1')}</span>
-                    <span class="text-sm font-semibold text-surface-700 truncate">${escapeHtml(val)}</span>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
 
-            <div class="p-4 rounded-xl bg-amber-50 border border-amber-100">
-              <h4 class="text-xs font-bold text-amber-800 mb-1 flex items-center gap-1">
-                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
-                HDR Notice
-              </h4>
-              <p class="text-[11px] text-amber-700 leading-relaxed">
-                EXR is a High Dynamic Range format. We use tone mapping to compress the luminosity for standard displays. Adjust exposure to see details in shadows or highlights.
-              </p>
+              <!-- Metadata search -->
+              <div class="relative">
+                <input type="text" id="meta-search" placeholder="Search metadata tags..." 
+                  class="w-full pl-9 pr-4 py-2 text-sm bg-white border border-surface-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500/20 transition-all">
+                <svg class="absolute left-3 top-2.5 w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+              </div>
+
+              <!-- Metadata list -->
+              <div id="meta-container" class="flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
+                ${renderMetadata(meta)}
+              </div>
+              
+              <div class="p-4 rounded-xl bg-blue-50 border border-blue-100 text-blue-800">
+                <h4 class="text-xs font-bold mb-1 flex items-center gap-1">
+                  <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z"/></svg>
+                  Pro Tip
+                </h4>
+                <p class="text-[11px] leading-relaxed opacity-80">
+                  EXR stores linear light values. Exposure adjustment allows you to see details in highlights that would be clipped in standard images.
+                </p>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <style>
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
-      </style>
-    `);
+        <style>
+          .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+          .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+          .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+          .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+        </style>
+      `);
 
-    // Three.js Integration
-    const viewport = document.getElementById('exr-viewport');
-    const renderer = new THREE.WebGLRenderer({ 
-      antialias: true, 
-      alpha: true,
-      preserveDrawingBuffer: true 
-    });
-    
-    renderer.setSize(viewport.clientWidth, viewport.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.toneMapping = THREE.ReinhardToneMapping;
-    renderer.toneMappingExposure = 1.0;
-    viewport.appendChild(renderer.domElement);
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-
-    const texture = new THREE.DataTexture(
-      texData.data, 
-      texData.width, 
-      texData.height, 
-      texData.format, 
-      texData.type
-    );
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.generateMipmaps = false;
-    texture.flipY = true;
-    texture.needsUpdate = true;
-
-    const material = new THREE.MeshBasicMaterial({ map: texture });
-    const geometry = new THREE.PlaneGeometry(2, 2);
-    const mesh = new THREE.Mesh(geometry, material);
-    scene.add(mesh);
-
-    function updateScale() {
-      if (!viewport.isConnected) return;
-      const vW = viewport.clientWidth;
-      const vH = viewport.clientHeight;
-      const vAspect = vW / vH;
-      const iAspect = texData.width / texData.height;
-
-      if (vAspect > iAspect) {
-        mesh.scale.set(iAspect / vAspect, 1, 1);
-      } else {
-        mesh.scale.set(1, vAspect / iAspect, 1);
-      }
-      renderer.setSize(vW, vH);
+      setupThree(texData);
+      setupMetadataFilter();
     }
-    updateScale();
 
-    // Interaction Listeners
-    const expRange = document.getElementById('exr-exposure');
-    const expVal = document.getElementById('exp-val');
-    const tmSelect = document.getElementById('exr-tonemap');
-    const resetBtn = document.getElementById('exr-reset');
+    function renderMetadata(meta) {
+      if (!meta || Object.keys(meta).length === 0) {
+        return `<div class="p-8 text-center text-surface-400 text-sm bg-surface-50 rounded-2xl border border-dashed border-surface-200">No extended metadata</div>`;
+      }
 
-    expRange.oninput = (e) => {
-      const val = parseFloat(e.target.value);
-      renderer.toneMappingExposure = val;
-      expVal.textContent = val.toFixed(1);
-    };
+      return Object.entries(meta).map(([key, val]) => {
+        let displayVal = val;
+        if (typeof val === 'object' && val !== null) {
+          try { displayVal = JSON.stringify(val); } catch(e) { displayVal = '[Complex Data]'; }
+        }
+        
+        return `
+          <div class="meta-item p-3 rounded-xl border border-surface-100 bg-surface-50/50 hover:bg-white hover:border-brand-200 transition-all group" data-key="${key.toLowerCase()}" data-val="${String(displayVal).toLowerCase()}">
+            <div class="text-[10px] font-bold text-surface-400 uppercase tracking-tight mb-0.5 group-hover:text-brand-500">${escapeHtml(key)}</div>
+            <div class="text-sm font-medium text-surface-700 break-all">${escapeHtml(displayVal)}</div>
+          </div>
+        `;
+      }).join('');
+    }
 
-    const toneMapMap = {
-      none: THREE.NoToneMapping,
-      reinhard: THREE.ReinhardToneMapping,
-      cineon: THREE.CineonToneMapping,
-      aces: THREE.ACESFilmicToneMapping
-    };
+    function setupMetadataFilter() {
+      const searchInput = document.getElementById('meta-search');
+      const items = document.querySelectorAll('.meta-item');
+      
+      if (!searchInput) return;
+      
+      searchInput.addEventListener('input', (e) => {
+        const term = e.target.value.toLowerCase();
+        items.forEach(item => {
+          const key = item.getAttribute('data-key');
+          const val = item.getAttribute('data-val');
+          if (key.includes(term) || val.includes(term)) {
+            item.style.display = 'block';
+          } else {
+            item.style.display = 'none';
+          }
+        });
+      });
+    }
 
-    tmSelect.onchange = (e) => {
-      renderer.toneMapping = toneMapMap[e.target.value];
-      material.needsUpdate = true;
-    };
+    function setupThree(texData) {
+      const container = document.getElementById('exr-canvas-container');
+      if (!container) return;
 
-    resetBtn.onclick = () => {
-      expRange.value = 1.0;
-      renderer.toneMappingExposure = 1.0;
-      expVal.textContent = '1.0';
-      tmSelect.value = 'reinhard';
+      const renderer = new THREE.WebGLRenderer({ 
+        antialias: true, 
+        alpha: true,
+        preserveDrawingBuffer: true 
+      });
+      
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(container.clientWidth, container.clientHeight);
       renderer.toneMapping = THREE.ReinhardToneMapping;
-      material.needsUpdate = true;
-    };
+      renderer.toneMappingExposure = 1.0;
+      container.appendChild(renderer.domElement);
 
-    let frameId;
-    const animate = () => {
-      if (!viewport.isConnected) {
-        cancelAnimationFrame(frameId);
-        renderer.dispose();
-        texture.dispose();
-        geometry.dispose();
-        material.dispose();
-        return;
-      }
-      frameId = requestAnimationFrame(animate);
-      renderer.render(scene, camera);
-    };
-    animate();
+      const scene = new THREE.Scene();
+      const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-    const resizeObserver = new ResizeObserver(() => updateScale());
-    resizeObserver.observe(viewport);
-    
-    // Clean up observer on disconnect
-    const cleanup = () => {
-      if (!viewport.isConnected) {
-        resizeObserver.disconnect();
-        window.removeEventListener('unload', cleanup);
+      const texture = new THREE.DataTexture(
+        texData.data, 
+        texData.width, 
+        texData.height, 
+        texData.format, 
+        texData.type
+      );
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = false;
+      texture.flipY = true;
+      texture.needsUpdate = true;
+
+      const material = new THREE.MeshBasicMaterial({ map: texture });
+      const geometry = new THREE.PlaneGeometry(2, 2);
+      const mesh = new THREE.Mesh(geometry, material);
+      scene.add(mesh);
+
+      // Store in currentResources for cleanup
+      currentResources = {
+        dispose: () => {
+          cancelAnimationFrame(frameId);
+          resizeObserver.disconnect();
+          renderer.dispose();
+          texture.dispose();
+          geometry.dispose();
+          material.dispose();
+          if (renderer.domElement.parentNode) {
+            renderer.domElement.parentNode.removeChild(renderer.domElement);
+          }
+        }
+      };
+
+      function updateScale() {
+        if (!container.isConnected) return;
+        const vW = container.clientWidth;
+        const vH = container.clientHeight;
+        const vAspect = vW / vH;
+        const iAspect = texData.width / texData.height;
+
+        if (vAspect > iAspect) {
+          mesh.scale.set(iAspect / vAspect, 1, 1);
+        } else {
+          mesh.scale.set(1, vAspect / iAspect, 1);
+        }
+        renderer.setSize(vW, vH);
       }
-    };
-    window.addEventListener('unload', cleanup);
-  }
+      updateScale();
+
+      const resizeObserver = new ResizeObserver(() => updateScale());
+      resizeObserver.observe(container);
+
+      // UI Control bindings
+      const expSlider = document.getElementById('exp-slider');
+      const expLabel = document.getElementById('exp-label');
+      const tmSelect = document.getElementById('tm-select');
+      const resetBtn = document.getElementById('reset-view');
+
+      expSlider.oninput = (e) => {
+        const val = parseFloat(e.target.value);
+        renderer.toneMappingExposure = val;
+        expLabel.textContent = val.toFixed(1);
+      };
+
+      const toneMappingModes = {
+        reinhard: THREE.ReinhardToneMapping,
+        aces: THREE.ACESFilmicToneMapping,
+        cineon: THREE.CineonToneMapping,
+        linear: THREE.NoToneMapping
+      };
+
+      tmSelect.onchange = (e) => {
+        renderer.toneMapping = toneMappingModes[e.target.value];
+        material.needsUpdate = true;
+      };
+
+      resetBtn.onclick = () => {
+        expSlider.value = 1.0;
+        renderer.toneMappingExposure = 1.0;
+        expLabel.textContent = '1.0';
+        tmSelect.value = 'reinhard';
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        material.needsUpdate = true;
+      };
+
+      let frameId;
+      const animate = () => {
+        if (!container.isConnected) return;
+        frameId = requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      };
+      animate();
+    }
+  };
 })();
