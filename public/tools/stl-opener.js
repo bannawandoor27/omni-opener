@@ -25,6 +25,7 @@
     let currentRenderer = null;
     let currentScene = null;
     let currentRequestRef = null;
+    let resizeObserver = null;
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.stl',
@@ -41,11 +42,15 @@
 
       onDestroy: function () {
         if (currentRequestRef) cancelAnimationFrame(currentRequestRef);
+        if (resizeObserver) resizeObserver.disconnect();
+        
         if (currentRenderer) {
           currentRenderer.dispose();
-          currentRenderer.forceContextLoss();
-          currentRenderer.domElement.remove();
+          if (currentRenderer.domElement && currentRenderer.domElement.parentNode) {
+            currentRenderer.domElement.remove();
+          }
         }
+        
         if (currentScene) {
           currentScene.traverse((object) => {
             if (object.geometry) object.geometry.dispose();
@@ -67,36 +72,41 @@
           return;
         }
 
+        if (!content || (content instanceof ArrayBuffer && content.byteLength === 0)) {
+          h.showError('Empty File', 'The STL file appears to be empty.');
+          return;
+        }
+
         h.showLoading('Parsing 3D geometry...');
         
-        // Use a small delay to ensure loading screen is visible
+        // Small delay to ensure the loading UI is visible
         setTimeout(function() {
           try {
             const loader = new THREE.STLLoader();
             const geometry = loader.parse(content);
             
-            if (!geometry || !geometry.attributes.position) {
-              throw new Error('Invalid geometry');
+            if (!geometry || !geometry.attributes.position || geometry.attributes.position.count === 0) {
+              throw new Error('Invalid or empty geometry');
             }
 
-            renderViewer(geometry, file, h);
+            renderViewer(geometry, file, content, h);
           } catch (err) {
-            console.error(err);
-            h.showError('Could not open STL file', 'The file may be corrupted, empty, or in an unsupported format. Try a different STL file.');
+            console.error('[STL Opener] Parse Error:', err);
+            h.showError('Could not open STL file', 'The file may be corrupted or in an unsupported format. Try a different STL model.');
           }
         }, 50);
       }
     });
 
-    function renderViewer(geometry, file, h) {
-      // 1. Calculations
+    function renderViewer(geometry, file, content, h) {
+      // 1. Calculations & Analysis
       geometry.computeBoundingBox();
       geometry.computeVertexNormals();
       const size = geometry.boundingBox.getSize(new THREE.Vector3());
       const center = geometry.boundingBox.getCenter(new THREE.Vector3());
       const triangleCount = geometry.attributes.position.count / 3;
       
-      // Volume calculation for closed manifold mesh
+      // Volume calculation (signed volume of tetrahedra)
       let volume = 0;
       const pos = geometry.attributes.position.array;
       for (let i = 0; i < pos.length; i += 9) {
@@ -106,189 +116,265 @@
         volume += (-x3 * y2 * z1 + x2 * y3 * z1 + x3 * y1 * z2 - x1 * y3 * z2 - x2 * y1 * z3 + x1 * y2 * z3) / 6;
       }
       const absVolume = Math.abs(volume);
+      const surfaceArea = calculateSurfaceArea(geometry);
 
       // 2. Main UI Layout
       h.render(`
         <div class="flex flex-col h-[85vh] animate-in fade-in duration-500">
           <!-- U1. File Info Bar -->
-          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-100 shadow-sm">
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-200">
             <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
             <span class="text-surface-300">|</span>
             <span>${formatBytes(file.size)}</span>
             <span class="text-surface-300">|</span>
-            <span class="text-surface-500">${triangleCount.toLocaleString()} triangles</span>
-            <span class="text-surface-300">|</span>
-            <span class="px-2 py-0.5 bg-brand-50 text-brand-700 rounded-md font-medium">STL Model</span>
+            <span class="text-surface-500">.stl file</span>
+            <div class="ml-auto flex items-center gap-2">
+               <span class="px-2 py-0.5 bg-brand-100 text-brand-700 rounded-full text-xs font-medium">${triangleCount.toLocaleString()} Triangles</span>
+            </div>
           </div>
 
           <!-- 3D Container -->
-          <div class="relative flex-1 bg-surface-950 rounded-2xl overflow-hidden border border-surface-200 group shadow-2xl">
+          <div class="relative flex-1 bg-surface-950 rounded-2xl overflow-hidden border border-surface-200 group shadow-lg">
             <div id="stl-canvas-container" class="w-full h-full cursor-move"></div>
             
-            <!-- Controls Overlay -->
-            <div class="absolute top-4 right-4 w-56 bg-white/90 backdrop-blur-md shadow-2xl rounded-2xl border border-surface-200 p-5 space-y-5 transition-all opacity-90 hover:opacity-100">
+            <!-- Analysis Panel (U10 pattern) -->
+            <div class="absolute top-4 left-4 w-64 bg-white/95 backdrop-blur shadow-xl rounded-xl border border-surface-200 p-4 space-y-4 opacity-90 hover:opacity-100 transition-opacity">
                <div>
-                  <h3 class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-3">Model Analysis</h3>
-                  <div class="grid grid-cols-2 gap-2 text-[11px]">
+                  <div class="flex items-center justify-between mb-2">
+                    <h3 class="font-semibold text-surface-800 text-xs uppercase tracking-wider">Dimensions</h3>
+                  </div>
+                  <div class="grid grid-cols-3 gap-2 text-[11px]">
                     <div class="bg-surface-50 p-2 rounded-lg border border-surface-100">
-                      <div class="text-surface-400 mb-0.5">Width</div>
+                      <div class="text-surface-400">X</div>
                       <div class="font-mono font-bold text-surface-800">${size.x.toFixed(2)}</div>
                     </div>
                     <div class="bg-surface-50 p-2 rounded-lg border border-surface-100">
-                      <div class="text-surface-400 mb-0.5">Height</div>
+                      <div class="text-surface-400">Y</div>
                       <div class="font-mono font-bold text-surface-800">${size.y.toFixed(2)}</div>
                     </div>
                     <div class="bg-surface-50 p-2 rounded-lg border border-surface-100">
-                      <div class="text-surface-400 mb-0.5">Depth</div>
+                      <div class="text-surface-400">Z</div>
                       <div class="font-mono font-bold text-surface-800">${size.z.toFixed(2)}</div>
-                    </div>
-                    <div class="bg-surface-50 p-2 rounded-lg border border-surface-100">
-                      <div class="text-surface-400 mb-0.5">Volume</div>
-                      <div class="font-mono font-bold text-brand-600">${absVolume.toFixed(2)}</div>
                     </div>
                   </div>
                </div>
 
+               <div>
+                  <h3 class="font-semibold text-surface-800 text-xs uppercase tracking-wider mb-2">Physical Properties</h3>
+                  <div class="space-y-1.5">
+                    <div class="flex justify-between text-[11px] p-2 bg-surface-50 rounded-lg border border-surface-100">
+                      <span class="text-surface-500">Volume</span>
+                      <span class="font-mono font-bold text-brand-600">${absVolume.toLocaleString(undefined, {maximumFractionDigits: 2})} units³</span>
+                    </div>
+                    <div class="flex justify-between text-[11px] p-2 bg-surface-50 rounded-lg border border-surface-100">
+                      <span class="text-surface-500">Surface Area</span>
+                      <span class="font-mono font-bold text-surface-800">${surfaceArea.toLocaleString(undefined, {maximumFractionDigits: 2})} units²</span>
+                    </div>
+                  </div>
+               </div>
+            </div>
+
+            <!-- Settings Panel -->
+            <div class="absolute top-4 right-4 w-52 bg-white/95 backdrop-blur shadow-xl rounded-xl border border-surface-200 p-4 space-y-4 opacity-90 hover:opacity-100 transition-opacity">
                <div class="space-y-3">
-                  <h3 class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">Appearance</h3>
-                  <select id="stl-theme" class="w-full text-xs p-2 bg-surface-50 border border-surface-200 rounded-lg outline-none focus:ring-2 ring-brand-500/20 font-medium cursor-pointer">
-                     <option value="blueprint">Blueprint (Dark)</option>
-                     <option value="studio">Professional Studio</option>
-                     <option value="clay">Matte Clay</option>
-                     <option value="gold">Metallic Gold</option>
-                     <option value="wire">Wireframe Only</option>
+                  <h3 class="font-semibold text-surface-800 text-xs uppercase tracking-wider">Visualization</h3>
+                  <select id="stl-theme" class="w-full text-xs p-2 bg-surface-50 border border-surface-200 rounded-lg outline-none focus:ring-2 ring-brand-500/20 cursor-pointer">
+                     <option value="studio">Studio White</option>
+                     <option value="blueprint">Blueprint Dark</option>
+                     <option value="clay">Terracotta Clay</option>
+                     <option value="chrome">Polished Chrome</option>
+                     <option value="wireframe">Technical Wireframe</option>
                   </select>
                   
-                  <div class="flex items-center justify-between px-1">
-                    <span class="text-xs text-surface-600 font-medium">Auto-Rotate</span>
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-surface-600">Auto-Rotate</span>
                     <label class="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" id="stl-rotate" class="sr-only peer">
-                      <div class="w-9 h-5 bg-surface-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-600"></div>
+                      <div class="w-8 h-4 bg-surface-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-brand-600"></div>
+                    </label>
+                  </div>
+
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-surface-600">Show Grid</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" id="stl-grid" class="sr-only peer" checked>
+                      <div class="w-8 h-4 bg-surface-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-brand-600"></div>
                     </label>
                   </div>
                </div>
 
                <div class="pt-2 grid grid-cols-2 gap-2">
-                 <button id="stl-reset" class="flex-1 py-2 bg-surface-100 text-surface-700 text-[11px] font-bold rounded-lg hover:bg-surface-200 transition-colors border border-surface-200">Reset View</button>
-                 <button id="stl-snap" class="flex-1 py-2 bg-brand-600 text-white text-[11px] font-bold rounded-lg hover:bg-brand-700 transition-shadow shadow-lg shadow-brand-500/20">Snapshot</button>
+                 <button id="stl-reset" class="py-2 bg-surface-100 text-surface-700 text-[10px] font-bold rounded-lg hover:bg-surface-200 transition-colors border border-surface-200 uppercase tracking-tighter">Reset View</button>
+                 <button id="stl-snap" class="py-2 bg-brand-600 text-white text-[10px] font-bold rounded-lg hover:bg-brand-700 transition-shadow shadow-md shadow-brand-500/10 uppercase tracking-tighter">Snapshot</button>
                </div>
             </div>
 
-            <!-- Hint Overlay -->
-            <div class="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/40 backdrop-blur text-white/80 text-[10px] rounded-full pointer-events-none uppercase tracking-widest font-medium border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
-              Left Click: Rotate • Right Click: Pan • Scroll: Zoom
+            <!-- Tooltip/Hint -->
+            <div class="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/60 backdrop-blur text-white/90 text-[10px] rounded-full pointer-events-none uppercase tracking-widest font-medium border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
+              Rotate: Left Click • Pan: Right Click • Zoom: Scroll
             </div>
           </div>
         </div>
       `);
 
-      // 3. Initialize Three.js
+      // 3. Initialize Three.js Engine
       const container = document.getElementById('stl-canvas-container');
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+      const renderer = new THREE.WebGLRenderer({ 
+        antialias: true, 
+        alpha: true, 
+        preserveDrawingBuffer: true 
+      });
       currentRenderer = renderer;
       
       renderer.setSize(container.clientWidth, container.clientHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.shadowMap.enabled = true;
       renderer.outputEncoding = THREE.sRGBEncoding;
+      renderer.shadowMap.enabled = true;
       container.appendChild(renderer.domElement);
 
       const scene = new THREE.Scene();
       currentScene = scene;
       
-      const camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 0.1, 10000);
+      const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 10000);
       const controls = new THREE.OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
-      controls.dampingFactor = 0.05;
+      controls.dampingFactor = 0.08;
 
       // Lights
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
       scene.add(ambientLight);
       
-      const spotLight = new THREE.SpotLight(0xffffff, 0.8);
-      spotLight.position.set(50, 100, 50);
-      spotLight.castShadow = true;
-      scene.add(spotLight);
+      const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      mainLight.position.set(1, 1, 1);
+      scene.add(mainLight);
 
-      const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
-      dirLight.position.set(-50, -50, -50);
-      scene.add(dirLight);
+      const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+      fillLight.position.set(-1, -0.5, -1);
+      scene.add(fillLight);
 
-      // Material and Mesh
-      const materials = {
-        blueprint: { bg: 0x0f172a, color: 0x38bdf8, emissive: 0x075985, wireframe: false, roughness: 0.3, metalness: 0.2 },
-        studio: { bg: 0xf8fafc, color: 0x64748b, emissive: 0x000000, wireframe: false, roughness: 0.5, metalness: 0.1 },
-        clay: { bg: 0x451a03, color: 0xd97706, emissive: 0x000000, wireframe: false, roughness: 1.0, metalness: 0.0 },
-        gold: { bg: 0x1c1917, color: 0xfacc15, emissive: 0x422006, wireframe: false, roughness: 0.1, metalness: 0.8 },
-        wire: { bg: 0x020617, color: 0x10b981, emissive: 0x000000, wireframe: true, roughness: 0.5, metalness: 0.1 }
+      // Materials Configuration
+      const themes = {
+        studio: { 
+          bg: 0xf1f5f9, 
+          color: 0x94a3b8, 
+          emissive: 0x000000, 
+          roughness: 0.5, 
+          metalness: 0.1, 
+          wireframe: false,
+          grid: 0xcbd5e1
+        },
+        blueprint: { 
+          bg: 0x0f172a, 
+          color: 0x38bdf8, 
+          emissive: 0x075985, 
+          roughness: 0.3, 
+          metalness: 0.2, 
+          wireframe: false,
+          grid: 0x1e293b
+        },
+        clay: { 
+          bg: 0x27272a, 
+          color: 0xd97706, 
+          emissive: 0x000000, 
+          roughness: 1.0, 
+          metalness: 0.0, 
+          wireframe: false,
+          grid: 0x3f3f46
+        },
+        chrome: { 
+          bg: 0x09090b, 
+          color: 0xffffff, 
+          emissive: 0x000000, 
+          roughness: 0.05, 
+          metalness: 0.9, 
+          wireframe: false,
+          grid: 0x27272a
+        },
+        wireframe: { 
+          bg: 0x020617, 
+          color: 0x10b981, 
+          emissive: 0x000000, 
+          roughness: 0.5, 
+          metalness: 0.1, 
+          wireframe: true,
+          grid: 0x0f172a
+        }
       };
 
-      const meshMaterial = new THREE.MeshStandardMaterial(materials.blueprint);
+      const initialTheme = themes.studio;
+      scene.background = new THREE.Color(initialTheme.bg);
+
+      const meshMaterial = new THREE.MeshStandardMaterial({
+        color: initialTheme.color,
+        emissive: initialTheme.emissive,
+        roughness: initialTheme.roughness,
+        metalness: initialTheme.metalness,
+        wireframe: initialTheme.wireframe,
+        side: THREE.DoubleSide
+      });
+
       const mesh = new THREE.Mesh(geometry, meshMaterial);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      
-      // Center geometry
       mesh.position.sub(center);
       scene.add(mesh);
 
-      // Camera Positioning
-      const maxDim = Math.max(size.x, size.y, size.z) || 1;
-      camera.position.set(maxDim * 1.5, maxDim * 1.5, maxDim * 1.5);
-      camera.lookAt(0, 0, 0);
-      scene.background = new THREE.Color(materials.blueprint.bg);
+      // Grid Helper
+      const maxDim = Math.max(size.x, size.y, size.z) || 10;
+      const gridSize = Math.ceil(maxDim * 2 / 10) * 10;
+      const gridHelper = new THREE.GridHelper(gridSize, 20, initialTheme.grid, initialTheme.grid);
+      gridHelper.position.y = -size.y / 2;
+      scene.add(gridHelper);
 
-      // 4. Interactive Events
+      // Camera Setups
+      const dist = maxDim * 2.2;
+      camera.position.set(dist, dist * 0.8, dist);
+      camera.lookAt(0, 0, 0);
+
+      // 4. Interaction Logic
       const themeSelect = document.getElementById('stl-theme');
       const rotateCheck = document.getElementById('stl-rotate');
+      const gridCheck = document.getElementById('stl-grid');
       const resetBtn = document.getElementById('stl-reset');
       const snapBtn = document.getElementById('stl-snap');
 
       themeSelect.onchange = (e) => {
-        const theme = materials[e.target.value];
-        scene.background = new THREE.Color(theme.bg);
-        meshMaterial.color.setHex(theme.color);
-        meshMaterial.emissive.setHex(theme.emissive || 0x000000);
-        meshMaterial.wireframe = theme.wireframe;
-        meshMaterial.roughness = theme.roughness;
-        meshMaterial.metalness = theme.metalness;
-        meshMaterial.needsUpdate = true;
+        const t = themes[e.target.value];
+        scene.background.setHex(t.bg);
+        meshMaterial.color.setHex(t.color);
+        meshMaterial.emissive.setHex(t.emissive);
+        meshMaterial.roughness = t.roughness;
+        meshMaterial.metalness = t.metalness;
+        meshMaterial.wireframe = t.wireframe;
+        gridHelper.material.color.setHex(t.grid);
       };
 
       rotateCheck.onchange = (e) => {
         controls.autoRotate = e.target.checked;
       };
 
+      gridCheck.onchange = (e) => {
+        gridHelper.visible = e.target.checked;
+      };
+
       resetBtn.onclick = () => {
-        camera.position.set(maxDim * 1.5, maxDim * 1.5, maxDim * 1.5);
+        camera.position.set(dist, dist * 0.8, dist);
         controls.reset();
       };
 
       snapBtn.onclick = () => {
         try {
           renderer.render(scene, camera);
-          const dataUrl = renderer.domElement.toDataURL('image/png');
-          
-          // Convert dataURL to Blob for helpers.download
-          const byteString = atob(dataUrl.split(',')[1]);
-          const mimeString = dataUrl.split(',')[0].split(':')[1].split(';')[0];
-          const ab = new ArrayBuffer(byteString.length);
-          const ia = new Uint8Array(ab);
-          for (let i = 0; i < byteString.length; i++) {
-            ia[i] = byteString.charCodeAt(i);
-          }
-          const blob = new Blob([ab], { type: mimeString });
-          
-          const filename = file.name.replace(/\.[^/.]+$/, "") + "_snapshot.png";
-          h.download(filename, blob, 'image/png');
-        } catch (e) {
-          console.error('Snapshot failed', e);
-          h.showError('Snapshot failed', 'Could not generate a screenshot of the 3D model.');
+          renderer.domElement.toBlob((blob) => {
+            const name = file.name.replace(/\.[^/.]+$/, "") + "_preview.png";
+            h.download(name, blob, 'image/png');
+          }, 'image/png');
+        } catch (err) {
+          console.error('[STL Opener] Snapshot Error:', err);
+          h.showError('Snapshot failed', 'Could not generate a preview image.');
         }
       };
 
-      // Handle resize
-      const resizeObserver = new ResizeObserver(() => {
+      // Resize Handling
+      resizeObserver = new ResizeObserver(() => {
         if (!container.clientWidth || !container.clientHeight) return;
         camera.aspect = container.clientWidth / container.clientHeight;
         camera.updateProjectionMatrix();
@@ -298,15 +384,28 @@
 
       // 5. Animation Loop
       const animate = () => {
-        if (!container.isConnected) {
-          renderer.dispose();
-          return;
-        }
+        if (!container.isConnected) return;
         currentRequestRef = requestAnimationFrame(animate);
         controls.update();
         renderer.render(scene, camera);
       };
       animate();
+    }
+
+    function calculateSurfaceArea(geometry) {
+      let area = 0;
+      const pos = geometry.attributes.position.array;
+      for (let i = 0; i < pos.length; i += 9) {
+        const v1 = new THREE.Vector3(pos[i], pos[i+1], pos[i+2]);
+        const v2 = new THREE.Vector3(pos[i+3], pos[i+4], pos[i+5]);
+        const v3 = new THREE.Vector3(pos[i+6], pos[i+7], pos[i+8]);
+        
+        const edge1 = new THREE.Vector3().subVectors(v2, v1);
+        const edge2 = new THREE.Vector3().subVectors(v3, v1);
+        const cross = new THREE.Vector3().crossVectors(edge1, edge2);
+        area += cross.length() / 2;
+      }
+      return area;
     }
   };
 })();
