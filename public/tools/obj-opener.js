@@ -5,16 +5,6 @@
 (function () {
   'use strict';
 
-  let currentObject = null;
-  let currentFile = null;
-
-  function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(String(str)));
-    return div.innerHTML;
-  }
-
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       accept: '.obj',
@@ -26,13 +16,14 @@
           label: '📋 Copy Stats',
           id: 'copy-stats',
           onClick: function (h, btn) {
-            if (!currentObject) return;
-            const box = new THREE.Box3().setFromObject(currentObject);
+            const state = h.getState();
+            if (!state.object) return;
+            const box = new THREE.Box3().setFromObject(state.object);
             const size = box.getSize(new THREE.Vector3());
             let meshCount = 0;
-            currentObject.traverse(n => { if (n.isMesh) meshCount++; });
+            state.object.traverse(n => { if (n.isMesh) meshCount++; });
             
-            const stats = `File: ${currentFile.name}\nMeshes: ${meshCount}\nDimensions: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)} units`;
+            const stats = `File: ${state.file.name}\nMeshes: ${meshCount}\nDimensions: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)} units`;
             h.copyToClipboard(stats, btn);
           }
         },
@@ -40,15 +31,16 @@
           label: '📥 Download OBJ',
           id: 'download',
           onClick: function (h) {
-            if (h.getContent()) h.download(currentFile.name, h.getContent(), 'text/plain');
+            const content = h.getContent();
+            const file = h.getFile();
+            if (content) h.download(file.name, content, 'text/plain');
           }
         },
         {
           label: '📸 Screenshot',
           id: 'screenshot',
           onClick: function (h) {
-            const container = document.getElementById('three-container');
-            const canvas = container.querySelector('canvas');
+            const canvas = h.getRenderEl().querySelector('canvas');
             if (canvas) {
               const dataUrl = canvas.toDataURL('image/png');
               h.download('screenshot.png', dataUrl, 'image/png');
@@ -58,7 +50,7 @@
       ],
 
       onInit: function (h) {
-        h.loadScripts([
+        return h.loadScripts([
           'https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js',
           'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/OBJLoader.js',
           'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js'
@@ -66,28 +58,24 @@
       },
 
       onFile: function (file, content, h) {
-        currentFile = file;
-        if (typeof THREE === 'undefined' || typeof THREE.OBJLoader === 'undefined') {
-          h.showLoading('Loading 3D engine...');
-          h.loadScripts([
-            'https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js',
-            'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/OBJLoader.js',
-            'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js'
-          ], () => {
-            this.onFile(file, content, h);
-          });
-          return;
-        }
-
-        h.showLoading('Parsing 3D model...');
-        try {
-          const loader = new THREE.OBJLoader();
-          const object = loader.parse(content);
-          currentObject = object;
-          renderViewer(object, file, h);
-        } catch (err) {
-           h.showError('Parsing Error', 'Unable to parse this OBJ file. Ensure it is a valid Wavefront OBJ.');
-        }
+        h.showLoading('Preparing 3D engine...');
+        h.loadScripts([
+          'https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js',
+          'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/OBJLoader.js',
+          'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js'
+        ]).then(() => {
+          h.showLoading('Parsing 3D model...');
+          try {
+            const loader = new THREE.OBJLoader();
+            const object = loader.parse(content);
+            h.setState({ object: object, file: file });
+            renderViewer(object, file, h);
+          } catch (err) {
+            h.showError('Parsing Error', 'Unable to parse this OBJ file. Ensure it is a valid Wavefront OBJ.');
+          }
+        }).catch(err => {
+          h.showError('Dependency Error', 'Failed to load 3D rendering components.');
+        });
       }
     });
   };
@@ -102,7 +90,7 @@
     h.render(`
       <div class="flex flex-col h-[85vh] font-sans">
         <div class="flex items-center gap-3 px-4 py-2 bg-surface-50 rounded-xl text-[10px] text-surface-500 mb-2 border border-surface-200">
-          <span class="font-bold text-surface-900 uppercase">${escapeHtml(file.name)}</span>
+          <span class="font-bold text-surface-900 uppercase">${esc(file.name)}</span>
           <span class="text-surface-300">|</span>
           <span>${meshCount} Meshes</span>
           <span class="text-surface-300">|</span>
@@ -135,7 +123,8 @@
       </div>
     `);
 
-    const container = document.getElementById('three-container');
+    const renderEl = h.getRenderEl();
+    const container = renderEl.querySelector('#three-container');
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -166,16 +155,16 @@
        sunset: { bg: 0x451a03, light: 1.5 }
     };
 
-    document.getElementById('env-preset').onchange = (e) => {
+    renderEl.querySelector('#env-preset').onchange = (e) => {
        const p = envs[e.target.value];
        scene.background = new THREE.Color(p.bg);
        mainLight.intensity = p.light;
     };
-    document.getElementById('check-wire').onchange = (e) => {
+    renderEl.querySelector('#check-wire').onchange = (e) => {
        object.traverse(n => { if (n.isMesh) n.material.wireframe = e.target.checked; });
     };
-    document.getElementById('check-rotate').onchange = (e) => { controls.autoRotate = e.target.checked; };
-    document.getElementById('btn-reset').onclick = () => { camera.position.set(maxDim*2, maxDim*2, maxDim*2); controls.reset(); };
+    renderEl.querySelector('#check-rotate').onchange = (e) => { controls.autoRotate = e.target.checked; };
+    renderEl.querySelector('#btn-reset').onclick = () => { camera.position.set(maxDim*2, maxDim*2, maxDim*2); controls.reset(); };
 
     const animate = () => {
        if (!container.isConnected) { 
@@ -188,7 +177,6 @@
     };
     animate();
 
-    // Resize observer
     const resizeObserver = new ResizeObserver(() => {
       if (container.clientWidth > 0 && container.clientHeight > 0) {
         camera.aspect = container.clientWidth / container.clientHeight;
@@ -197,5 +185,12 @@
       }
     });
     resizeObserver.observe(container);
+  }
+
+  function esc(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 })();
