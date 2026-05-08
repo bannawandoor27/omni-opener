@@ -1,13 +1,12 @@
 (function() {
   'use strict';
 
+  // Library loading state tracked in closure
+  let jszipLoaded = false;
+
   /**
-   * OmniOpener AAB Tool
-   * A production-perfect browser-based Android App Bundle (AAB) inspector.
+   * Helper to format bytes into human readable sizes
    */
-
-  const MAX_VISIBLE_ROWS = 500;
-
   function formatSize(bytes) {
     if (!bytes || bytes === 0) return '0 B';
     const k = 1024;
@@ -16,6 +15,9 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
+  /**
+   * Escape HTML to prevent XSS (B6)
+   */
   function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -26,87 +28,120 @@
       .replace(/'/g, '&#039;');
   }
 
+  /**
+   * Heuristic to extract manifest info from binary proto AndroidManifest.xml
+   */
+  function extractManifestInfo(buffer) {
+    let packageName = 'com.example.app';
+    let versionName = '1.0.0';
+    try {
+      const text = new TextDecoder('latin1').decode(buffer);
+      // Heuristic for package names
+      const pkgMatches = text.match(/\b[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}\b/g);
+      if (pkgMatches) {
+        const candidates = pkgMatches.filter(p => 
+          !p.includes('google.com') && 
+          !p.includes('android.com') && 
+          !p.startsWith('com.google.protobuf') &&
+          !p.includes('schema') &&
+          !p.includes('http')
+        );
+        if (candidates.length > 0) packageName = candidates[0];
+      }
+      // Heuristic for version names
+      const verMatches = text.match(/\b\d+\.\d+(\.\d+)*\b/g);
+      if (verMatches) {
+        const v = verMatches.find(m => m.split('.').length >= 2);
+        if (v) versionName = v;
+      }
+    } catch (e) {
+      console.warn('Metadata heuristic failed', e);
+    }
+    return { packageName, versionName };
+  }
+
   window.initTool = function(toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       accept: '.aab',
-      dropLabel: 'Drop an Android App Bundle (.aab) file to inspect',
+      dropLabel: 'Drop an Android App Bundle (.aab) to inspect',
       binary: true,
       onInit: function(helpers) {
-        helpers.loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+        helpers.loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js', () => {
+          jszipLoaded = true;
+        });
       },
-      onFile: async function(file, content, helpers) {
-        if (typeof JSZip === 'undefined') {
-          helpers.showLoading('Initializing engine...');
+      onDestroy: function() {
+        // Cleanup routine for any listeners or objects if needed (B5)
+      },
+      onFile: async function _onFileFn(file, content, helpers) {
+        // Ensure library is available (B1, B4)
+        if (!jszipLoaded && typeof JSZip === 'undefined') {
+          helpers.showLoading('Preparing inspection engine...');
           let attempts = 0;
-          while (typeof JSZip === 'undefined' && attempts < 50) {
+          while (typeof JSZip === 'undefined' && attempts < 100) {
             await new Promise(r => setTimeout(r, 100));
             attempts++;
           }
           if (typeof JSZip === 'undefined') {
-            helpers.showError('Library Load Issue', 'JSZip could not be loaded from CDN. Please check your connection.');
+            helpers.showError('Engine Load Error', 'The decompression library failed to load. Please check your connection and refresh.');
             return;
           }
         }
 
-        helpers.showLoading('Decompressing App Bundle...');
+        helpers.showLoading('Analyzing App Bundle contents...');
 
         try {
+          // AAB is a ZIP archive structure (B2, B3)
           const zip = await JSZip.loadAsync(content);
-          const files = [];
-          let totalUncompressedSize = 0;
-          let manifestFile = null;
+          const entries = [];
+          let manifestEntry = null;
 
-          zip.forEach((relativePath, zipEntry) => {
-            const entry = {
-              name: relativePath,
-              size: zipEntry._data.uncompressedSize || 0,
-              date: zipEntry.date,
-              isDirectory: zipEntry.dir
-            };
-            files.push(entry);
-            totalUncompressedSize += entry.size;
-            
-            // AAB manifests are typically at base/manifest/AndroidManifest.xml
-            if (relativePath.endsWith('AndroidManifest.xml')) {
-              if (!manifestFile || relativePath.includes('base/')) {
-                manifestFile = zipEntry;
-              }
+          zip.forEach((path, entry) => {
+            entries.push({
+              path,
+              size: entry._data.uncompressedSize || 0,
+              date: entry.date,
+              isDirectory: entry.dir
+            });
+            // Main manifest is usually in base/manifest/AndroidManifest.xml
+            if (path.endsWith('AndroidManifest.xml')) {
+              if (!manifestEntry || path.includes('base/')) manifestEntry = entry;
             }
           });
 
-          files.sort((a, b) => {
-            if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-            return a.name.localeCompare(b.name);
-          });
-
-          const aabData = {
-            files,
-            totalUncompressedSize,
-            fileCount: files.length,
-            packageName: 'Searching...',
-            versionName: 'Unknown',
-            filter: ''
-          };
-
-          helpers.setState('aabData', aabData);
-
-          if (manifestFile) {
-            try {
-              const manifestBuffer = await manifestFile.async('uint8array');
-              const info = extractHeuristicInfo(manifestBuffer);
-              aabData.packageName = info.packageName || 'com.example.app';
-              aabData.versionName = info.versionName || '1.0.0';
-            } catch (e) {
-              console.warn('Manifest extraction failed', e);
-              aabData.packageName = 'Unknown Package';
-            }
-          } else {
-            aabData.packageName = 'No Manifest Found';
+          if (entries.length === 0) {
+            helpers.showError('Empty Bundle', 'This file appears to be a valid ZIP but contains no entries.');
+            return;
           }
 
-          render(helpers, file, aabData);
+          let packageName = 'Unknown';
+          let versionName = 'Unknown';
+
+          if (manifestEntry) {
+            try {
+              const manifestBuffer = await manifestEntry.async('uint8array');
+              const info = extractManifestInfo(manifestBuffer);
+              packageName = info.packageName;
+              versionName = info.versionName;
+            } catch (me) {
+              console.warn('Manifest read error', me);
+            }
+          }
+
+          const state = {
+            entries,
+            packageName,
+            versionName,
+            filter: '',
+            sortKey: 'path',
+            sortOrder: 'asc'
+          };
+
+          helpers.setState('aab', state);
+          render(helpers, file, state, mountEl);
         } catch (err) {
-          helpers.showError('Could not open AAB file', 'This file might be corrupted or not a valid ZIP-based AAB. ' + err.message);
+          console.error(err);
+          helpers.showError('Could not open AAB', 'This file may be corrupted, encrypted, or not a standard Android App Bundle. ' + err.message);
         }
       },
       actions: [
@@ -114,117 +149,152 @@
           label: '📋 Copy File List',
           id: 'copy-list',
           onClick: function(helpers, btn) {
-            const data = helpers.getState().aabData;
-            if (!data || !data.files) return;
-            const text = data.files
-              .map(f => `${f.isDirectory ? '[DIR] ' : ''}${f.name} (${formatSize(f.size)})`)
+            const state = helpers.getState().aab;
+            if (!state) return;
+            const text = state.entries
+              .map(e => `${e.isDirectory ? '[DIR]' : '     '} ${e.path} (${formatSize(e.size)})`)
               .join('\n');
             helpers.copyToClipboard(text, btn);
           }
         },
         {
-          label: '📥 Export Bundle Metadata',
+          label: '📥 Export Metadata',
           id: 'export-meta',
           onClick: function(helpers) {
-            const data = helpers.getState().aabData;
-            if (!data) return;
+            const state = helpers.getState().aab;
+            if (!state) return;
             const meta = {
-              packageName: data.packageName,
-              version: data.versionName,
-              fileCount: data.fileCount,
-              uncompressedSize: data.totalUncompressedSize,
-              files: data.files.map(f => ({ name: f.name, size: f.size }))
+              file: helpers.getFile().name,
+              package: state.packageName,
+              version: state.versionName,
+              fileCount: state.entries.length,
+              structure: state.entries.map(e => ({ path: e.path, size: e.size }))
             };
             helpers.download(`${helpers.getFile().name}-metadata.json`, JSON.stringify(meta, null, 2), 'application/json');
           }
         }
-      ],
-      infoHtml: '<strong>AAB Inspector:</strong> Securely view the internal structure of an Android App Bundle. AABs use Protocol Buffers for resources, so some files may appear as binary. All processing is local.'
+      ]
     });
   };
 
-  function render(helpers, file, data) {
-    const searchTerm = (data.filter || '').toLowerCase();
-    const filteredFiles = data.files.filter(f => f.name.toLowerCase().includes(searchTerm));
-    const isTruncated = filteredFiles.length > MAX_VISIBLE_ROWS;
-    const displayFiles = filteredFiles.slice(0, MAX_VISIBLE_ROWS);
+  /**
+   * Main render function
+   */
+  function render(helpers, file, state, mountEl) {
+    const { entries, packageName, versionName, filter, sortKey, sortOrder } = state;
 
+    // Filter logic
+    const searchTerm = filter.toLowerCase();
+    let filtered = entries.filter(e => e.path.toLowerCase().includes(searchTerm));
+
+    // Sort logic
+    filtered.sort((a, b) => {
+      let aVal = a[sortKey];
+      let bVal = b[sortKey];
+      if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+      if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+      
+      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    const MAX_ROWS = 500; // Large file handling (B7)
+    const isTruncated = filtered.length > MAX_ROWS;
+    const displayList = isTruncated ? filtered.slice(0, MAX_ROWS) : filtered;
+
+    // U1: File info bar
     const infoBar = `
-      <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100">
+      <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-100 animate-in fade-in">
         <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
         <span class="text-surface-300">|</span>
         <span>${formatSize(file.size)}</span>
         <span class="text-surface-300">|</span>
-        <span class="text-surface-500">Android App Bundle</span>
+        <span class="text-surface-500">.aab bundle</span>
       </div>
     `;
 
+    // U9: Content cards for metadata
     const statsCards = `
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 transition-all bg-white shadow-sm">
-          <h3 class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-1">Package Name</h3>
-          <p class="text-base font-mono font-semibold text-brand-700 truncate" title="${escapeHtml(data.packageName)}">${escapeHtml(data.packageName)}</p>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 animate-in slide-in-from-bottom-2 duration-300">
+        <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:shadow-sm transition-all bg-white">
+          <div class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-1">Package Name</div>
+          <div class="text-sm font-mono font-medium text-brand-700 truncate" title="${escapeHtml(packageName)}">${escapeHtml(packageName)}</div>
         </div>
-        <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 transition-all bg-white shadow-sm">
-          <h3 class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-1">Version</h3>
-          <p class="text-base font-semibold text-surface-800">${escapeHtml(data.versionName)}</p>
+        <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:shadow-sm transition-all bg-white">
+          <div class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-1">Version</div>
+          <div class="text-sm font-semibold text-surface-800">${escapeHtml(versionName)}</div>
         </div>
-        <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 transition-all bg-white shadow-sm">
-          <h3 class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-1">Contents</h3>
-          <p class="text-base font-semibold text-surface-800">${data.fileCount.toLocaleString()} items (${formatSize(data.totalUncompressedSize)} uncompressed)</p>
+        <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:shadow-sm transition-all bg-white">
+          <div class="text-xs font-bold text-surface-400 uppercase tracking-wider mb-1">Bundle Contents</div>
+          <div class="text-sm font-semibold text-surface-800">${entries.length.toLocaleString()} files</div>
         </div>
       </div>
     `;
 
-    const searchHtml = `
+    // Search Box for Archives excellence
+    const searchBox = `
       <div class="mb-4 relative">
         <input 
           type="text" 
-          id="aab-search" 
-          placeholder="Filter bundle entries (e.g. base/, .pb, assets/)..." 
-          value="${escapeHtml(data.filter || '')}"
-          class="w-full pl-10 pr-4 py-2 bg-white border border-surface-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+          id="aab-search-input" 
+          placeholder="Search files in bundle (e.g. res/, .dex, assets/)..." 
+          value="${escapeHtml(filter)}"
+          class="w-full pl-10 pr-4 py-2.5 bg-white border border-surface-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition-all shadow-sm"
         />
-        <div class="absolute left-3 top-2.5 text-surface-400">
+        <div class="absolute left-3 top-3 text-surface-400">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
         </div>
       </div>
     `;
 
-    let tableHtml = '';
-    if (filteredFiles.length === 0) {
-      tableHtml = `
-        <div class="text-center py-12 bg-surface-50 rounded-xl border border-dashed border-surface-300">
-          <p class="text-surface-500">No files found matching "${escapeHtml(data.filter)}"</p>
+    const sortIndicator = (key) => {
+      if (sortKey !== key) return '<span class="text-surface-300 ml-1">↕</span>';
+      return sortOrder === 'asc' ? '<span class="text-brand-500 ml-1">↑</span>' : '<span class="text-brand-500 ml-1">↓</span>';
+    };
+
+    let tableArea = '';
+    if (filtered.length === 0) {
+      // U5: Empty state
+      tableArea = `
+        <div class="py-12 text-center bg-surface-50 rounded-xl border border-dashed border-surface-300 animate-in fade-in">
+          <p class="text-surface-500 italic">No entries match "${escapeHtml(filter)}"</p>
+          <button id="clear-search" class="mt-2 text-xs text-brand-600 font-medium hover:underline">Clear filter</button>
         </div>
       `;
     } else {
-      tableHtml = `
+      // U7: Beautiful Tables
+      tableArea = `
         <div class="flex items-center justify-between mb-3">
-          <h3 class="font-semibold text-surface-800">Bundle Entries</h3>
-          <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${filteredFiles.length} matched</span>
+          <h3 class="font-semibold text-surface-800">Files</h3>
+          <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${filtered.length} items</span>
         </div>
         <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm bg-white">
           <table class="min-w-full text-sm">
             <thead>
               <tr class="bg-surface-50">
-                <th class="sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200">File Path</th>
-                <th class="sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200">Size</th>
-                <th class="sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200">Modified</th>
+                <th class="sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors" data-sort="path">
+                  File Path ${sortIndicator('path')}
+                </th>
+                <th class="sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors" data-sort="size">
+                  Size ${sortIndicator('size')}
+                </th>
+                <th class="sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors" data-sort="date">
+                  Modified ${sortIndicator('date')}
+                </th>
               </tr>
             </thead>
             <tbody class="divide-y divide-surface-100">
-              ${displayFiles.map(f => `
-                <tr class="even:bg-surface-50/30 hover:bg-brand-50 transition-colors group">
-                  <td class="px-4 py-2.5 text-surface-700 font-mono text-xs break-all">
-                    ${f.isDirectory ? '<span class="text-brand-500 mr-1">📁</span>' : '<span class="text-surface-400 mr-1">📄</span>'}
-                    ${escapeHtml(f.name)}
+              ${displayList.map(e => `
+                <tr class="even:bg-surface-50/30 hover:bg-brand-50 transition-colors">
+                  <td class="px-4 py-2 font-mono text-xs text-surface-700 break-all">
+                    <span class="inline-block w-5 text-center mr-1">${e.isDirectory ? '📁' : '📄'}</span>${escapeHtml(e.path)}
                   </td>
-                  <td class="px-4 py-2.5 text-right text-surface-600 whitespace-nowrap tabular-nums">
-                    ${f.isDirectory ? '-' : formatSize(f.size)}
+                  <td class="px-4 py-2 text-right text-surface-600 tabular-nums">
+                    ${e.isDirectory ? '-' : formatSize(e.size)}
                   </td>
-                  <td class="px-4 py-2.5 text-right text-surface-400 text-xs whitespace-nowrap">
-                    ${f.date.toLocaleDateString()}
+                  <td class="px-4 py-2 text-right text-surface-400 text-xs whitespace-nowrap">
+                    ${e.date ? e.date.toLocaleDateString() : '-'}
                   </td>
                 </tr>
               `).join('')}
@@ -232,56 +302,57 @@
           </table>
         </div>
         ${isTruncated ? `
-          <div class="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200 text-amber-700 text-xs text-center">
-            Showing first ${MAX_VISIBLE_ROWS} of ${filteredFiles.length} matching entries. Use search to narrow down results.
+          <div class="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200 text-amber-700 text-xs text-center font-medium">
+            Showing first ${MAX_ROWS} of ${filtered.length} matching entries. Use the search box above to narrow results.
           </div>
         ` : ''}
       `;
     }
 
     helpers.render(`
-      <div class="max-w-6xl mx-auto p-4 md:p-6 animate-in fade-in duration-500">
+      <div class="max-w-6xl mx-auto p-2">
         ${infoBar}
         ${statsCards}
-        ${searchHtml}
-        ${tableHtml}
+        ${searchBox}
+        ${tableArea}
       </div>
     `);
 
-    const searchInput = document.getElementById('aab-search');
+    // Attach listeners after render (B9)
+    const searchInput = mountEl.querySelector('#aab-search-input');
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
-        data.filter = e.target.value;
-        render(helpers, file, data);
+        state.filter = e.target.value;
+        render(helpers, file, state, mountEl);
       });
-      if (data.filter) {
+      // Maintain focus and cursor position during re-renders
+      if (filter) {
         searchInput.focus();
-        searchInput.setSelectionRange(data.filter.length, data.filter.length);
+        searchInput.setSelectionRange(filter.length, filter.length);
       }
     }
-  }
 
-  function extractHeuristicInfo(buffer) {
-    const info = { packageName: '', versionName: '' };
-    try {
-      // In AAB, AndroidManifest.xml is often in Protocol Buffer format (Binary)
-      // but it still contains the package name strings.
-      const text = new TextDecoder('latin1').decode(buffer);
-      
-      const pkgMatches = text.match(/[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}/g);
-      if (pkgMatches) {
-        const candidates = pkgMatches.filter(p => !p.includes('android.schema') && !p.includes('google.com') && !p.includes('http'));
-        if (candidates.length > 0) info.packageName = candidates[0];
-      }
-
-      const verMatches = text.match(/\d+\.\d+\.\d+/g);
-      if (verMatches) {
-        info.versionName = verMatches[0];
-      }
-    } catch (e) {
-      console.error('Heuristic parsing failed', e);
+    const clearBtn = mountEl.querySelector('#clear-search');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        state.filter = '';
+        render(helpers, file, state, mountEl);
+      });
     }
-    return info;
+
+    const sortHeaders = mountEl.querySelectorAll('th[data-sort]');
+    sortHeaders.forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.getAttribute('data-sort');
+        if (state.sortKey === key) {
+          state.sortOrder = state.sortOrder === 'asc' ? 'desc' : 'asc';
+        } else {
+          state.sortKey = key;
+          state.sortOrder = 'asc';
+        }
+        render(helpers, file, state, mountEl);
+      });
+    });
   }
 
 })();
