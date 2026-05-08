@@ -3,29 +3,13 @@
 
   /**
    * OmniOpener 3MF Viewer
-   * A production-perfect 3D manufacturing format viewer using Three.js
+   * A production-grade 3D manufacturing format viewer using Three.js and the OmniTool SDK.
    */
-
-  function formatSize(bytes) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  }
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
 
   window.initTool = function(toolConfig, mountEl) {
     let renderer, scene, camera, controls, animationId, resizeObserver;
-    let currentObject = null;
 
-    function cleanupThree() {
+    function cleanup() {
       if (animationId) {
         cancelAnimationFrame(animationId);
         animationId = null;
@@ -56,188 +40,88 @@
         });
         scene = null;
       }
-      currentObject = null;
+      camera = null;
+      controls = null;
     }
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.3mf',
-      dropLabel: 'Drop a .3mf 3D model',
       binary: true,
+      dropLabel: 'Drop a .3mf 3D model here',
+      
       onInit: function(h) {
-        h.loadScripts([
+        return h.loadScripts([
           'https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js',
           'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
           'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/3MFLoader.js',
           'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js'
         ]);
       },
-      onDestroy: function() {
-        cleanupThree();
-      },
-      onFile: function _onFile(file, content, h) {
-        cleanupThree();
 
-        // Check if dependencies are loaded
-        if (typeof THREE === 'undefined' || typeof THREE.ThreeMFLoader === 'undefined' || typeof JSZip === 'undefined') {
-          h.showLoading('Initializing 3D engine...');
+      onDestroy: function() {
+        cleanup();
+      },
+
+      onFile: function _onFile(file, content, h) {
+        cleanup();
+
+        // Check if dependencies are ready
+        const LoaderClass = (typeof THREE !== 'undefined') ? (THREE.ThreeMFLoader || THREE.3MFLoader) : null;
+        if (typeof THREE === 'undefined' || !LoaderClass || typeof JSZip === 'undefined' || typeof THREE.OrbitControls === 'undefined') {
+          h.showLoading('Initializing 3D Engine...');
           setTimeout(function() { _onFile(file, content, h); }, 300);
           return;
         }
 
-        // Ensure JSZip is available for the loader
-        window.JSZip = window.JSZip || JSZip;
-
-        // Large file protection
-        if (file.size > 50 * 1024 * 1024 && !h.getState().confirmedLargeFile) {
-          h.render(`
-            <div class="flex flex-col items-center justify-center p-12 text-center h-full">
-              <div class="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mb-6">
-                <svg class="w-10 h-10 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <h2 class="text-xl font-bold text-surface-900 mb-2">Large 3D Model</h2>
-              <p class="text-surface-500 mb-8 max-w-sm">
-                This file is ${formatSize(file.size)}. Parsing and rendering complex 3D geometry may slow down your browser.
-              </p>
-              <button id="btn-proceed" class="px-8 py-3 bg-brand-600 text-white rounded-xl font-semibold shadow-lg shadow-brand-500/20 hover:bg-brand-700 transition-all transform hover:-translate-y-0.5 active:translate-y-0">
-                Proceed Anyway
-              </button>
-            </div>
-          `);
-          document.getElementById('btn-proceed').onclick = () => {
-            h.setState('confirmedLargeFile', true);
-            _onFile(file, content, h);
-          };
-          return;
-        }
-
-        h.showLoading('Parsing 3D Manufacturing Format...');
+        // JSZip must be global for the loader
+        window.JSZip = JSZip;
+        h.showLoading('Parsing 3D Geometry...');
 
         try {
-          const loader = new THREE.ThreeMFLoader();
+          const loader = new LoaderClass();
           const object = loader.parse(content);
           
-          if (!object) {
-            throw new Error('The 3MF file appears to be empty or contains no valid 3D geometry.');
-          }
+          if (!object) throw new Error('Could not find valid 3D geometry in this 3MF file.');
 
-          // Stats calculation
+          // Scene Stats
           let vertices = 0;
           let faces = 0;
-          let meshCount = 0;
-
           object.traverse(node => {
             if (node.isMesh) {
-              meshCount++;
               const geo = node.geometry;
               if (geo.attributes && geo.attributes.position) {
                 vertices += geo.attributes.position.count;
-                if (geo.index) {
-                  faces += geo.index.count / 3;
-                } else {
-                  faces += geo.attributes.position.count / 3;
-                }
+                faces += geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3;
               }
             }
           });
-
-          if (meshCount === 0) {
-            h.render(`
-              <div class="p-12 text-center">
-                <p class="text-surface-500 italic">No meshes found in this 3MF file.</p>
-              </div>
-            `);
-            return;
-          }
 
           const box = new THREE.Box3().setFromObject(object);
           const size = box.getSize(new THREE.Vector3());
           const center = box.getCenter(new THREE.Vector3());
 
-          h.setState('stats', { vertices, faces, size, meshCount });
-          currentObject = object;
+          h.setState('stats', { vertices, faces, size });
 
-          // Render UI
           h.render(`
-            <div class="flex flex-col h-full">
-              <!-- File info bar -->
-              <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-100">
-                <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
-                <span class="text-surface-300">|</span>
-                <span>${formatSize(file.size)}</span>
-                <span class="text-surface-300">|</span>
-                <span class="text-surface-500">.3mf file</span>
-                <div class="ml-auto hidden sm:flex items-center gap-2">
-                  <span class="px-2 py-0.5 bg-brand-50 text-brand-700 text-[10px] font-bold uppercase rounded-md border border-brand-100">
-                    ${Math.round(faces).toLocaleString()} Faces
-                  </span>
+            <div class="flex flex-col h-full space-y-4">
+              <div class="flex flex-wrap items-center justify-between gap-4 bg-surface-50 p-4 rounded-xl border border-surface-100 text-sm">
+                <div class="flex gap-4">
+                  <span class="text-surface-600"><strong>Faces:</strong> ${Math.round(faces).toLocaleString()}</span>
+                  <span class="text-surface-600"><strong>Dimensions:</strong> ${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)} mm</span>
+                </div>
+                <div class="flex gap-2">
+                  <button id="view-reset" class="px-3 py-1 bg-white border border-surface-200 rounded-lg hover:bg-surface-50 transition-colors">Reset View</button>
+                  <button id="toggle-wireframe" class="px-3 py-1 bg-white border border-surface-200 rounded-lg hover:bg-surface-50 transition-colors">Wireframe</button>
                 </div>
               </div>
-
-              <div class="relative flex-1 min-h-[500px] bg-slate-900 rounded-2xl overflow-hidden shadow-inner border border-surface-200">
-                <div id="three-container" class="w-full h-full cursor-move"></div>
-                
-                <!-- Overlay Controls -->
-                <div class="absolute top-4 left-4 flex flex-col gap-2">
-                   <div class="bg-black/40 backdrop-blur-md p-1 rounded-lg flex items-center border border-white/10">
-                      <button id="view-reset" class="p-2 text-white/80 hover:text-white transition-colors" title="Reset Camera">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                      </button>
-                      <div class="w-px h-4 bg-white/10 mx-1"></div>
-                      <button id="toggle-wireframe" class="p-2 text-white/80 hover:text-white transition-colors" title="Toggle Wireframe">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
-                      </button>
-                      <button id="toggle-rotate" class="p-2 text-white/80 hover:text-white transition-colors" title="Auto-Rotate">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                      </button>
-                   </div>
-                </div>
-
-                <!-- Scene Info -->
-                <div class="absolute bottom-4 left-4 right-4 flex items-end justify-between pointer-events-none">
-                  <div class="bg-black/60 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 text-[11px] text-white/90 font-mono space-y-0.5">
-                    <div class="opacity-60 uppercase text-[9px] font-bold tracking-tighter">Dimensions</div>
-                    <div>X: ${size.x.toFixed(2)}mm</div>
-                    <div>Y: ${size.y.toFixed(2)}mm</div>
-                    <div>Z: ${size.z.toFixed(2)}mm</div>
-                  </div>
-
-                  <div class="flex flex-col gap-2 pointer-events-auto">
-                    <select id="theme-select" class="bg-black/60 backdrop-blur-md text-white text-[11px] px-3 py-1.5 rounded-lg border border-white/10 outline-none hover:bg-black/80 transition-all cursor-pointer">
-                      <option value="slate">Deep Slate</option>
-                      <option value="studio">Studio Light</option>
-                      <option value="blueprint">Blueprint</option>
-                      <option value="ghost">Ghost Mode</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Section stats -->
-              <div class="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div class="bg-surface-50 p-4 rounded-2xl border border-surface-100">
-                  <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Total Vertices</div>
-                  <div class="text-xl font-bold text-surface-900">${Math.round(vertices).toLocaleString()}</div>
-                </div>
-                <div class="bg-surface-50 p-4 rounded-2xl border border-surface-100">
-                  <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Total Faces</div>
-                  <div class="text-xl font-bold text-surface-900">${Math.round(faces).toLocaleString()}</div>
-                </div>
-                <div class="bg-surface-50 p-4 rounded-2xl border border-surface-100">
-                  <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Meshes</div>
-                  <div class="text-xl font-bold text-surface-900">${meshCount}</div>
-                </div>
-                <div class="bg-surface-50 p-4 rounded-2xl border border-surface-100">
-                  <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Units</div>
-                  <div class="text-xl font-bold text-surface-900">mm</div>
-                </div>
+              
+              <div id="three-container" class="relative flex-1 min-h-[500px] bg-slate-900 rounded-2xl overflow-hidden shadow-inner border border-surface-200">
+                <div id="canvas-target" class="w-full h-full cursor-move"></div>
               </div>
             </div>
           `);
 
-          // Initialize Three.js
-          const container = document.getElementById('three-container');
+          const container = document.getElementById('canvas-target');
           renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
           renderer.setPixelRatio(window.devicePixelRatio);
           renderer.setSize(container.clientWidth, container.clientHeight);
@@ -253,81 +137,48 @@
           controls.enableDamping = true;
           controls.dampingFactor = 0.05;
 
-          // Lights
-          const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-          scene.add(ambientLight);
+          scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+          const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+          sun.position.set(100, 200, 150);
+          scene.add(sun);
 
-          const mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
-          mainLight.position.set(100, 200, 150);
-          scene.add(mainLight);
-
-          const fillLight = new THREE.DirectionalLight(0x6366f1, 0.4);
-          fillLight.position.set(-100, -100, -100);
-          scene.add(fillLight);
-
-          // Position model
+          // Center model
           object.position.sub(center);
           scene.add(object);
 
-          // Camera Positioning
+          // Initial Camera Placement
           const maxDim = Math.max(size.x, size.y, size.z) || 1;
-          const camDist = maxDim * 2;
-          camera.position.set(camDist, camDist, camDist);
+          const dist = maxDim * 2;
+          camera.position.set(dist, dist, dist);
           camera.lookAt(0, 0, 0);
           controls.update();
 
-          // Event Listeners
+          // UI Interactivity
           let isWireframe = false;
           document.getElementById('toggle-wireframe').onclick = () => {
             isWireframe = !isWireframe;
             object.traverse(n => {
               if (n.isMesh && n.material) {
-                if (Array.isArray(n.material)) {
-                  n.material.forEach(m => m.wireframe = isWireframe);
-                } else {
-                  n.material.wireframe = isWireframe;
-                }
+                const mats = Array.isArray(n.material) ? n.material : [n.material];
+                mats.forEach(m => m.wireframe = isWireframe);
               }
             });
           };
 
-          document.getElementById('toggle-rotate').onclick = (e) => {
-            controls.autoRotate = !controls.autoRotate;
-            e.currentTarget.classList.toggle('bg-brand-500/20', controls.autoRotate);
-            e.currentTarget.classList.toggle('text-brand-400', controls.autoRotate);
-          };
-
           document.getElementById('view-reset').onclick = () => {
-            camera.position.set(camDist, camDist, camDist);
+            camera.position.set(dist, dist, dist);
             controls.target.set(0, 0, 0);
-            controls.reset();
+            controls.update();
           };
 
-          const themes = {
-            slate: { bg: 0x0f172a, ambient: 0.6, main: 1.0, fill: 0.4 },
-            studio: { bg: 0xf8fafc, ambient: 0.8, main: 1.2, fill: 0.2 },
-            blueprint: { bg: 0x1e3a8a, ambient: 0.5, main: 0.8, fill: 0.6 },
-            ghost: { bg: 0x000000, ambient: 0.2, main: 0.5, fill: 0.3 }
-          };
-
-          document.getElementById('theme-select').onchange = (e) => {
-            const t = themes[e.target.value];
-            scene.background = new THREE.Color(t.bg);
-            ambientLight.intensity = t.ambient;
-            mainLight.intensity = t.main;
-            fillLight.intensity = t.fill;
-          };
-
-          // Animation Loop
           const animate = () => {
-            if (!container || !container.isConnected) return;
+            if (!renderer) return;
             animationId = requestAnimationFrame(animate);
             controls.update();
             renderer.render(scene, camera);
           };
           animate();
 
-          // Resize Handler
           resizeObserver = new ResizeObserver(() => {
             if (!container.clientWidth || !container.clientHeight) return;
             camera.aspect = container.clientWidth / container.clientHeight;
@@ -337,10 +188,11 @@
           resizeObserver.observe(container);
 
         } catch (err) {
-          h.showError('3MF Viewer Error', 'Failed to parse the 3D model. ' + (err.message || 'The file might be corrupted or incompatible.'));
-          console.error('[3MF]', err);
+          h.showError('3MF Parser Error', err.message || 'Failed to parse 3D model.');
+          console.error('[3MF Viewer]', err);
         }
       },
+
       actions: [
         {
           label: '📋 Copy Stats',
@@ -352,8 +204,7 @@
               `File: ${h.getFile().name}`,
               `Vertices: ${Math.round(stats.vertices).toLocaleString()}`,
               `Faces: ${Math.round(stats.faces).toLocaleString()}`,
-              `Meshes: ${stats.meshCount}`,
-              `Bounds: ${stats.size.x.toFixed(2)} x ${stats.size.y.toFixed(2)} x ${stats.size.z.toFixed(2)} mm`
+              `Dimensions: ${stats.size.x.toFixed(2)} x ${stats.size.y.toFixed(2)} x ${stats.size.z.toFixed(2)} mm`
             ].join('\n');
             h.copyToClipboard(text, btn);
           }
@@ -362,7 +213,7 @@
           label: '📥 Download',
           id: 'download',
           onClick: function(h) {
-            h.download(h.getFile().name, h.getContent(), 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml');
+            h.download(h.getFile().name, h.getContent());
           }
         }
       ]
