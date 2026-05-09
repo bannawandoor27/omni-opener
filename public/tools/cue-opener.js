@@ -11,18 +11,15 @@
       accept: '.cue',
       dropLabel: 'Drop a .cue file here',
       binary: false,
-      onInit: function(helpers) {
-        // No external dependencies needed for CUE parsing
-      },
-      onFile: async function(file, content, helpers) {
+      onFile: async function _onFile(file, content, helpers) {
         if (!content || content.trim().length === 0) {
           helpers.showError('Empty File', 'The selected CUE file contains no data.');
           return;
         }
 
         // B7: Large file handling
-        if (content.length > 5 * 1024 * 1024) { // 5MB is extremely large for a CUE file
-          helpers.showError('File Too Large', 'This CUE file is too large to process safely in the browser.');
+        if (content.length > 5 * 1024 * 1024) {
+          helpers.showError('File Too Large', 'This CUE file is too large to process safely in the browser (max 5MB).');
           return;
         }
 
@@ -30,14 +27,14 @@
         helpers.showLoading('Analyzing CUE metadata and tracks...');
         
         try {
-          // Artificial delay for better UX on fast machines
-          await new Promise(r => setTimeout(r, 400));
+          // Artificial delay for UI smoothness
+          await new Promise(r => setTimeout(r, 300));
           
           const cueData = parseCue(content);
           
           if (!cueData.tracks || cueData.tracks.length === 0) {
-            // U5: Empty state handling
-            helpers.render(renderEmptyState(file, helpers));
+            // U5: Empty state
+            helpers.render(renderEmptyState(file));
             return;
           }
 
@@ -46,7 +43,7 @@
           console.error('CUE Parse Error:', err);
           helpers.showError(
             'Could not open CUE file', 
-            'The file may be corrupted or in an unsupported variant. Try ensuring it follows the standard CUE sheet format.'
+            'The file may be corrupted or in an unsupported variant. Ensure it follows the standard CUE sheet format.'
           );
         }
       },
@@ -69,14 +66,16 @@
           label: '📦 Export JSON',
           id: 'export-json',
           onClick: function(helpers) {
-            const content = helpers.getContent();
-            const data = parseCue(content);
+            const data = parseCue(helpers.getContent());
             const fileName = helpers.getFile().name.replace(/\.cue$/i, '') + '.json';
             helpers.download(fileName, JSON.stringify(data, null, 2), 'application/json');
           }
         }
       ],
-      infoHtml: '<strong>Format Info:</strong> CUE sheets describe how tracks on a compact disc are laid out, including metadata like artist, title, and timestamps.'
+      infoHtml: '<strong>Format Info:</strong> CUE sheets describe how tracks on a disc are laid out, including metadata like artist, title, and timestamps.',
+      onDestroy: function() {
+        // Clean up any global listeners if they were added (none here, but part of the rule)
+      }
     });
   };
 
@@ -135,8 +134,8 @@
           if (args.length >= 2) {
             const key = args[0].toUpperCase();
             const val = args.slice(1).join(' ');
-            if (currentTrack) currentTrack.rem[key] = val;
-            else cue.rem[key] = val;
+            if (currentTrack) currentTrack.rem[key] = stripQuotes(val);
+            else cue.rem[key] = stripQuotes(val);
           }
           break;
         }
@@ -157,7 +156,7 @@
           if (args.length >= 2) {
             const type = args.pop();
             const name = args.join(' ');
-            currentFile = { name, type };
+            currentFile = { name: stripQuotes(name), type };
             cue.files.push(currentFile);
           }
           break;
@@ -232,6 +231,7 @@
           const durationFrames = nextFrames - current.startTimeFrames;
           if (durationFrames > 0) {
             current.duration = framesToDuration(durationFrames);
+            current.durationFrames = durationFrames;
           }
         }
       }
@@ -242,7 +242,12 @@
    * Rendering Logic
    */
   function renderCue(cue, file, helpers) {
-    const formatBytes = (bytes) => {
+    const esc = (str) => {
+      if (!str) return '';
+      return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#039;"}[m]));
+    };
+
+    const humanSize = (bytes) => {
       if (bytes === 0) return '0 B';
       const k = 1024;
       const sizes = ['B', 'KB', 'MB', 'GB'];
@@ -250,87 +255,90 @@
       return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     };
 
-    // B6: XSS Protection
-    const esc = (str) => {
-      if (!str) return '';
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
+    const totalDurationFrames = cue.tracks.reduce((acc, t) => acc + (t.durationFrames || 0), 0);
+    const totalDurationFormatted = (frames) => {
+      const s = Math.floor(frames / 75);
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      if (h > 0) return `${h}h ${m}m ${sec}s`;
+      return `${m}m ${sec}s`;
     };
 
-    const fileSize = formatBytes(file.size);
-    const trackCount = cue.tracks.length;
-
     let html = `
-      <div class="omni-cue-container max-w-6xl mx-auto p-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <div class="omni-cue-container max-w-6xl mx-auto p-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
         
         <!-- U1: File Info Bar -->
-        <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-200/50">
+        <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-200/50 shadow-sm">
           <span class="font-semibold text-surface-800">${esc(file.name)}</span>
           <span class="text-surface-300">|</span>
-          <span>${fileSize}</span>
+          <span>${humanSize(file.size)}</span>
           <span class="text-surface-300">|</span>
           <span class="text-surface-500">.cue sheet</span>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
           <!-- Metadata Sidebar (U9) -->
           <div class="lg:col-span-4 space-y-6">
-            <div class="rounded-2xl border border-surface-200 bg-white p-6 shadow-sm ring-1 ring-black/[0.02]">
-              <div class="mb-5">
-                <h2 class="text-[10px] font-bold text-surface-400 uppercase tracking-[0.2em] mb-1">Album Title</h2>
+            <div class="rounded-2xl border border-surface-200 bg-white p-6 shadow-sm ring-1 ring-black/[0.02] hover:border-brand-300 transition-all">
+              <div class="mb-6">
+                <h2 class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-1.5">Album Title</h2>
                 <p class="text-2xl font-black text-surface-900 leading-tight">${esc(cue.title || 'Untitled Album')}</p>
               </div>
-              <div class="mb-5">
-                <h2 class="text-[10px] font-bold text-surface-400 uppercase tracking-[0.2em] mb-1">Performer</h2>
+              <div class="mb-6">
+                <h2 class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-1.5">Performer</h2>
                 <p class="text-lg font-bold text-brand-600">${esc(cue.performer || 'Unknown Artist')}</p>
               </div>
-              ${cue.songwriter ? `
-              <div class="mb-5">
-                <h2 class="text-[10px] font-bold text-surface-400 uppercase tracking-[0.2em] mb-1">Songwriter</h2>
-                <p class="text-sm text-surface-600 font-medium">${esc(cue.songwriter)}</p>
-              </div>
-              ` : ''}
               
-              <div class="pt-5 border-t border-surface-100 flex flex-wrap gap-2">
-                ${cue.rem.GENRE ? `<span class="px-2.5 py-1 bg-brand-50 text-brand-700 text-[10px] font-bold rounded-lg border border-brand-100 uppercase tracking-wider">${esc(cue.rem.GENRE)}</span>` : ''}
-                ${cue.rem.DATE ? `<span class="px-2.5 py-1 bg-surface-100 text-surface-600 text-[10px] font-bold rounded-lg border border-surface-200 uppercase tracking-wider">${esc(cue.rem.DATE)}</span>` : ''}
+              <div class="grid grid-cols-2 gap-4 pt-6 border-t border-surface-100">
+                <div>
+                  <h2 class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-1">Tracks</h2>
+                  <p class="text-lg font-bold text-surface-800">${cue.tracks.length}</p>
+                </div>
+                <div>
+                  <h2 class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-1">Length</h2>
+                  <p class="text-lg font-bold text-surface-800">${totalDurationFormatted(totalDurationFrames)}</p>
+                </div>
               </div>
+
+              ${cue.rem.GENRE || cue.rem.DATE ? `
+                <div class="mt-6 flex flex-wrap gap-2">
+                  ${cue.rem.GENRE ? `<span class="px-2.5 py-1 bg-brand-50 text-brand-700 text-[10px] font-bold rounded-lg border border-brand-100 uppercase tracking-wider">${esc(cue.rem.GENRE)}</span>` : ''}
+                  ${cue.rem.DATE ? `<span class="px-2.5 py-1 bg-surface-100 text-surface-600 text-[10px] font-bold rounded-lg border border-surface-200 uppercase tracking-wider">${esc(cue.rem.DATE)}</span>` : ''}
+                </div>
+              ` : ''}
             </div>
 
-            <!-- Detailed REM Metadata -->
-            ${Object.keys(cue.rem).filter(k => !['GENRE', 'DATE'].includes(k)).length > 0 ? `
+            <!-- Extended REM Metadata -->
+            ${Object.keys(cue.rem).length > 0 ? `
               <div class="rounded-2xl border border-surface-200 bg-white overflow-hidden shadow-sm ring-1 ring-black/[0.02]">
-                <div class="px-5 py-3 bg-surface-50/50 border-b border-surface-200">
-                  <h3 class="text-[10px] font-bold text-surface-500 uppercase tracking-[0.15em]">Extended Metadata</h3>
+                <div class="px-5 py-3 bg-surface-50 border-b border-surface-200">
+                  <h3 class="text-[10px] font-bold text-surface-500 uppercase tracking-widest">Extended Metadata</h3>
                 </div>
-                <div class="p-5 space-y-4">
-                  ${Object.keys(cue.rem).filter(k => !['GENRE', 'DATE'].includes(k)).map(key => `
-                    <div class="group">
+                <div class="p-5 space-y-4 max-h-[400px] overflow-y-auto scrollbar-thin">
+                  ${Object.entries(cue.rem).map(([key, val]) => `
+                    <div class="group border-b border-surface-50 last:border-0 pb-3 last:pb-0">
                       <span class="text-[9px] font-bold text-surface-400 uppercase tracking-wider block mb-0.5">${esc(key)}</span>
-                      <span class="text-sm text-surface-700 break-all font-medium selection:bg-brand-100">${esc(cue.rem[key])}</span>
+                      <span class="text-sm text-surface-700 break-all font-medium">${esc(val)}</span>
                     </div>
                   `).join('')}
                 </div>
               </div>
             ` : ''}
 
-            <!-- Master Files -->
+            <!-- Source Files -->
             ${cue.files.length > 0 ? `
               <div class="rounded-2xl border border-surface-200 bg-white overflow-hidden shadow-sm ring-1 ring-black/[0.02]">
-                <div class="px-5 py-3 bg-surface-50/50 border-b border-surface-200">
-                  <h3 class="text-[10px] font-bold text-surface-500 uppercase tracking-[0.15em]">Source Files</h3>
+                <div class="px-5 py-3 bg-surface-50 border-b border-surface-200">
+                  <h3 class="text-[10px] font-bold text-surface-500 uppercase tracking-widest">Linked Files</h3>
                 </div>
                 <div class="divide-y divide-surface-100">
                   ${cue.files.map(f => `
                     <div class="p-4 hover:bg-surface-50/80 transition-colors group">
-                      <div class="flex items-start gap-3">
-                        <div class="mt-1 p-1.5 bg-surface-100 rounded-lg group-hover:bg-white group-hover:shadow-sm transition-all text-surface-500">
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
+                      <div class="flex items-center gap-3">
+                        <div class="p-2 bg-surface-100 rounded-lg group-hover:bg-white transition-all text-surface-500">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </div>
                         <div class="flex-1 min-w-0">
                           <div class="text-sm font-semibold text-surface-800 truncate" title="${esc(f.name)}">${esc(f.name)}</div>
@@ -345,78 +353,74 @@
           </div>
 
           <!-- Tracklist (U7, U10) -->
-          <div class="lg:col-span-8 space-y-4">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2 px-1">
+          <div class="lg:col-span-8 space-y-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-1">
               <div class="flex items-center gap-3">
-                <h3 class="font-black text-surface-900 text-lg">Tracklist</h3>
-                <span class="text-[10px] bg-brand-100 text-brand-700 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider">${trackCount} items</span>
+                <h3 class="font-black text-surface-900 text-xl tracking-tight">Tracklist</h3>
+                <span class="text-[10px] bg-brand-100 text-brand-700 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider">${cue.tracks.length} tracks</span>
               </div>
-              <div class="relative group">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-surface-400 group-focus-within:text-brand-500 transition-colors">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <div class="relative w-full sm:w-72">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-surface-400">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                 </div>
-                <input type="text" id="trackSearch" placeholder="Search tracks..." 
-                  class="text-xs pl-9 pr-4 py-2 rounded-xl border border-surface-200 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 w-full sm:w-64 transition-all shadow-sm placeholder:text-surface-400">
+                <input type="text" id="trackSearch" placeholder="Filter by title or artist..." 
+                  class="text-sm pl-10 pr-4 py-2 rounded-xl border border-surface-200 focus:outline-none focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 w-full transition-all shadow-sm">
               </div>
             </div>
 
-            <div class="overflow-hidden rounded-2xl border border-surface-200 bg-white shadow-sm ring-1 ring-black/[0.02]">
-              <div class="overflow-x-auto">
-                <table class="min-w-full text-sm" id="tracksTable">
-                  <thead>
-                    <tr class="bg-surface-50/50 border-b border-surface-200">
-                      <th data-sort="number" class="cursor-pointer select-none px-5 py-4 text-left text-[10px] font-bold text-surface-400 uppercase tracking-widest hover:text-brand-600 transition-colors">#</th>
-                      <th data-sort="title" class="cursor-pointer select-none px-5 py-4 text-left text-[10px] font-bold text-surface-400 uppercase tracking-widest hover:text-brand-600 transition-colors">Track Title</th>
-                      <th data-sort="artist" class="cursor-pointer select-none px-5 py-4 text-left text-[10px] font-bold text-surface-400 uppercase tracking-widest hover:text-brand-600 transition-colors">Artist</th>
-                      <th data-sort="duration" class="cursor-pointer select-none px-5 py-4 text-right text-[10px] font-bold text-surface-400 uppercase tracking-widest hover:text-brand-600 transition-colors">Duration</th>
-                      <th class="px-5 py-4 text-right text-[10px] font-bold text-surface-400 uppercase tracking-widest">Start</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-surface-100">
-                    ${cue.tracks.map(track => {
-                      const isCustomArtist = track.performer && track.performer !== cue.performer;
-                      const searchData = `${track.number} ${track.title} ${track.performer} ${track.isrc}`.toLowerCase();
-                      return `
-                        <tr class="track-row group hover:bg-brand-50/40 transition-colors duration-150" data-search="${esc(searchData)}">
-                          <td class="px-5 py-4 text-surface-400 font-mono text-xs tabular-nums font-bold">${track.number.toString().padStart(2, '0')}</td>
-                          <td class="px-5 py-4">
-                            <div class="font-bold text-surface-800 group-hover:text-brand-700 transition-colors">${esc(track.title || 'Untitled Track')}</div>
-                            ${track.isrc ? `<div class="text-[9px] text-surface-400 font-mono mt-0.5">ISRC: ${esc(track.isrc)}</div>` : ''}
-                          </td>
-                          <td class="px-5 py-4">
-                            <span class="${isCustomArtist ? 'text-brand-600 font-bold' : 'text-surface-500 font-medium'}">
-                              ${esc(track.performer || cue.performer || 'Unknown')}
-                            </span>
-                          </td>
-                          <td class="px-5 py-4 text-right">
-                            <span class="px-2 py-0.5 bg-surface-100 text-surface-600 rounded text-[11px] font-bold font-mono">
-                              ${track.duration || '--:--'}
-                            </span>
-                          </td>
-                          <td class="px-5 py-4 text-right text-surface-400 font-mono text-[11px] tabular-nums">
-                            ${track.startTimeFormatted || '00:00:00'}
-                          </td>
-                        </tr>
-                      `;
-                    }).join('')}
-                  </tbody>
-                </table>
-              </div>
+            <div class="overflow-x-auto rounded-2xl border border-surface-200 bg-white shadow-lg ring-1 ring-black/[0.03]">
+              <table class="min-w-full text-sm text-left" id="tracksTable">
+                <thead>
+                  <tr class="bg-surface-50/80 backdrop-blur border-b border-surface-200">
+                    <th data-sort="number" class="cursor-pointer select-none px-6 py-4 text-[10px] font-bold text-surface-400 uppercase tracking-widest hover:text-brand-600 transition-colors w-16">#</th>
+                    <th data-sort="title" class="cursor-pointer select-none px-6 py-4 text-[10px] font-bold text-surface-400 uppercase tracking-widest hover:text-brand-600 transition-colors">Track Title</th>
+                    <th data-sort="artist" class="cursor-pointer select-none px-6 py-4 text-[10px] font-bold text-surface-400 uppercase tracking-widest hover:text-brand-600 transition-colors">Artist</th>
+                    <th data-sort="duration" class="cursor-pointer select-none px-6 py-4 text-right text-[10px] font-bold text-surface-400 uppercase tracking-widest hover:text-brand-600 transition-colors w-24">Length</th>
+                    <th class="px-6 py-4 text-right text-[10px] font-bold text-surface-400 uppercase tracking-widest w-24">Start</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-100">
+                  ${cue.tracks.map(track => {
+                    const isCustomArtist = track.performer && track.performer !== cue.performer;
+                    const searchData = `${track.number} ${track.title} ${track.performer} ${track.isrc}`.toLowerCase();
+                    return `
+                      <tr class="track-row group hover:bg-brand-50/50 transition-colors duration-200" data-search="${esc(searchData)}">
+                        <td class="px-6 py-5 text-surface-400 font-mono text-xs tabular-nums font-bold">${track.number.toString().padStart(2, '0')}</td>
+                        <td class="px-6 py-5">
+                          <div class="font-bold text-surface-800 group-hover:text-brand-700 transition-colors">${esc(track.title || 'Untitled Track')}</div>
+                          ${track.isrc ? `<div class="text-[9px] text-surface-400 font-mono mt-0.5 opacity-60">ISRC: ${esc(track.isrc)}</div>` : ''}
+                        </td>
+                        <td class="px-6 py-5">
+                          <span class="${isCustomArtist ? 'text-brand-600 font-bold' : 'text-surface-500 font-medium'}">
+                            ${esc(track.performer || cue.performer || 'Unknown')}
+                          </span>
+                        </td>
+                        <td class="px-6 py-5 text-right font-mono text-[13px] text-surface-600">
+                          ${track.duration || '--:--'}
+                        </td>
+                        <td class="px-6 py-5 text-right text-surface-400 font-mono text-[11px] tabular-nums">
+                          ${track.startTimeFormatted || '00:00:00'}
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
             </div>
 
             <!-- U8: Raw Source -->
-            <div class="mt-8">
-              <div class="flex items-center justify-between mb-3 px-1">
-                <h3 class="font-bold text-surface-800 text-sm">Raw CUE Sheet</h3>
-                <span class="text-[10px] text-surface-400 font-mono">${file.name}</span>
+            <div class="mt-12">
+              <div class="flex items-center justify-between mb-4 px-1">
+                <h3 class="font-bold text-surface-800 text-sm">CUE Source View</h3>
+                <span class="text-[10px] text-surface-400 font-mono bg-surface-100 px-2 py-0.5 rounded">${file.name}</span>
               </div>
-              <div class="rounded-2xl overflow-hidden border border-surface-200 bg-gray-950 shadow-lg ring-1 ring-white/5">
+              <div class="rounded-2xl overflow-hidden border border-surface-200 bg-gray-950 shadow-2xl ring-1 ring-white/10">
                 <div class="flex items-center gap-1.5 px-4 py-3 bg-white/5 border-b border-white/10">
-                  <div class="w-2.5 h-2.5 rounded-full bg-red-500/20 border border-red-500/40"></div>
-                  <div class="w-2.5 h-2.5 rounded-full bg-yellow-500/20 border border-yellow-500/40"></div>
-                  <div class="w-2.5 h-2.5 rounded-full bg-green-500/20 border border-green-500/40"></div>
+                  <div class="w-2.5 h-2.5 rounded-full bg-red-500/40"></div>
+                  <div class="w-2.5 h-2.5 rounded-full bg-yellow-500/40"></div>
+                  <div class="w-2.5 h-2.5 rounded-full bg-green-500/40"></div>
                 </div>
-                <pre class="p-5 text-[11px] font-mono text-gray-300 overflow-x-auto leading-relaxed max-h-[500px] scrollbar-thin scrollbar-thumb-white/10 selection:bg-brand-500/30"><code>${esc(helpers.getContent())}</code></pre>
+                <pre class="p-6 text-[12px] font-mono text-gray-300 overflow-x-auto leading-relaxed max-h-[600px] scrollbar-thin scrollbar-thumb-white/10 selection:bg-brand-500/30"><code>${esc(helpers.getContent())}</code></pre>
               </div>
             </div>
 
@@ -427,18 +431,16 @@
 
     helpers.render(html);
 
-    // Format Excellence: Live Search
-    setupSearch(esc);
-    
-    // Format Excellence: Column Sorting
+    // Format Excellence: Interactive features
+    setupSearch();
     setupSorting();
   }
 
-  function setupSearch(esc) {
+  function setupSearch() {
     const searchInput = document.getElementById('trackSearch');
     if (!searchInput) return;
 
-    searchInput.addEventListener('input', (e) => {
+    searchInput.addEventListener('input', function _onSearchInput(e) {
       const query = e.target.value.toLowerCase().trim();
       const rows = document.querySelectorAll('.track-row');
       let visibleCount = 0;
@@ -447,31 +449,29 @@
         const searchData = row.getAttribute('data-search');
         if (searchData.includes(query)) {
           row.style.display = '';
-          row.classList.add('animate-in', 'fade-in', 'zoom-in-95', 'duration-300');
           visibleCount++;
         } else {
           row.style.display = 'none';
-          row.classList.remove('animate-in', 'fade-in', 'zoom-in-95');
         }
       });
 
-      const tableBody = document.querySelector('#tracksTable tbody');
-      let emptyMsg = document.getElementById('empty-search-msg');
+      const tbody = document.querySelector('#tracksTable tbody');
+      let emptyMsg = document.getElementById('search-empty-msg');
       
-      if (visibleCount === 0 && query !== '') {
+      if (visibleCount === 0) {
         if (!emptyMsg) {
           emptyMsg = document.createElement('tr');
-          emptyMsg.id = 'empty-search-msg';
+          emptyMsg.id = 'search-empty-msg';
           emptyMsg.innerHTML = `
-            <td colspan="5" class="px-5 py-12 text-center bg-surface-50/50 rounded-b-2xl">
+            <td colspan="5" class="px-6 py-20 text-center bg-surface-50/50">
               <div class="flex flex-col items-center gap-2 text-surface-400">
-                <svg class="w-8 h-8 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                <p class="text-sm font-medium">No tracks matching "${esc(query)}"</p>
-                <p class="text-xs">Try searching for artist, title, or track number</p>
+                <svg class="w-10 h-10 opacity-20 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <p class="text-base font-semibold text-surface-600">No matching tracks</p>
+                <p class="text-sm">Try searching for a different keyword or track number.</p>
               </div>
             </td>
           `;
-          tableBody.appendChild(emptyMsg);
+          tbody.appendChild(emptyMsg);
         }
       } else if (emptyMsg) {
         emptyMsg.remove();
@@ -487,23 +487,23 @@
     let currentSort = { col: null, asc: true };
 
     headers.forEach(header => {
-      header.addEventListener('click', () => {
+      header.addEventListener('click', function _onHeaderClick() {
         const colType = header.getAttribute('data-sort');
         const isAsc = currentSort.col === colType ? !currentSort.asc : true;
         currentSort = { col: colType, asc: isAsc };
 
-        // Update UI
+        // Update UI headers
         headers.forEach(h => {
           h.classList.remove('text-brand-600');
-          const span = h.querySelector('.sort-icon');
+          const span = h.querySelector('.sort-indicator');
           if (span) span.remove();
         });
+        
         header.classList.add('text-brand-600');
-        const icon = document.createElement('span');
-        icon.className = 'sort-icon ml-1 inline-block transition-transform duration-200';
-        icon.style.transform = isAsc ? 'rotate(0deg)' : 'rotate(180deg)';
-        icon.innerHTML = '▴';
-        header.appendChild(icon);
+        const indicator = document.createElement('span');
+        indicator.className = 'sort-indicator ml-1.5 inline-block text-[10px] opacity-70';
+        indicator.textContent = isAsc ? '▲' : '▼';
+        header.appendChild(indicator);
 
         const tbody = table.querySelector('tbody');
         const rows = Array.from(tbody.querySelectorAll('tr.track-row'));
@@ -521,15 +521,12 @@
             valA = a.cells[2].textContent.trim().toLowerCase();
             valB = b.cells[2].textContent.trim().toLowerCase();
           } else if (colType === 'duration') {
-            valA = a.cells[3].textContent.trim();
-            valB = b.cells[3].textContent.trim();
-            // Convert MM:SS to seconds for proper sorting
-            const parseD = (s) => {
-              const p = s.split(':').map(Number);
+            const parseToSeconds = (s) => {
+              const p = s.trim().split(':').map(Number);
               return p.length === 2 ? p[0] * 60 + p[1] : 0;
             };
-            valA = parseD(valA);
-            valB = parseD(valB);
+            valA = parseToSeconds(a.cells[3].textContent);
+            valB = parseToSeconds(b.cells[3].textContent);
           }
 
           if (valA < valB) return isAsc ? -1 : 1;
@@ -542,21 +539,21 @@
     });
   }
 
-  function renderEmptyState(file, helpers) {
-    const esc = (str) => String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#039;"}[m]));
+  function renderEmptyState(file) {
+    const esc = (s) => String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#039;"}[m]));
     return `
-      <div class="omni-cue-container max-w-4xl mx-auto p-8 text-center animate-in fade-in zoom-in-95 duration-500">
-        <div class="flex flex-wrap items-center justify-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-8 border border-surface-200/50">
+      <div class="omni-cue-container max-w-4xl mx-auto p-12 text-center animate-in fade-in zoom-in-95 duration-500">
+        <div class="mb-12 flex flex-wrap items-center justify-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 border border-surface-200/50">
           <span class="font-semibold text-surface-800">${esc(file.name)}</span>
           <span class="text-surface-300">|</span>
-          <span class="text-surface-500">Empty file</span>
+          <span class="text-surface-500">Empty or Invalid CUE</span>
         </div>
-        <div class="py-16 px-6 rounded-3xl border-2 border-dashed border-surface-200 bg-surface-50/30 flex flex-col items-center">
-          <div class="w-16 h-16 bg-surface-100 rounded-full flex items-center justify-center text-surface-300 mb-6">
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+        <div class="py-24 px-8 rounded-[2.5rem] border-2 border-dashed border-surface-200 bg-surface-50/20 flex flex-col items-center">
+          <div class="w-20 h-20 bg-white rounded-3xl shadow-sm border border-surface-100 flex items-center justify-center text-surface-300 mb-8">
+            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           </div>
-          <h2 class="text-xl font-bold text-surface-800 mb-2">No tracks found</h2>
-          <p class="text-surface-500 max-w-sm mx-auto">This CUE file appears to be valid but doesn't contain any TRACK entries or recognized metadata.</p>
+          <h2 class="text-2xl font-black text-surface-800 mb-3 tracking-tight">No tracks detected</h2>
+          <p class="text-surface-500 max-w-sm mx-auto leading-relaxed">We couldn't find any track entries in this CUE sheet. Please ensure it's a standard disc image descriptor file.</p>
         </div>
       </div>
     `;
