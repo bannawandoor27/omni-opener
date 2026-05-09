@@ -1,9 +1,6 @@
 /**
  * OmniOpener — Python Wheel (.whl) Viewer
  * Uses OmniTool SDK and JSZip.
- * 
- * A Python Wheel is a ZIP archive containing a built distribution of a Python package.
- * This tool extracts metadata and lists all files within the archive.
  */
 (function () {
   'use strict';
@@ -67,7 +64,7 @@
       binary: true,
       accept: '.whl',
       dropLabel: 'Drop a Python Wheel (.whl) here',
-      infoHtml: '<strong>Python Wheels</strong> are the standard built-package format for Python. This tool extracts the <code>METADATA</code> and lists archive contents securely in your browser.',
+      infoHtml: '<strong>Python Wheel Viewer</strong> — Extract metadata and explore the contents of .whl distribution archives directly in your browser.',
 
       actions: [
         {
@@ -88,7 +85,7 @@
             if (meta) {
               h.download('METADATA', meta, 'text/plain');
             } else {
-              alert('No METADATA file found in this Wheel.');
+              h.showError('Missing METADATA', 'This wheel file does not contain a METADATA file in its .dist-info directory.');
             }
           }
         }
@@ -100,20 +97,34 @@
         }
       },
 
-      onFile: async function (file, content, h) {
-        h.showLoading('Parsing Wheel archive...');
+      onDestroy: function (h) {
+        // No persistent resources to clean up (no createObjectURL)
+      },
 
-        // B1 & B4: Ensure JSZip is loaded
-        if (typeof JSZip === 'undefined') {
-          let attempts = 0;
-          while (typeof JSZip === 'undefined' && attempts < 50) {
-            await new Promise(r => setTimeout(r, 100));
-            attempts++;
-          }
-        }
+      onFile: async function _onFile(file, content, h) {
+        h.showLoading('Extracting Wheel archive...');
 
-        if (typeof JSZip === 'undefined') {
-          h.showError('Library Load Issue', 'JSZip could not be loaded from the CDN. Please check your internet connection.');
+        // B1: Race condition check for JSZip
+        const ensureZip = async () => {
+          if (typeof JSZip !== 'undefined') return true;
+          return new Promise(resolve => {
+            let attempts = 0;
+            const check = setInterval(() => {
+              attempts++;
+              if (typeof JSZip !== 'undefined') {
+                clearInterval(check);
+                resolve(true);
+              } else if (attempts > 50) {
+                clearInterval(check);
+                resolve(false);
+              }
+            }, 100);
+          });
+        };
+
+        const ready = await ensureZip();
+        if (!ready) {
+          h.showError('Library Load Failed', 'Could not load JSZip from CDN. Please check your connection.');
           return;
         }
 
@@ -125,7 +136,6 @@
           let metadataPath = null;
           let rawMetadata = null;
 
-          // Collect file info
           zipData.forEach((relativePath, zipEntry) => {
             files.push({
               name: relativePath,
@@ -138,7 +148,11 @@
             }
           });
 
-          // Sort files alphabetically
+          if (files.length === 0) {
+            h.showError('Empty Archive', 'This wheel file contains no files.');
+            return;
+          }
+
           files.sort((a, b) => a.name.localeCompare(b.name));
 
           if (metadataPath) {
@@ -151,176 +165,181 @@
           h.setState('fileSize', file.size);
           h.setState('filter', '');
 
-          this.renderUI(h);
+          // B8: Use named function for self-reference
+          _renderUI(h);
 
         } catch (err) {
           console.error(err);
-          h.showError('Invalid Wheel File', 'This file does not appear to be a valid ZIP archive or Python Wheel. ' + err.message);
-        }
-      },
-
-      renderUI: function (h) {
-        const state = h.getState();
-        const files = state.files || [];
-        const rawMetadata = state.rawMetadata;
-        const metadata = rawMetadata ? parseMetadata(rawMetadata) : null;
-        const filter = (state.filter || '').toLowerCase();
-
-        const filteredFiles = files.filter(f => f.name.toLowerCase().includes(filter));
-
-        let html = '<div class="p-6 max-w-5xl mx-auto space-y-6 animate-in fade-in duration-500">';
-
-        // U1: File Info Bar
-        html += `
-          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-100">
-            <span class="font-semibold text-surface-800">${esc(state.fileName)}</span>
-            <span class="text-surface-300">|</span>
-            <span>${formatSize(state.fileSize)}</span>
-            <span class="text-surface-300">|</span>
-            <span class="text-surface-500">.whl (Python Wheel)</span>
-          </div>
-        `;
-
-        // Package Information Card
-        if (metadata) {
-          html += `
-            <div class="space-y-3">
-              <div class="flex items-center justify-between">
-                <h3 class="font-semibold text-surface-800">Package Information</h3>
-                <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">v${esc(metadata.Version || '?.?.?')}</span>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm">
-                  <div class="text-xs font-medium text-surface-400 uppercase mb-1">Name</div>
-                  <div class="text-surface-900 font-semibold">${esc(metadata.Name || 'Unknown')}</div>
-                </div>
-                <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm">
-                  <div class="text-xs font-medium text-surface-400 uppercase mb-1">Author</div>
-                  <div class="text-surface-900 font-semibold">${esc(metadata.Author || 'N/A')}</div>
-                </div>
-                <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm">
-                  <div class="text-xs font-medium text-surface-400 uppercase mb-1">License</div>
-                  <div class="text-surface-900 font-semibold">${esc(metadata.License || 'N/A')}</div>
-                </div>
-                <div class="md:col-span-3 rounded-xl border border-surface-200 p-4 bg-white shadow-sm">
-                  <div class="text-xs font-medium text-surface-400 uppercase mb-1">Summary</div>
-                  <div class="text-surface-700">${esc(metadata.Summary || 'No summary provided.')}</div>
-                </div>
-              </div>
-            </div>
-          `;
-        } else {
-          html += `
-            <div class="bg-amber-50 border border-amber-200 p-4 rounded-xl text-amber-800 text-sm flex items-start gap-3">
-              <svg class="w-5 h-5 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
-              <div>
-                <p class="font-semibold">METADATA missing</p>
-                <p class="opacity-80">This wheel doesn't seem to contain a standard .dist-info/METADATA file. Core package info could not be displayed.</p>
-              </div>
-            </div>
-          `;
+          h.showError('Parsing Failed', 'Could not open .whl file. It might be corrupted or not a valid ZIP archive.');
         }
 
-        // Archive Contents with Search (Part 4)
-        html += `
-          <div class="space-y-3">
-            <div class="flex items-center justify-between flex-wrap gap-4">
-              <div class="flex items-center gap-3">
+        // B8: Define renderUI as a standalone function within closure to avoid 'this' issues
+        function _renderUI(h) {
+          const state = h.getState();
+          const files = state.files || [];
+          const rawMetadata = state.rawMetadata;
+          const metadata = rawMetadata ? parseMetadata(rawMetadata) : null;
+          const filter = (state.filter || '').toLowerCase();
+          const filteredFiles = files.filter(f => f.name.toLowerCase().includes(filter));
+
+          let html = '<div class="p-6 max-w-5xl mx-auto space-y-6 animate-in fade-in duration-500">';
+
+          // U1: File info bar
+          html += `
+            <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">
+              <span class="font-semibold text-surface-800">${esc(state.fileName)}</span>
+              <span class="text-surface-300">|</span>
+              <span>${formatSize(state.fileSize)}</span>
+              <span class="text-surface-300">|</span>
+              <span class="text-surface-500">.whl file</span>
+            </div>
+          `;
+
+          // Package Metadata Panel
+          if (metadata) {
+            html += `
+              <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                  <h3 class="font-bold text-lg text-surface-800">Package Distribution</h3>
+                  <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-brand-100 text-brand-700 border border-brand-200">
+                    v${esc(metadata.Version || '?.?.?')}
+                  </span>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div class="rounded-xl border border-surface-200 p-4 bg-white hover:border-brand-300 transition-all shadow-sm">
+                    <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Package Name</div>
+                    <div class="text-surface-900 font-semibold truncate" title="${esc(metadata.Name)}">${esc(metadata.Name || 'Unknown')}</div>
+                  </div>
+                  <div class="rounded-xl border border-surface-200 p-4 bg-white hover:border-brand-300 transition-all shadow-sm">
+                    <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Author / Maintainer</div>
+                    <div class="text-surface-900 font-semibold truncate" title="${esc(metadata.Author)}">${esc(metadata.Author || 'N/A')}</div>
+                  </div>
+                  <div class="rounded-xl border border-surface-200 p-4 bg-white hover:border-brand-300 transition-all shadow-sm">
+                    <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">License</div>
+                    <div class="text-surface-900 font-semibold truncate" title="${esc(metadata.License)}">${esc(metadata.License || 'N/A')}</div>
+                  </div>
+                </div>
+
+                <div class="rounded-xl border border-surface-200 p-5 bg-white shadow-sm">
+                  <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-2">Summary</div>
+                  <p class="text-surface-700 leading-relaxed text-sm">${esc(metadata.Summary || 'No summary provided for this package.')}</p>
+                  ${metadata['Home-page'] ? `
+                    <div class="mt-4 pt-4 border-t border-surface-100 flex items-center gap-2">
+                      <svg class="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                      <a href="${esc(metadata['Home-page'])}" target="_blank" class="text-brand-600 hover:text-brand-700 text-sm font-medium underline underline-offset-2 break-all">
+                        ${esc(metadata['Home-page'])}
+                      </a>
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+          }
+
+          // Archive Content List (U10)
+          html += `
+            <div class="space-y-3 pt-2">
+              <div class="flex items-center justify-between mb-3">
                 <h3 class="font-semibold text-surface-800">Archive Contents</h3>
-                <span class="text-xs bg-surface-100 text-surface-600 px-2 py-0.5 rounded-full">${files.length} items</span>
+                <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${files.length} items</span>
               </div>
-              <div class="relative min-w-[240px]">
+
+              <div class="relative group">
                 <input 
                   type="text" 
                   id="file-filter" 
-                  placeholder="Search files..." 
+                  placeholder="Filter files by path..." 
                   value="${esc(state.filter)}"
-                  class="w-full pl-9 pr-4 py-2 text-sm bg-white border border-surface-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+                  class="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-surface-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all shadow-sm group-hover:border-surface-300"
                 >
-                <div class="absolute left-3 top-2.5 text-surface-400">
+                <div class="absolute left-3.5 top-3 text-surface-400 group-hover:text-brand-500 transition-colors">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
               </div>
-            </div>
 
-            <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white">
-              <table class="min-w-full text-sm">
-                <thead>
-                  <tr class="bg-surface-50">
-                    <th class="sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200">Path</th>
-                    <th class="sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 w-32">Size</th>
-                  </tr>
-                </thead>
-                <tbody>
-        `;
-
-        if (filteredFiles.length === 0) {
-          html += `
-            <tr>
-              <td colspan="2" class="px-4 py-8 text-center text-surface-400 italic">
-                ${files.length === 0 ? 'Archive is empty' : 'No files matching "' + esc(state.filter) + '"'}
-              </td>
-            </tr>
+              <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm bg-white">
+                <table class="min-w-full text-sm">
+                  <thead>
+                    <tr class="bg-surface-50/50">
+                      <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200">File Path</th>
+                      <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 w-32">Size</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-surface-100">
           `;
-        } else {
-          // B7: Limit rendering for extremely large file lists to prevent DOM freeze
-          const limit = 500;
-          const displayFiles = filteredFiles.slice(0, limit);
-          
-          displayFiles.forEach(f => {
+
+          if (filteredFiles.length === 0) {
             html += `
-              <tr class="${f.dir ? 'bg-surface-50/30' : ''} even:bg-surface-50/50 hover:bg-brand-50/50 transition-colors group">
-                <td class="px-4 py-2 text-surface-700 border-b border-surface-100 font-mono text-[13px] break-all">
-                  <div class="flex items-center gap-2">
-                    ${f.dir 
-                      ? '<svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"></path></svg>'
-                      : '<svg class="w-4 h-4 text-surface-400 group-hover:text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>'
-                    }
-                    <span>${esc(f.name)}</span>
+              <tr>
+                <td colspan="2" class="px-4 py-12 text-center">
+                  <div class="text-surface-400 mb-1">
+                    <svg class="w-10 h-10 mx-auto opacity-20 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    ${files.length === 0 ? 'This wheel archive is empty.' : 'No files matching "'+esc(state.filter)+'"'}
                   </div>
                 </td>
-                <td class="px-4 py-2 text-surface-500 border-b border-surface-100 text-right font-mono text-xs whitespace-nowrap">
-                  ${f.dir ? '-' : formatSize(f.size)}
-                </td>
               </tr>
             `;
-          });
+          } else {
+            // B7: Pagination/Truncation for large archives
+            const limit = 500;
+            const displayFiles = filteredFiles.slice(0, limit);
+            
+            displayFiles.forEach(f => {
+              html += `
+                <tr class="${f.dir ? 'bg-surface-50/30' : ''} hover:bg-brand-50/50 transition-colors group cursor-default">
+                  <td class="px-4 py-2.5 text-surface-700 font-mono text-[13px] break-all">
+                    <div class="flex items-center gap-2.5">
+                      ${f.dir 
+                        ? '<svg class="w-4 h-4 text-amber-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"></path></svg>'
+                        : '<svg class="w-4 h-4 text-surface-300 group-hover:text-brand-500 flex-shrink-0 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>'
+                      }
+                      <span class="${f.dir ? 'font-medium' : ''}">${esc(f.name)}</span>
+                    </div>
+                  </td>
+                  <td class="px-4 py-2.5 text-surface-500 text-right font-mono text-xs whitespace-nowrap">
+                    ${f.dir ? '-' : formatSize(f.size)}
+                  </td>
+                </tr>
+              `;
+            });
 
-          if (filteredFiles.length > limit) {
-            html += `
-              <tr class="bg-surface-50">
-                <td colspan="2" class="px-4 py-3 text-center text-surface-500 text-xs italic">
-                  Showing first ${limit} of ${filteredFiles.length} files. Use search to find specific files.
-                </td>
-              </tr>
-            `;
-          }
-        }
-
-        html += `
-                </tbody>
-              </table>
-            </div>
-          </div>
-        `;
-
-        html += '</div>';
-
-        h.render(html);
-
-        // Bind filter event
-        const input = h.getMountEl().querySelector('#file-filter');
-        if (input) {
-          input.addEventListener('input', (e) => {
-            h.setState('filter', e.target.value);
-            this.renderUI(h);
-            // Refocus input since render() might reconstruct the DOM
-            const newInput = h.getMountEl().querySelector('#file-filter');
-            if (newInput) {
-              newInput.focus();
-              newInput.setSelectionRange(e.target.value.length, e.target.value.length);
+            if (filteredFiles.length > limit) {
+              html += `
+                <tr class="bg-surface-50">
+                  <td colspan="2" class="px-4 py-4 text-center text-surface-500 text-xs italic">
+                    Showing first ${limit} of ${filteredFiles.length} items. Use the search box to find specific entries.
+                  </td>
+                </tr>
+              `;
             }
-          });
+          }
+
+          html += `
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `;
+
+          html += '</div>';
+
+          h.render(html);
+
+          // Re-bind search with cursor positioning fix
+          const input = h.getMountEl().querySelector('#file-filter');
+          if (input) {
+            input.addEventListener('input', (e) => {
+              const val = e.target.value;
+              h.setState('filter', val);
+              _renderUI(h);
+              const newInput = h.getMountEl().querySelector('#file-filter');
+              if (newInput) {
+                newInput.focus();
+                newInput.setSelectionRange(val.length, val.length);
+              }
+            });
+          }
         }
       }
     });
