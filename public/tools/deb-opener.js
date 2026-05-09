@@ -3,14 +3,18 @@
 
   /**
    * OmniOpener - .deb (Debian Package) Tool
-   * Robust AR/TAR parsing, metadata extraction, and hex analysis.
+   * Robust AR/TAR parsing, metadata extraction, and security analysis.
    */
 
+  // --- Helpers ---
   function esc(str) {
     if (str === null || str === undefined) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   function formatSize(bytes) {
@@ -22,7 +26,8 @@
   }
 
   function calculateEntropy(data) {
-    const freq = new Array(256).fill(0);
+    if (data.length === 0) return 0;
+    const freq = new Uint32Array(256);
     for (let i = 0; i < data.length; i++) freq[data[i]]++;
     let entropy = 0;
     const len = data.length;
@@ -57,7 +62,7 @@
   }
 
   /**
-   * Basic AR Parser
+   * AR Parser - Deb files are AR archives
    */
   function parseAr(buffer) {
     const bytes = new Uint8Array(buffer);
@@ -87,13 +92,13 @@
       });
 
       offset += 60 + size;
-      if (offset % 2 !== 0) offset++; // Padding byte if size is odd
+      if (offset % 2 !== 0) offset++; // Padding byte
     }
     return members;
   }
 
   /**
-   * Basic TAR Parser (for control.tar.gz)
+   * TAR Parser - Used for control.tar.gz and data.tar.gz
    */
   function parseTar(buffer) {
     const bytes = new Uint8Array(buffer);
@@ -103,13 +108,20 @@
 
     while (offset + 512 <= bytes.length) {
       const header = bytes.subarray(offset, offset + 512);
+      // Check for end of archive (two empty blocks)
       if (header[0] === 0) {
         if (offset + 1024 <= bytes.length && bytes[offset + 512] === 0) break;
         offset += 512; continue;
       }
 
       const name = decoder.decode(header.subarray(0, 100)).split('\0')[0];
-      const size = parseInt(decoder.decode(header.subarray(124, 136)).trim(), 8) || 0;
+      const size = parseInt(decoder.decode(header.subarray(124, 136)).trim(), 8);
+      
+      if (isNaN(size)) {
+        offset += 512;
+        continue;
+      }
+
       const type = String.fromCharCode(header[156]);
       const data = bytes.subarray(offset + 512, offset + 512 + size);
 
@@ -139,75 +151,106 @@
   }
 
   window.initTool = function (toolConfig, mountEl) {
+    let pakoPromise = null;
+
+    function loadPako(h) {
+      if (typeof pako !== 'undefined') return Promise.resolve();
+      if (pakoPromise) return pakoPromise;
+      pakoPromise = new Promise((resolve, reject) => {
+        h.loadScripts(['https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js'], () => {
+          if (typeof pako !== 'undefined') resolve();
+          else reject(new Error('Failed to load pako library'));
+        });
+      });
+      return pakoPromise;
+    }
+
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
       onInit: function (h) {
-        h.loadScripts([
-          'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js'
-        ]);
+        loadPako(h).catch(console.error);
       },
       onFile: async function _onFile(file, content, h) {
-        h.showLoading('Analyzing Debian package...');
+        h.showLoading('Parsing Debian package...');
 
         try {
-          const buffer = content;
-          const members = parseAr(buffer);
-          
+          if (!(content instanceof ArrayBuffer)) {
+            throw new Error('Expected ArrayBuffer for binary file');
+          }
+
+          const members = parseAr(content);
           let packageMeta = null;
           let debBinaryVersion = 'Unknown';
+          let innerFiles = [];
 
-          // Extract metadata from control.tar.gz
+          // Process AR members
           for (const member of members) {
             if (member.name === 'debian-binary') {
               debBinaryVersion = new TextDecoder().decode(member.data).trim();
             }
-            if (member.name === 'control.tar.gz' || member.name === 'control.tar') {
+
+            // Extract control metadata
+            if (member.name.startsWith('control.tar')) {
+              await loadPako(h);
               let tarData = member.data;
               if (member.name.endsWith('.gz')) {
-                if (typeof pako === 'undefined') {
-                  // Wait a bit if pako is still loading
-                  await new Promise(r => setTimeout(r, 200));
-                }
-                if (typeof pako !== 'undefined') {
-                  try {
-                    tarData = pako.ungzip(member.data);
-                  } catch (e) {
-                    console.error('Failed to ungzip control.tar.gz', e);
-                  }
+                try {
+                  tarData = pako.ungzip(member.data);
+                } catch (e) {
+                  console.error('Failed to ungzip control', e);
                 }
               }
               
               const tarFiles = parseTar(tarData.buffer.slice(tarData.byteOffset, tarData.byteOffset + tarData.byteLength));
-              const controlFile = tarFiles.find(f => f.name.includes('control') && !f.name.includes('control.'));
+              const controlFile = tarFiles.find(f => f.name === 'control' || f.name.endsWith('/control'));
               if (controlFile) {
                 packageMeta = parseControlFile(new TextDecoder().decode(controlFile.data));
               }
             }
+
+            // List data files if uncompressed or gz
+            if (member.name.startsWith('data.tar')) {
+              if (member.name.endsWith('.gz')) {
+                try {
+                  await loadPako(h);
+                  const unzipped = pako.ungzip(member.data);
+                  const dataFiles = parseTar(unzipped.buffer.slice(unzipped.byteOffset, unzipped.byteOffset + unzipped.byteLength));
+                  innerFiles = innerFiles.concat(dataFiles.map(f => ({ ...f, origin: member.name })));
+                } catch (e) {
+                  console.warn('Could not decompress data.tar.gz', e);
+                }
+              } else if (member.name === 'data.tar') {
+                 const dataFiles = parseTar(member.data.buffer.slice(member.data.byteOffset, member.data.byteOffset + member.data.byteLength));
+                 innerFiles = innerFiles.concat(dataFiles.map(f => ({ ...f, origin: member.name })));
+              }
+            }
           }
 
-          // Compute Hash
-          const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+          // Security & Analysis
+          const hashBuffer = await crypto.subtle.digest('SHA-256', content);
           const hashHex = Array.from(new Uint8Array(hashBuffer))
             .map(b => b.toString(16).padStart(2, '0')).join('');
 
-          // Entropy and Hex
-          const entropy = calculateEntropy(new Uint8Array(buffer));
-          const hexDump = generateHexDump(buffer.slice(0, 4096));
+          const entropy = calculateEntropy(new Uint8Array(content));
+          const hexDump = generateHexDump(content.slice(0, 4096));
 
           h.setState({
+            file,
             members,
+            innerFiles,
             packageMeta,
             debBinaryVersion,
             hashHex,
             entropy,
             hexDump,
-            file,
-            searchTerm: ''
+            searchTerm: '',
+            view: 'archive' // 'archive' or 'security'
           });
 
-          renderDeb(h);
+          _render(h);
         } catch (err) {
-          h.showError('Could not parse DEB file', err.message);
+          console.error(err);
+          h.showError('Could not open deb file', 'The file might be corrupted or in an unsupported format. ' + err.message);
         }
       },
       actions: [
@@ -222,186 +265,245 @@
           }
         },
         {
-          label: '📥 Download DEB',
-          id: 'dl',
+          label: '📥 Download',
+          id: 'download',
           onClick: function (h) {
             const state = h.getState();
             if (state.file && state.content) {
-              h.download(state.file.name, state.content, 'application/vnd.debian.binary-package');
+              h.download(state.file.name, state.content);
             }
           }
         }
       ],
       onDestroy: function () {
-        // Clean up any resources if necessary
+        // No object URLs to revoke in this tool
       }
     });
-  };
 
-  function renderDeb(h) {
-    const state = h.getState();
-    const { file, members, packageMeta, hashHex, entropy, hexDump, searchTerm } = state;
+    function _render(h) {
+      const state = h.getState();
+      const { file, members, innerFiles, packageMeta, hashHex, entropy, hexDump, searchTerm, view } = state;
 
-    const filteredMembers = searchTerm 
-      ? members.filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()))
-      : members;
+      const filteredMembers = members.filter(m => 
+        m.name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      
+      const filteredInner = innerFiles.filter(f => 
+        f.name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
 
-    const html = `
-      <div class="p-6 space-y-6">
-        <!-- U1. File Info Bar -->
-        <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">
-          <span class="font-semibold text-surface-800">${esc(file.name)}</span>
-          <span class="text-surface-300">|</span>
-          <span>${formatSize(file.size)}</span>
-          <span class="text-surface-300">|</span>
-          <span class="text-surface-500">.deb file</span>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <!-- Package Summary Card -->
-          <div class="lg:col-span-2 space-y-6">
-            <div class="rounded-xl border border-surface-200 p-5 bg-white shadow-sm">
-              <div class="flex items-start justify-between mb-4">
-                <div>
-                  <h2 class="text-xl font-bold text-surface-900">${esc(packageMeta?.Package || 'Unknown Package')}</h2>
-                  <p class="text-sm text-surface-500">Version: ${esc(packageMeta?.Version || 'N/A')} • Architecture: ${esc(packageMeta?.Architecture || 'N/A')}</p>
-                </div>
-                <span class="px-2.5 py-1 rounded-full bg-brand-100 text-brand-700 text-xs font-bold uppercase tracking-wider">
-                  DEB v${esc(state.debBinaryVersion)}
-                </span>
-              </div>
-              
-              <div class="space-y-4">
-                <p class="text-sm text-surface-700 leading-relaxed">
-                  ${esc(packageMeta?.Description?.split('\n')[0] || 'No description available.')}
-                </p>
-                
-                <div class="grid grid-cols-2 gap-4 text-xs">
-                  <div class="p-3 bg-surface-50 rounded-lg">
-                    <span class="block text-surface-400 mb-1 uppercase font-bold tracking-tighter">Maintainer</span>
-                    <span class="text-surface-800 truncate block font-medium" title="${esc(packageMeta?.Maintainer || '')}">${esc(packageMeta?.Maintainer || 'Unknown')}</span>
-                  </div>
-                  <div class="p-3 bg-surface-50 rounded-lg">
-                    <span class="block text-surface-400 mb-1 uppercase font-bold tracking-tighter">Section</span>
-                    <span class="text-surface-800 font-medium">${esc(packageMeta?.Section || 'Unknown')}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- AR Members Table -->
-            <div class="space-y-3">
-              <div class="flex items-center justify-between">
-                <h3 class="font-semibold text-surface-800 flex items-center gap-2">
-                  Archive Members
-                  <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-normal">${members.length}</span>
-                </h3>
-                <div class="relative w-48">
-                  <input type="text" id="deb-search" placeholder="Filter members..." 
-                         value="${esc(searchTerm)}"
-                         class="w-full pl-8 pr-3 py-1.5 text-xs border border-surface-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none transition-all">
-                  <span class="absolute left-2.5 top-2 text-surface-400">🔍</span>
-                </div>
-              </div>
-
-              <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm">
-                <table class="min-w-full text-sm">
-                  <thead class="bg-surface-50 border-b border-surface-200">
-                    <tr>
-                      <th class="px-4 py-3 text-left font-semibold text-surface-700 uppercase text-[10px] tracking-wider">Member Name</th>
-                      <th class="px-4 py-3 text-right font-semibold text-surface-700 uppercase text-[10px] tracking-wider w-24">Size</th>
-                      <th class="px-4 py-3 text-right font-semibold text-surface-700 uppercase text-[10px] tracking-wider w-32">Modified</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-surface-100">
-                    ${filteredMembers.map(m => `
-                      <tr class="even:bg-surface-50/30 hover:bg-brand-50 transition-colors group">
-                        <td class="px-4 py-2.5 font-mono text-xs text-surface-700 flex items-center gap-2">
-                          <span class="text-surface-400 group-hover:text-brand-500">📦</span>
-                          ${esc(m.name)}
-                        </td>
-                        <td class="px-4 py-2.5 text-right font-mono text-xs text-surface-500 whitespace-nowrap">
-                          ${formatSize(m.size)}
-                        </td>
-                        <td class="px-4 py-2.5 text-right text-xs text-surface-400 whitespace-nowrap">
-                          ${m.timestamp ? new Date(m.timestamp * 1000).toLocaleDateString() : 'N/A'}
-                        </td>
-                      </tr>
-                    `).join('')}
-                    ${filteredMembers.length === 0 ? `
-                      <tr><td colspan="3" class="px-4 py-8 text-center text-surface-400 italic">No members found matching your search.</td></tr>
-                    ` : ''}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+      const html = `
+        <div class="p-6 max-w-7xl mx-auto space-y-6">
+          
+          <!-- U1. File Info Bar -->
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">
+            <span class="font-semibold text-surface-800">${esc(file.name)}</span>
+            <span class="text-surface-300">|</span>
+            <span>${formatSize(file.size)}</span>
+            <span class="text-surface-300">|</span>
+            <span class="text-surface-500">Debian Package</span>
           </div>
 
-          <!-- Sidebar: Analysis -->
-          <div class="space-y-6">
-            <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm space-y-4">
-              <h3 class="text-xs font-bold text-surface-400 uppercase tracking-widest">Security Analysis</h3>
-              
-              <div class="space-y-4">
-                <div>
-                  <label class="block text-[10px] font-bold text-surface-400 uppercase mb-1">SHA-256 Hash</label>
-                  <div class="p-2 bg-surface-50 rounded border border-surface-100 break-all font-mono text-[10px] text-surface-600 relative group">
-                    ${hashHex}
-                    <button id="copy-hash-btn" class="absolute right-1 top-1 p-1 bg-white border border-surface-200 rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                      📋
-                    </button>
+          <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            
+            <!-- Sidebar: Package Info -->
+            <div class="lg:col-span-1 space-y-6">
+              <div class="rounded-xl border border-surface-200 bg-white p-5 shadow-sm space-y-4">
+                <div class="flex items-center justify-between">
+                  <h3 class="font-bold text-surface-900 text-lg">${esc(packageMeta?.Package || 'Unknown')}</h3>
+                  <span class="text-[10px] font-bold bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full uppercase">v${esc(state.debBinaryVersion)}</span>
+                </div>
+                
+                <div class="space-y-3 text-sm">
+                  <div>
+                    <label class="block text-[10px] font-bold text-surface-400 uppercase tracking-tighter">Version</label>
+                    <div class="text-surface-700 font-medium">${esc(packageMeta?.Version || 'N/A')}</div>
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-bold text-surface-400 uppercase tracking-tighter">Architecture</label>
+                    <div class="text-surface-700 font-medium">${esc(packageMeta?.Architecture || 'N/A')}</div>
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-bold text-surface-400 uppercase tracking-tighter">Maintainer</label>
+                    <div class="text-surface-700 break-words leading-tight">${esc(packageMeta?.Maintainer || 'Unknown')}</div>
                   </div>
                 </div>
 
-                <div>
-                  <label class="block text-[10px] font-bold text-surface-400 uppercase mb-1">Shannon Entropy</label>
-                  <div class="flex items-center gap-3">
-                    <div class="flex-1 h-2 bg-surface-100 rounded-full overflow-hidden">
-                      <div class="h-full bg-brand-500" style="width: ${(entropy / 8) * 100}%"></div>
-                    </div>
-                    <span class="text-sm font-mono text-surface-700">${entropy.toFixed(4)}</span>
-                  </div>
-                  <p class="text-[10px] text-surface-400 mt-1 italic">
-                    ${entropy > 7.5 ? 'Highly compressed or encrypted.' : 'Likely contains uncompressed data.'}
+                <div class="pt-4 border-t border-surface-100">
+                  <p class="text-xs text-surface-500 leading-relaxed italic">
+                    ${esc(packageMeta?.Description?.split('\n')[0] || 'No description available.')}
                   </p>
                 </div>
               </div>
+
+              <!-- View Switcher -->
+              <div class="flex flex-col gap-2">
+                <button id="view-archive" class="w-full px-4 py-2 rounded-lg text-sm font-medium transition-all ${view === 'archive' ? 'bg-brand-600 text-white shadow-md' : 'bg-surface-50 text-surface-600 hover:bg-surface-100'}">
+                  📦 Archive Contents
+                </button>
+                <button id="view-security" class="w-full px-4 py-2 rounded-lg text-sm font-medium transition-all ${view === 'security' ? 'bg-brand-600 text-white shadow-md' : 'bg-surface-50 text-surface-600 hover:bg-surface-100'}">
+                  🛡️ Security Analysis
+                </button>
+              </div>
             </div>
 
-            <!-- Hex Dump Preview -->
-            <div class="rounded-xl border border-surface-200 overflow-hidden shadow-sm">
-              <div class="bg-surface-50 px-4 py-2 border-b border-surface-200 flex justify-between items-center">
-                <span class="text-[10px] font-bold text-surface-500 uppercase tracking-widest">Hex Preview</span>
-              </div>
-              <div class="bg-gray-950 p-4 overflow-x-auto">
-                <pre class="text-[10px] font-mono text-gray-400 leading-tight">${hexDump}</pre>
-              </div>
+            <!-- Main Content Area -->
+            <div class="lg:col-span-3 space-y-6">
+              
+              ${view === 'archive' ? `
+                <!-- SEARCH -->
+                <div class="relative group">
+                  <span class="absolute left-4 top-1/2 -translate-y-1/2 text-surface-400 group-focus-within:text-brand-500 transition-colors">🔍</span>
+                  <input type="text" id="deb-search" placeholder="Search archive members or inner files..." 
+                         value="${esc(searchTerm)}"
+                         class="w-full pl-11 pr-4 py-3 bg-white border border-surface-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all shadow-sm">
+                </div>
+
+                <!-- Archive Members (AR) -->
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <h3 class="font-semibold text-surface-800">Archive Members (AR)</h3>
+                    <span class="text-xs bg-surface-100 text-surface-600 px-2 py-0.5 rounded-full">${members.length} items</span>
+                  </div>
+                  <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white">
+                    <table class="min-w-full text-sm">
+                      <thead class="bg-surface-50 border-b border-surface-200">
+                        <tr>
+                          <th class="px-4 py-3 text-left font-semibold text-surface-700">Name</th>
+                          <th class="px-4 py-3 text-right font-semibold text-surface-700">Size</th>
+                          <th class="px-4 py-3 text-right font-semibold text-surface-700">Modified</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-surface-100">
+                        ${filteredMembers.map(m => `
+                          <tr class="even:bg-surface-50/50 hover:bg-brand-50 transition-colors">
+                            <td class="px-4 py-2.5 font-mono text-xs text-surface-800">${esc(m.name)}</td>
+                            <td class="px-4 py-2.5 text-right font-mono text-xs text-surface-500">${formatSize(m.size)}</td>
+                            <td class="px-4 py-2.5 text-right text-xs text-surface-400">${m.timestamp ? new Date(m.timestamp * 1000).toLocaleDateString() : 'N/A'}</td>
+                          </tr>
+                        `).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- Inner Files (Extracted from data.tar.gz) -->
+                ${innerFiles.length > 0 ? `
+                  <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                      <h3 class="font-semibold text-surface-800">Installed Files Preview</h3>
+                      <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${innerFiles.length} items</span>
+                    </div>
+                    <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white max-h-[500px] overflow-y-auto">
+                      <table class="min-w-full text-sm">
+                        <thead class="sticky top-0 bg-white/95 backdrop-blur z-10 border-b border-surface-200 shadow-sm">
+                          <tr>
+                            <th class="px-4 py-3 text-left font-semibold text-surface-700">Path</th>
+                            <th class="px-4 py-3 text-right font-semibold text-surface-700">Size</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-surface-100">
+                          ${filteredInner.map(f => `
+                            <tr class="even:bg-surface-50/50 hover:bg-brand-50 transition-colors">
+                              <td class="px-4 py-2 font-mono text-xs text-surface-700">
+                                <span class="text-surface-300 mr-1">${f.type === '5' ? '📁' : '📄'}</span>
+                                ${esc(f.name)}
+                              </td>
+                              <td class="px-4 py-2 text-right font-mono text-xs text-surface-500">${formatSize(f.size)}</td>
+                            </tr>
+                          `).join('')}
+                          ${filteredInner.length === 0 ? `<tr><td colspan="2" class="p-8 text-center text-surface-400 italic">No files match your search.</td></tr>` : ''}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ` : `
+                  <div class="p-8 rounded-xl border border-dashed border-surface-300 text-center text-surface-500 bg-surface-50">
+                    <p>Installed files (data.tar) are compressed or in an unsupported format (.xz/.zst) for browser preview.</p>
+                  </div>
+                `}
+
+              ` : `
+                <!-- Security View -->
+                <div class="grid grid-cols-1 gap-6">
+                  
+                  <!-- Hash Card -->
+                  <div class="rounded-xl border border-surface-200 p-5 bg-white shadow-sm space-y-4">
+                    <div class="flex items-center justify-between">
+                      <h3 class="font-bold text-surface-800">File Signature</h3>
+                      <button id="copy-hash" class="text-xs text-brand-600 font-semibold hover:text-brand-700">📋 Copy Hash</button>
+                    </div>
+                    <div>
+                      <label class="block text-[10px] font-bold text-surface-400 uppercase mb-1">SHA-256</label>
+                      <div class="p-3 bg-surface-900 rounded-lg font-mono text-xs text-brand-300 break-all leading-relaxed">
+                        ${hashHex}
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Entropy Card -->
+                  <div class="rounded-xl border border-surface-200 p-5 bg-white shadow-sm space-y-4">
+                    <h3 class="font-bold text-surface-800">Data Density (Entropy)</h3>
+                    <div class="space-y-4">
+                      <div class="flex items-center gap-4">
+                        <div class="flex-1 h-3 bg-surface-100 rounded-full overflow-hidden">
+                          <div class="h-full bg-brand-500 transition-all duration-1000" style="width: ${(entropy / 8) * 100}%"></div>
+                        </div>
+                        <span class="text-lg font-mono font-bold text-surface-900">${entropy.toFixed(4)}</span>
+                      </div>
+                      <div class="p-3 rounded-lg ${entropy > 7.5 ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-green-50 text-green-700 border border-green-100'} text-xs">
+                        <strong>Result:</strong> ${entropy > 7.5 ? 'High entropy detected. This file is likely compressed or contains encrypted binary data.' : 'Moderate entropy. File contains significant uncompressed or structured data blocks.'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Hex Preview -->
+                  <div class="rounded-xl border border-surface-200 overflow-hidden shadow-sm">
+                    <div class="bg-surface-50 px-4 py-2 border-b border-surface-200 flex justify-between items-center">
+                      <span class="text-xs font-bold text-surface-500 uppercase tracking-widest">Hexadecimal Preview (First 4KB)</span>
+                    </div>
+                    <div class="bg-gray-950 p-4 overflow-x-auto">
+                      <pre class="text-[11px] font-mono text-gray-400 leading-relaxed">${esc(hexDump)}</pre>
+                    </div>
+                  </div>
+                </div>
+              `}
+
             </div>
           </div>
         </div>
-      </div>
-    `;
+      `;
 
-    h.render(html);
+      h.render(html);
 
-    // Event listeners
-    const searchInput = document.getElementById('deb-search');
-    if (searchInput) {
-      searchInput.addEventListener('input', (e) => {
-        h.setState('searchTerm', e.target.value);
-        renderDeb(h);
-        const input = document.getElementById('deb-search');
-        if (input) {
-          input.focus();
-          input.setSelectionRange(input.value.length, input.value.length);
-        }
+      // --- Event Listeners ---
+      const search = document.getElementById('deb-search');
+      if (search) {
+        search.addEventListener('input', (e) => {
+          h.setState('searchTerm', e.target.value);
+          _render(h);
+          const s = document.getElementById('deb-search');
+          if (s) {
+            s.focus();
+            s.setSelectionRange(s.value.length, s.value.length);
+          }
+        });
+      }
+
+      document.getElementById('view-archive')?.addEventListener('click', () => {
+        h.setState('view', 'archive');
+        _render(h);
+      });
+
+      document.getElementById('view-security')?.addEventListener('click', () => {
+        h.setState('view', 'security');
+        _render(h);
+      });
+
+      document.getElementById('copy-hash')?.addEventListener('click', (e) => {
+        h.copyToClipboard(hashHex, e.target);
       });
     }
-
-    const copyHashBtn = document.getElementById('copy-hash-btn');
-    if (copyHashBtn) {
-      copyHashBtn.onclick = (e) => h.copyToClipboard(hashHex, e.target);
-    }
-  }
+  };
 
 })();
