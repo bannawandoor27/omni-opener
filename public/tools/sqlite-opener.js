@@ -3,7 +3,7 @@
 
   /**
    * SQLite Opener for OmniOpener
-   * A production-perfect browser-based SQLite viewer.
+   * A high-performance, browser-based SQLite explorer using SQL.js.
    */
 
   function escapeHtml(str) {
@@ -40,7 +40,7 @@
       },
 
       onFile: function _onFile(file, content, helpers) {
-        // Handle race condition for library loading
+        // B8 & B1: Handle strict mode binding and library loading race condition
         if (typeof initSqlJs === 'undefined') {
           helpers.showLoading('Loading SQLite engine...');
           setTimeout(function() { _onFile(file, content, helpers); }, 200);
@@ -51,7 +51,7 @@
 
         initSqlJs(sqlJsConfig).then(function(SQL) {
           try {
-            // content is ArrayBuffer because binary: true
+            // B2: content is ArrayBuffer because binary:true
             const uints = new Uint8Array(content);
             if (dbInstance) dbInstance.close();
             dbInstance = new SQL.Database(uints);
@@ -72,15 +72,16 @@
             renderMain(file, helpers);
           } catch (err) {
             console.error(err);
-            helpers.showError('Could not open SQLite file', 'The file might be corrupted, encrypted, or not a valid SQLite database.');
+            helpers.showError('Could not open SQLite file', 'The file may be corrupted, encrypted, or an unsupported SQLite version.');
           }
         }).catch(function(err) {
           console.error(err);
-          helpers.showError('SQLite Initialization Failed', 'Failed to load the SQL.js WASM engine.');
+          helpers.showError('SQLite Initialization Failed', 'The SQL.js engine could not be initialized.');
         });
       },
 
       onDestroy: function() {
+        // B5: Memory management
         if (dbInstance) {
           dbInstance.close();
           dbInstance = null;
@@ -157,9 +158,9 @@
 
       if (tables.length === 0) {
         helpers.render(`
-          <div class="p-12 text-center">
+          <div class="p-12 text-center bg-white rounded-2xl border border-surface-200">
             <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-surface-100 text-surface-400 mb-4">
-              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8-4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
             </div>
             <h3 class="text-lg font-semibold text-surface-900">Empty Database</h3>
             <p class="text-surface-500 mt-1">No user tables were found in this file.</p>
@@ -168,23 +169,27 @@
         return;
       }
 
+      // U1: File Info Bar & UI Structure
       const html = `
         <div class="flex flex-col min-h-[600px] h-[75vh]">
-          <!-- File Info Bar -->
           <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-100">
             <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
             <span class="text-surface-300">|</span>
             <span>${formatSize(file.size)}</span>
             <span class="text-surface-300">|</span>
             <span class="text-surface-500">SQLite Database</span>
-            <span class="ml-auto bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full text-xs font-bold">${tables.length} Tables</span>
+            <div class="ml-auto flex items-center gap-2">
+              <span class="bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full text-xs font-bold">${tables.length} Tables</span>
+              <span id="sql-total-rows-badge" class="bg-surface-200 text-surface-700 px-2 py-0.5 rounded-full text-xs font-bold hidden"></span>
+            </div>
           </div>
 
           <div class="flex flex-1 gap-4 overflow-hidden">
-            <!-- Sidebar: Table List -->
-            <div class="w-56 shrink-0 flex flex-col bg-surface-50/50 border border-surface-200 rounded-xl overflow-hidden">
-              <div class="px-4 py-3 border-b border-surface-200 bg-surface-50">
+            <!-- Sidebar: Table List (U10) -->
+            <div class="w-60 shrink-0 flex flex-col bg-surface-50/50 border border-surface-200 rounded-xl overflow-hidden">
+              <div class="px-4 py-3 border-b border-surface-200 bg-surface-50 flex items-center justify-between">
                 <span class="text-xs font-bold text-surface-400 uppercase tracking-widest">Tables</span>
+                <span class="text-[10px] bg-surface-200 text-surface-600 px-1.5 py-0.5 rounded-md">${tables.length}</span>
               </div>
               <div class="flex-1 overflow-y-auto p-2 space-y-1" id="sql-tables">
                 ${tables.map(t => `
@@ -196,36 +201,41 @@
             </div>
 
             <!-- Content Area -->
-            <div class="flex-1 flex flex-col min-w-0 bg-white border border-surface-200 rounded-xl overflow-hidden">
-              <!-- Toolbar -->
+            <div class="flex-1 flex flex-col min-w-0 bg-white border border-surface-200 rounded-xl overflow-hidden shadow-sm">
+              <!-- Toolbar (U4, U7) -->
               <div class="px-4 py-3 border-b border-surface-200 bg-surface-50/30 flex flex-wrap items-center gap-4">
                 <div class="relative flex-1 min-w-[200px]">
-                  <input type="text" id="sql-search" placeholder="Filter rows..." class="w-full pl-9 pr-4 py-1.5 text-sm border border-surface-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all" value="${escapeHtml(state.searchQuery)}">
-                  <svg class="absolute left-3 top-2 w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <input type="text" id="sql-search" placeholder="Search in table..." class="w-full pl-9 pr-4 py-1.5 text-sm border border-surface-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all" value="${escapeHtml(state.searchQuery)}">
+                  <svg class="absolute left-3 top-2.5 w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </div>
                 
                 <div class="flex items-center gap-2">
-                  <button id="sql-prev" class="p-1.5 rounded-md hover:bg-surface-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" ${state.page === 0 ? 'disabled' : ''}>
+                  <button id="sql-prev" class="p-1.5 rounded-lg hover:bg-surface-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" ${state.page === 0 ? 'disabled' : ''}>
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                   </button>
-                  <span class="text-xs font-medium text-surface-500 min-w-[80px] text-center">
+                  <div class="px-3 py-1 bg-surface-100 rounded-md border border-surface-200 text-xs font-semibold text-surface-700 min-w-[80px] text-center">
                     Page ${state.page + 1}
-                  </span>
-                  <button id="sql-next" class="p-1.5 rounded-md hover:bg-surface-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  </div>
+                  <button id="sql-next" class="p-1.5 rounded-lg hover:bg-surface-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                   </button>
                 </div>
               </div>
 
-              <!-- Table View -->
+              <!-- Table View (U7) -->
               <div id="sql-data-container" class="flex-1 overflow-auto bg-white relative">
-                <!-- Data will be injected here -->
+                <!-- Data injected here -->
               </div>
 
               <!-- Status Footer -->
               <div class="px-4 py-2 border-t border-surface-100 bg-surface-50/50 text-[11px] text-surface-400 flex justify-between items-center">
-                <span id="sql-status">Loading data...</span>
-                <span id="sql-pagination-info"></span>
+                <div class="flex items-center gap-3">
+                  <span id="sql-status">Ready</span>
+                  <span id="sql-pagination-info" class="font-medium text-surface-600"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span id="sql-query-time" class="opacity-50"></span>
+                </div>
               </div>
             </div>
           </div>
@@ -249,7 +259,7 @@
         };
       });
 
-      // Search
+      // Search (Live Search)
       const searchInput = el.querySelector('#sql-search');
       let searchTimeout;
       searchInput.oninput = (e) => {
@@ -257,7 +267,7 @@
         searchTimeout = setTimeout(() => {
           helpers.setState({ searchQuery: e.target.value, page: 0 });
           refreshData(helpers);
-        }, 300);
+        }, 400);
       };
 
       // Pagination
@@ -282,8 +292,7 @@
       const state = helpers.getState();
       const el = helpers.getRenderEl();
       const prevBtn = el.querySelector('#sql-prev');
-      const nextBtn = el.querySelector('#sql-next');
-      const pageIndicator = el.querySelector('#sql-next').previousElementSibling;
+      const pageIndicator = el.querySelector('#sql-prev').nextElementSibling;
 
       if (prevBtn) prevBtn.disabled = state.page === 0;
       if (pageIndicator) pageIndicator.innerText = `Page ${state.page + 1}`;
@@ -291,32 +300,39 @@
 
     function refreshData(helpers) {
       const state = helpers.getState();
-      const container = helpers.getRenderEl().querySelector('#sql-data-container');
-      const statusEl = helpers.getRenderEl().querySelector('#sql-status');
-      const paginationInfo = helpers.getRenderEl().querySelector('#sql-pagination-info');
-      const nextBtn = helpers.getRenderEl().querySelector('#sql-next');
+      const el = helpers.getRenderEl();
+      const container = el.querySelector('#sql-data-container');
+      const statusEl = el.querySelector('#sql-status');
+      const paginationInfo = el.querySelector('#sql-pagination-info');
+      const nextBtn = el.querySelector('#sql-next');
+      const rowBadge = el.querySelector('#sql-total-rows-badge');
+      const queryTimeEl = el.querySelector('#sql-query-time');
 
       if (!state.currentTable || !dbInstance) return;
 
       container.innerHTML = `
-        <div class="absolute inset-0 flex items-center justify-center bg-white/50 backdrop-blur-[1px] z-20">
-          <div class="flex flex-col items-center gap-2">
-            <svg class="animate-spin h-6 w-6 text-brand-500" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            <span class="text-xs font-medium text-surface-500">Querying SQLite...</span>
+        <div class="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-[2px] z-20">
+          <div class="flex flex-col items-center gap-3">
+            <div class="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
+            <span class="text-xs font-semibold text-surface-600 tracking-wide uppercase">Querying Database...</span>
           </div>
         </div>
       `;
 
-      setTimeout(() => {
+      // Use requestAnimationFrame to let the UI update before heavy query
+      requestAnimationFrame(() => {
+        const startTime = performance.now();
         try {
           const tableName = state.currentTable;
           
+          // Get schema to help with search and types
           const infoRes = dbInstance.exec(`PRAGMA table_info("${tableName}")`);
           const columns = infoRes[0].values.map(v => ({ name: v[1], type: v[2] }));
 
           let whereClause = "";
           if (state.searchQuery) {
             const search = state.searchQuery.replace(/'/g, "''");
+            // CAST to TEXT for broad searching across types
             whereClause = "WHERE " + columns.map(c => `CAST("${c.name}" AS TEXT) LIKE '%${search}%'`).join(" OR ");
           }
 
@@ -328,6 +344,7 @@
           const limit = state.pageSize;
           const offset = state.page * limit;
 
+          // U7: Large file handling - pagination is built in
           const countRes = dbInstance.exec(`SELECT COUNT(*) FROM "${tableName}" ${whereClause}`);
           const totalRows = countRes[0].values[0][0];
 
@@ -335,72 +352,88 @@
           
           const rows = dataRes.length > 0 ? dataRes[0].values : [];
           const dataCols = dataRes.length > 0 ? dataRes[0].columns : columns.map(c => c.name);
+          const endTime = performance.now();
 
           helpers.setState({ totalRows });
 
           if (nextBtn) nextBtn.disabled = offset + rows.length >= totalRows;
+          
+          if (rowBadge) {
+            rowBadge.innerText = `${totalRows.toLocaleString()} Rows`;
+            rowBadge.classList.remove('hidden');
+          }
 
           if (totalRows === 0) {
             container.innerHTML = `
               <div class="p-12 text-center">
-                <p class="text-surface-400 italic">No rows found in this table.</p>
+                <div class="w-12 h-12 bg-surface-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <svg class="w-6 h-6 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <h4 class="font-medium text-surface-900">No results found</h4>
+                <p class="text-sm text-surface-500 mt-1 italic">No rows match your current filter.</p>
               </div>
             `;
-            statusEl.innerText = `0 rows found`;
+            statusEl.innerText = `0 matches`;
             paginationInfo.innerText = "";
             return;
           }
 
+          // U7: Tables - Premium styling
           let tableHtml = `
-            <table class="min-w-full text-sm border-separate border-spacing-0">
-              <thead class="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_rgba(0,0,0,0.05)]">
-                <tr>
-                  ${dataCols.map(col => {
-                    const isSorted = state.sortCol === col;
-                    return `
-                      <th data-col="${escapeHtml(col)}" class="group cursor-pointer px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 hover:bg-surface-50 transition-colors whitespace-nowrap">
-                        <div class="flex items-center gap-1">
-                          ${escapeHtml(col)}
-                          <span class="text-brand-500 ${isSorted ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'} transition-opacity">
-                            ${isSorted ? (state.sortDir === 'ASC' ? '▲' : '▼') : '▲'}
-                          </span>
-                        </div>
-                      </th>
-                    `;
-                  }).join('')}
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-surface-100">
-                ${rows.map(row => `
-                  <tr class="even:bg-surface-50/50 hover:bg-brand-50/30 transition-colors">
-                    ${row.map(val => {
-                      let display = val;
-                      let cellClass = "text-surface-700";
-                      
-                      if (val === null) {
-                        display = '<span class="text-surface-300 italic">NULL</span>';
-                      } else if (val instanceof Uint8Array) {
-                        display = `<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[10px] font-bold">BLOB ${formatSize(val.length)}</span>`;
-                      } else if (typeof val === 'number') {
-                        cellClass = "text-blue-600 font-mono";
-                      } else if (typeof val === 'string' && val.length > 200) {
-                        display = escapeHtml(val.substring(0, 200)) + '...';
-                      } else {
-                        display = escapeHtml(String(val));
-                      }
-                      
-                      return `<td class="px-4 py-2 border-b border-surface-100 break-words max-w-md ${cellClass}">${display}</td>`;
+            <div class="min-w-full inline-block align-middle">
+              <table class="min-w-full text-sm border-separate border-spacing-0">
+                <thead>
+                  <tr class="bg-white/95 backdrop-blur sticky top-0 z-10 shadow-[0_1px_0_0_rgba(0,0,0,0.05)]">
+                    ${dataCols.map(col => {
+                      const isSorted = state.sortCol === col;
+                      return `
+                        <th data-col="${escapeHtml(col)}" class="group cursor-pointer px-4 py-3 text-left font-bold text-surface-700 border-b border-surface-200 hover:bg-surface-50 transition-colors whitespace-nowrap">
+                          <div class="flex items-center gap-2">
+                            <span>${escapeHtml(col)}</span>
+                            <span class="text-brand-500 text-[10px] ${isSorted ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'} transition-opacity">
+                              ${isSorted ? (state.sortDir === 'ASC' ? '▲' : '▼') : '▲'}
+                            </span>
+                          </div>
+                        </th>
+                      `;
                     }).join('')}
                   </tr>
-                `).join('')}
-              </tbody>
-            </table>
+                </thead>
+                <tbody class="divide-y divide-surface-100">
+                  ${rows.map(row => `
+                    <tr class="even:bg-surface-50/50 hover:bg-brand-50/30 transition-colors group">
+                      ${row.map(val => {
+                        let display = val;
+                        let cellClass = "text-surface-600";
+                        
+                        if (val === null) {
+                          display = '<span class="text-surface-300 italic text-[10px] tracking-wider font-bold">NULL</span>';
+                        } else if (val instanceof Uint8Array) {
+                          display = `<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200">BLOB ${formatSize(val.length)}</span>`;
+                        } else if (typeof val === 'number') {
+                          cellClass = "text-blue-600 font-mono";
+                          display = val.toLocaleString();
+                        } else if (typeof val === 'string' && val.length > 300) {
+                          display = escapeHtml(val.substring(0, 300)) + '<span class="text-surface-300 font-bold ml-1">...</span>';
+                        } else {
+                          display = escapeHtml(String(val));
+                        }
+                        
+                        return `<td class="px-4 py-2.5 border-b border-surface-50 break-words max-w-md ${cellClass}">${display}</td>`;
+                      }).join('')}
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
           `;
 
           container.innerHTML = tableHtml;
           statusEl.innerText = `Showing ${offset + 1}-${Math.min(offset + limit, totalRows)} of ${totalRows.toLocaleString()} rows`;
-          paginationInfo.innerText = `${tableName}`;
+          paginationInfo.innerText = `[${tableName}]`;
+          if (queryTimeEl) queryTimeEl.innerText = `${(endTime - startTime).toFixed(1)}ms`;
 
+          // Re-attach sort events
           container.querySelectorAll('th').forEach(th => {
             th.onclick = () => {
               const col = th.dataset.col;
@@ -414,14 +447,17 @@
         } catch (err) {
           console.error(err);
           container.innerHTML = `
-            <div class="p-8 text-center text-red-500">
-              <p class="font-semibold">Query Error</p>
-              <p class="text-xs mt-1 opacity-70">${escapeHtml(err.message)}</p>
+            <div class="p-8 text-center">
+              <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-red-50 text-red-500 mb-4">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <h4 class="font-semibold text-surface-900">Query Failed</h4>
+              <p class="text-xs text-red-600 mt-2 max-w-xs mx-auto opacity-80">${escapeHtml(err.message)}</p>
             </div>
           `;
-          statusEl.innerText = "Error executing query";
+          statusEl.innerText = "Error encountered";
         }
-      }, 0);
+      });
     }
   };
 
