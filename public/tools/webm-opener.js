@@ -1,215 +1,282 @@
 (function() {
   window.initTool = function(toolConfig, mountEl) {
-    var _videoUrl = null;
+    let _videoUrl = null;
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.webm',
       dropLabel: 'Drop a .webm file here',
       binary: true,
       onInit: function(helpers) {
-        // Native browser support for WebM, no extra libraries needed
+        // Native browser support for WebM is sufficient
       },
-      onFile: function(file, content, helpers) {
-        helpers.showLoading('Preparing video...');
-        
-        function formatSize(b) {
-          return b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : b > 1e3 ? (b / 1024).toFixed(0) + ' KB' : b + ' B';
+      onFile: function _onFile(file, content, helpers) {
+        helpers.showLoading('Preparing video player...');
+
+        function formatSize(bytes) {
+          if (bytes === 0) return '0 B';
+          const k = 1024;
+          const sizes = ['B', 'KB', 'MB', 'GB'];
+          const i = Math.floor(Math.log(bytes) / Math.log(k));
+          return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
         try {
+          // Cleanup previous object URL
+          if (_videoUrl) {
+            URL.revokeObjectURL(_videoUrl);
+            _videoUrl = null;
+          }
+
           const blob = new Blob([content], { type: 'video/webm' });
-          const url = URL.createObjectURL(blob);
+          _videoUrl = URL.createObjectURL(blob);
           
-          // Revoke previous URL and track the new one
-          if (_videoUrl) { URL.revokeObjectURL(_videoUrl); }
-          _videoUrl = url;
           helpers.setState('videoBlob', blob);
           helpers.setState('fileName', file.name);
 
-          let warningHtml = '';
-          if (file.size > 20 * 1024 * 1024) {
-            warningHtml = `
-              <div class="mb-4 p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-sm flex items-start gap-3 shadow-sm">
-                <svg class="w-5 h-5 mt-0.5 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                </svg>
-                <div>
-                  <p class="font-semibold">Large video file (${formatSize(file.size)})</p>
-                  <p class="opacity-80">Playing high-resolution WebM files may require significant system resources.</p>
-                </div>
-              </div>
-            `;
-          }
-
           const html = `
             <div class="max-w-5xl mx-auto">
-              <div class="flex items-center gap-3 p-3 bg-surface-50 rounded-lg text-sm text-surface-600 mb-6 border border-surface-100 shadow-sm">
-                <div class="w-8 h-8 flex items-center justify-center bg-brand-100 text-brand-600 rounded-lg font-bold">V</div>
-                <div class="flex flex-col truncate">
-                  <span class="font-medium text-surface-900 truncate">${file.name}</span>
-                  <span class="text-xs text-surface-500">${formatSize(file.size)} · Video/WebM</span>
-                </div>
+              <!-- U1: File Info Bar -->
+              <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-100">
+                <span class="font-semibold text-surface-800">${file.name}</span>
+                <span class="text-surface-300">|</span>
+                <span>${formatSize(file.size)}</span>
+                <span class="text-surface-300">|</span>
+                <span class="text-surface-500">.webm video</span>
               </div>
 
-              ${warningHtml}
-
-              <div class="relative group bg-black rounded-2xl overflow-hidden shadow-2xl ring-1 ring-surface-200 aspect-video flex items-center justify-center">
-                <video id="webm-player" controls class="w-full h-full max-h-[70vh] outline-none">
-                  <source src="${url}" type="video/webm">
-                  <div class="p-8 text-center text-white">
-                    <p class="text-xl mb-2">Unsupported Video</p>
-                    <p class="text-sm opacity-60 text-white/70">Your browser doesn't support WebM playback for this specific encoding.</p>
+              <div class="bg-black rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10 aspect-video flex items-center justify-center relative group">
+                <video id="omni-webm-player" controls class="w-full h-full max-h-[75vh] outline-none">
+                  <source src="${_videoUrl}" type="video/webm">
+                  <div class="p-12 text-center text-white">
+                    <p class="text-xl font-semibold mb-2">Unsupported Encoding</p>
+                    <p class="text-sm opacity-60">Your browser cannot play this specific WebM variant.</p>
                   </div>
                 </video>
-              <div class="mt-4 flex flex-wrap items-center justify-between gap-4 p-4 bg-surface-50 rounded-xl border border-surface-200 shadow-sm">
-                <div class="flex items-center gap-3">
-                  <span class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">Speed</span>
-                  <div class="flex bg-surface-200 p-1 rounded-lg">
-                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="0.5">0.5x</button>
-                    <button class="speed-btn px-2 py-1 text-xs font-medium bg-white shadow-sm rounded transition-colors" data-speed="1">1x</button>
-                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="1.5">1.5x</button>
-                    <button class="speed-btn px-2 py-1 text-xs font-medium rounded hover:bg-white transition-colors" data-speed="2">2x</button>
-                  </div>
-                </div>
-                <div class="flex items-center gap-3 flex-1 max-w-xs">
-                  <span class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">Volume</span>
-                  <input type="range" class="volume-slider flex-1 accent-brand-500 h-1.5 bg-surface-300 rounded-lg appearance-none cursor-pointer" min="0" max="2" step="0.1" value="1">
-                  <span class="volume-value text-xs font-mono text-surface-600 min-w-[4ch]">100%</span>
-                </div>
               </div>
 
-              </div>
+              <!-- Video Metadata & Controls -->
+              <div class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 space-y-6">
+                  <!-- Custom Controls Card -->
+                  <div class="p-5 bg-white border border-surface-200 rounded-xl shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                      <h3 class="font-semibold text-surface-800 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                        Playback Enhancements
+                      </h3>
+                    </div>
+                    
+                    <div class="flex flex-wrap items-center gap-8">
+                      <div class="space-y-2">
+                        <span class="text-[10px] font-bold text-surface-400 uppercase tracking-wider block">Playback Speed</span>
+                        <div class="flex bg-surface-100 p-1 rounded-lg border border-surface-200">
+                          ${[0.5, 1, 1.5, 2].map(s => `<button class="speed-btn px-3 py-1 text-xs font-medium rounded transition-all ${s === 1 ? 'bg-white shadow-sm text-brand-600' : 'hover:bg-white/50 text-surface-600'}" data-speed="${s}">${s}x</button>`).join('')}
+                        </div>
+                      </div>
 
-              <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="p-5 bg-white border border-surface-200 rounded-xl shadow-sm transition-hover hover:shadow-md">
-                  <div class="text-brand-600 mb-3">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                      <div class="flex-1 min-w-[200px] space-y-2">
+                        <div class="flex justify-between items-center">
+                          <span class="text-[10px] font-bold text-surface-400 uppercase tracking-wider">Volume Boost</span>
+                          <span id="volume-val" class="text-xs font-mono text-brand-600 font-bold">100%</span>
+                        </div>
+                        <input type="range" id="volume-boost" class="w-full accent-brand-500 h-1.5 bg-surface-200 rounded-lg appearance-none cursor-pointer" min="0" max="3" step="0.1" value="1">
+                        <p class="text-[10px] text-surface-400">Boost audio up to 300% (experimental)</p>
+                      </div>
+                    </div>
                   </div>
-                  <h3 class="font-bold text-surface-900 mb-2">WebM Format</h3>
-                  <p class="text-sm text-surface-600 leading-relaxed">
-                    An open, royalty-free media container designed for HTML5 video. Typically uses VP8/VP9 video and Opus/Vorbis audio.
-                  </p>
-                </div>
-                
-                <div class="p-5 bg-white border border-surface-200 rounded-xl shadow-sm transition-hover hover:shadow-md">
-                  <div class="text-brand-600 mb-3">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+
+                  <!-- Details Card -->
+                  <div class="p-5 bg-white border border-surface-200 rounded-xl shadow-sm">
+                    <h3 class="font-semibold text-surface-800 mb-4">Video Information</h3>
+                    <div id="video-meta-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      <div class="p-3 bg-surface-50 rounded-lg border border-surface-100">
+                        <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Resolution</div>
+                        <div id="meta-res" class="text-sm font-medium text-surface-700">—</div>
+                      </div>
+                      <div class="p-3 bg-surface-50 rounded-lg border border-surface-100">
+                        <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Duration</div>
+                        <div id="meta-dur" class="text-sm font-medium text-surface-700">—</div>
+                      </div>
+                      <div class="p-3 bg-surface-50 rounded-lg border border-surface-100">
+                        <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">MIME Type</div>
+                        <div class="text-sm font-medium text-surface-700 truncate">video/webm</div>
+                      </div>
+                      <div class="p-3 bg-surface-50 rounded-lg border border-surface-100">
+                        <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Status</div>
+                        <div id="meta-status" class="text-sm font-medium text-emerald-600 flex items-center gap-1">
+                          <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                          Loading
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <h3 class="font-bold text-surface-900 mb-2">Local Privacy</h3>
-                  <p class="text-sm text-surface-600 leading-relaxed">
-                    This video is loaded directly from your computer. No data is uploaded to any server or processed remotely.
-                  </p>
                 </div>
 
-                <div class="p-5 bg-white border border-surface-200 rounded-xl shadow-sm transition-hover hover:shadow-md">
-                  <div class="text-brand-600 mb-3">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                <div class="space-y-4">
+                  <div class="p-5 bg-brand-50 border border-brand-100 rounded-xl">
+                    <h3 class="font-bold text-brand-900 text-sm mb-2">Why WebM?</h3>
+                    <p class="text-xs text-brand-800/80 leading-relaxed">
+                      WebM is an open, royalty-free media file format designed for the web. It uses VP8/VP9 for video and Vorbis/Opus for audio. 
+                      It is optimized for high-quality video delivery across different devices and bandwidths.
+                    </p>
                   </div>
-                  <h3 class="font-bold text-surface-900 mb-2">Developer Tool</h3>
-                  <p class="text-sm text-surface-600 leading-relaxed">
-                    WebM supports transparency (Alpha channels) and high-efficiency compression, making it ideal for web assets.
-                  </p>
+                  
+                  <div class="p-5 bg-surface-900 rounded-xl text-white">
+                    <h3 class="font-bold text-white/90 text-sm mb-2">Privacy Guaranteed</h3>
+                    <p class="text-xs text-white/60 leading-relaxed">
+                      This player is entirely client-side. The video stream is processed in your browser memory and never touches our servers.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
           `;
 
           helpers.render(html);
-    // Media Controls Logic
-    setTimeout(() => {
-      const video = document.querySelector('video') || document.getElementById('main-player') || document.getElementById('omni-video-player') || document.getElementById('webm-player');
-      const speedBtns = document.querySelectorAll('.speed-btn');
-      const volumeSlider = document.querySelector('.volume-slider');
-      const volumeValue = document.querySelector('.volume-value');
-      
-      if (!video) return;
 
-      speedBtns.forEach(btn => {
-        btn.onclick = () => {
-          const speed = parseFloat(btn.dataset.speed);
-          video.playbackRate = speed;
-          speedBtns.forEach(b => b.classList.remove('bg-white', 'shadow-sm'));
-          btn.classList.add('bg-white', 'shadow-sm');
-        };
-      });
+          // Logic for video metadata and controls
+          const video = document.getElementById('omni-webm-player');
+          if (!video) return;
 
-      if (volumeSlider) {
-        let audioCtx, source, gainNode;
-        volumeSlider.oninput = () => {
-          const vol = parseFloat(volumeSlider.value);
-          volumeValue.textContent = Math.round(vol * 100) + '%';
-          
-          if (vol > 1.0) {
-            if (!audioCtx) {
-              try {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                source = audioCtx.createMediaElementSource(video);
-                gainNode = audioCtx.createGain();
-                source.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
-              } catch (e) { console.warn("Web Audio API not supported or already initialized", e); }
+          video.onloadedmetadata = () => {
+            const resEl = document.getElementById('meta-res');
+            const durEl = document.getElementById('meta-dur');
+            const statusEl = document.getElementById('meta-status');
+            
+            if (resEl) resEl.textContent = `${video.videoWidth} × ${video.videoHeight}`;
+            if (durEl) {
+              const mins = Math.floor(video.duration / 60);
+              const secs = Math.floor(video.duration % 60);
+              durEl.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
             }
-            if (gainNode) gainNode.gain.value = vol;
-            video.volume = 1.0;
-          } else {
-            if (gainNode) gainNode.gain.value = 1.0;
-            video.volume = vol;
-          }
-        };
-      }
-    }, 1000);
+            if (statusEl) {
+              statusEl.className = 'text-sm font-medium text-brand-600 flex items-center gap-1';
+              statusEl.innerHTML = '<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg> Ready';
+            }
 
-        } catch (e) {
-          helpers.showError('Could not render video', e.message);
+            helpers.setState('meta', {
+              width: video.videoWidth,
+              height: video.videoHeight,
+              duration: video.duration
+            });
+          };
+
+          video.onerror = () => {
+            const statusEl = document.getElementById('meta-status');
+            if (statusEl) {
+              statusEl.className = 'text-sm font-medium text-red-600';
+              statusEl.textContent = 'Playback Error';
+            }
+          };
+
+          // Speed Controls
+          const speedBtns = document.querySelectorAll('.speed-btn');
+          speedBtns.forEach(btn => {
+            btn.onclick = () => {
+              const speed = parseFloat(btn.dataset.speed);
+              video.playbackRate = speed;
+              speedBtns.forEach(b => b.classList.remove('bg-white', 'shadow-sm', 'text-brand-600'));
+              speedBtns.forEach(b => b.classList.add('text-surface-600', 'hover:bg-white/50'));
+              btn.classList.remove('text-surface-600', 'hover:bg-white/50');
+              btn.classList.add('bg-white', 'shadow-sm', 'text-brand-600');
+            };
+          });
+
+          // Volume Boost (using Web Audio API)
+          const volumeInput = document.getElementById('volume-boost');
+          const volumeVal = document.getElementById('volume-val');
+          let audioCtx, source, gainNode;
+
+          if (volumeInput) {
+            volumeInput.oninput = () => {
+              const vol = parseFloat(volumeInput.value);
+              volumeVal.textContent = Math.round(vol * 100) + '%';
+              
+              if (vol > 1.0) {
+                if (!audioCtx) {
+                  try {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    source = audioCtx.createMediaElementSource(video);
+                    gainNode = audioCtx.createGain();
+                    source.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                  } catch (e) {
+                    console.error("Audio Context Error:", e);
+                  }
+                }
+                if (gainNode) gainNode.gain.value = vol;
+                video.volume = 1.0;
+              } else {
+                if (gainNode) gainNode.gain.value = 1.0;
+                video.volume = vol;
+              }
+            };
+          }
+
+        } catch (err) {
+          helpers.showError('Could not initialize video player', 'The WebM file might be corrupted or in an unsupported format. Error: ' + err.message);
         }
       },
       actions: [
         {
+          label: '📸 Capture Frame',
+          id: 'capture-frame',
+          onClick: function(helpers, btn) {
+            const video = document.getElementById('omni-webm-player');
+            if (!video || video.readyState < 2) {
+              helpers.showError('Capture Failed', 'Video must be playing or loaded to capture a frame.');
+              return;
+            }
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = video.videoWidth;
+              canvas.height = video.videoHeight;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              
+              canvas.toBlob((blob) => {
+                const timestamp = Math.floor(video.currentTime);
+                const name = helpers.getState().fileName.replace('.webm', '') + `-frame-${timestamp}s.png`;
+                helpers.download(name, blob, 'image/png');
+              }, 'image/png');
+            } catch (e) {
+              helpers.showError('Capture Failed', 'Could not extract frame: ' + e.message);
+            }
+          }
+        },
+        {
           label: '📋 Copy Metadata',
-          id: 'copy-metadata',
-          onClick: function (helpers, btn) {
+          id: 'copy-meta',
+          onClick: function(helpers, btn) {
+            const meta = helpers.getState().meta || {};
             const file = helpers.getFile();
-            const state = helpers.getState();
-            const metadata = {
-              filename: file.name,
+            const data = {
+              name: file.name,
               size: file.size,
               type: file.type,
               lastModified: new Date(file.lastModified).toISOString(),
-              ...(state.meta || {}),
-              ...(state.manifest ? { version: state.manifest.version } : {})
+              ...meta
             };
-            helpers.copyToClipboard(JSON.stringify(metadata, null, 2), btn);
+            helpers.copyToClipboard(JSON.stringify(data, null, 2), btn);
           }
         },
         {
           label: '📥 Download',
-          id: 'dl',
+          id: 'download-file',
           onClick: function(helpers) {
             const blob = helpers.getState().videoBlob;
-            const fileName = helpers.getState().fileName || 'video.webm';
-            if (blob) {
-              helpers.download(fileName, blob, 'video/webm');
-            }
-          }
-        },
-        {
-          label: '📋 Copy Filename',
-          id: 'copy-name',
-          onClick: function(helpers, btn) {
-            const fileName = helpers.getState().fileName;
-            if (fileName) {
-              navigator.clipboard.writeText(fileName).then(() => {
-                const originalLabel = btn.innerText;
-                btn.innerText = '✅ Copied!';
-                setTimeout(() => btn.innerText = originalLabel, 2000);
-              }).catch(() => {});
+            const name = helpers.getState().fileName;
+            if (blob && name) {
+              helpers.download(name, blob, 'video/webm');
             }
           }
         }
       ],
-      infoHtml: '<strong>Privacy:</strong> 100% client-side. Your files never leave your device.',
       onDestroy: function() {
-        if (_videoUrl) { URL.revokeObjectURL(_videoUrl); _videoUrl = null; }
+        if (_videoUrl) {
+          URL.revokeObjectURL(_videoUrl);
+          _videoUrl = null;
+        }
       }
     });
   };
