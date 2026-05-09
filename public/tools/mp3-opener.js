@@ -5,13 +5,12 @@
 (function () {
   'use strict';
 
-  function formatBytes(bytes, decimals = 2) {
+  function formatBytes(bytes) {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
   function formatTime(seconds) {
@@ -21,6 +20,7 @@
   }
 
   function esc(str) {
+    if (!str) return '';
     const d = document.createElement('div');
     d.textContent = str;
     return d.innerHTML;
@@ -31,18 +31,34 @@
     let analyzer = null;
     let animationId = null;
     let currentAudioUrl = null;
+    let currentArtUrl = null;
 
     function cleanup() {
-      if (animationId) { cancelAnimationFrame(animationId); animationId = null; }
-      if (wavesurfer) { try { wavesurfer.destroy(); } catch(e) {} wavesurfer = null; }
-      if (currentAudioUrl) { URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; }
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+      if (wavesurfer) {
+        try {
+          wavesurfer.destroy();
+        } catch (e) {}
+        wavesurfer = null;
+      }
+      if (currentAudioUrl) {
+        URL.revokeObjectURL(currentAudioUrl);
+        currentAudioUrl = null;
+      }
+      if (currentArtUrl) {
+        URL.revokeObjectURL(currentArtUrl);
+        currentArtUrl = null;
+      }
       analyzer = null;
     }
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.mp3',
       binary: true,
-      infoHtml: '<strong>Privacy:</strong> This tool processes audio entirely in your browser using WaveSurfer.js and jsmediatags. No audio data is uploaded to any server.',
+      infoHtml: '<strong>Privacy:</strong> Your audio is processed entirely in your browser. Metadata extraction and waveform rendering happen locally.',
       
       actions: [
         {
@@ -51,20 +67,25 @@
           onClick: function (h, btn) {
             const state = h.getState();
             const meta = state.metadata || {};
-            const text = `Title: ${meta.title || h.getFile().name}\nArtist: ${meta.artist || 'Unknown'}\nAlbum: ${meta.album || 'Unknown'}`;
-            h.copyToClipboard(text, btn);
+            const text = Object.entries(meta)
+              .filter(([k, v]) => typeof v === 'string')
+              .map(([k, v]) => `${k.charAt(0).toUpperCase() + k.slice(1)}: ${v}`)
+              .join('\n');
+            h.copyToClipboard(text || 'No metadata found', btn);
           }
         },
         {
-          label: '📄 Export JSON',
+          label: '📄 Export Metadata JSON',
           id: 'export-json',
           onClick: function (h) {
             const meta = h.getState().metadata || {};
-            h.download('metadata.json', JSON.stringify(meta, null, 2), 'application/json');
+            const cleanMeta = { ...meta };
+            delete cleanMeta.picture; // Don't export binary/data-url picture in JSON
+            h.download(`${h.getFile().name}.metadata.json`, JSON.stringify(cleanMeta, null, 2), 'application/json');
           }
         },
         {
-          label: '📥 Download MP3',
+          label: '📥 Download Original',
           id: 'download',
           onClick: function (h) {
             h.download(h.getFile().name, h.getContent(), 'audio/mpeg');
@@ -80,95 +101,136 @@
         ]);
       },
 
-      onFile: function _onFile(file, content, h) {
+      onFile: function _onFileFn(file, content, h) {
         if (typeof WaveSurfer === 'undefined' || typeof jsmediatags === 'undefined') {
-          h.showLoading('Initializing audio engines...');
-          setTimeout(function() { _onFile(file, content, h); }, 500);
+          h.showLoading('Loading audio engines...');
+          setTimeout(function() { _onFileFn(file, content, h); }, 500);
           return;
         }
 
         if (!content || content.byteLength === 0) {
-          h.showError('Empty File', 'This MP3 file contains no data and cannot be played.');
+          h.showError('Empty Audio File', 'This file contains no data. Please upload a valid MP3.');
           return;
         }
 
+        h.showLoading('Analyzing audio waveform and tags...');
         cleanup();
 
         const blob = new Blob([content], { type: 'audio/mpeg' });
         currentAudioUrl = URL.createObjectURL(blob);
-        h.setState('metadata', { title: file.name, artist: 'Unknown Artist', album: '—' });
+        
+        // Initial state
+        h.setState('metadata', { title: file.name, artist: 'Unknown Artist', album: 'Unknown Album' });
 
         h.render(`
-          <div class="max-w-4xl mx-auto p-4">
+          <div class="max-w-5xl mx-auto">
+            <!-- U1. File Info Bar -->
             <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100">
               <span class="font-semibold text-surface-800">${esc(file.name)}</span>
               <span class="text-surface-300">|</span>
               <span>${formatBytes(file.size)}</span>
               <span class="text-surface-300">|</span>
-              <span class="text-surface-500">MP3 Audio</span>
+              <span class="text-surface-500">.mp3 audio</span>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div class="md:col-span-1 space-y-6">
-                <div class="rounded-2xl border border-surface-200 overflow-hidden bg-white shadow-sm aspect-square relative">
-                   <div id="art-placeholder" class="absolute inset-0 flex flex-col items-center justify-center bg-surface-50 text-surface-300">
-                      <span class="text-6xl mb-2">🎵</span>
-                      <span class="text-xs font-medium uppercase tracking-widest">No Cover Art</span>
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <!-- Left Column: Album Art & Info -->
+              <div class="lg:col-span-4 space-y-6">
+                <!-- Album Art Card -->
+                <div class="rounded-2xl border border-surface-200 overflow-hidden bg-white shadow-sm aspect-square relative group">
+                   <div id="art-placeholder" class="absolute inset-0 flex flex-col items-center justify-center bg-surface-50 text-surface-300 transition-opacity">
+                      <svg class="w-16 h-16 mb-2 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
+                      <span class="text-[10px] font-bold uppercase tracking-widest opacity-40">No Artwork Found</span>
                    </div>
-                   <div id="art-img" class="absolute inset-0 bg-cover bg-center hidden"></div>
+                   <div id="art-img" class="absolute inset-0 bg-cover bg-center hidden transform transition-transform group-hover:scale-105 duration-700"></div>
                 </div>
 
-                <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm space-y-3">
+                <!-- Basic Metadata Card -->
+                <div class="rounded-xl border border-surface-200 p-5 bg-white shadow-sm space-y-4">
                   <div>
-                    <h4 class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Title</h4>
-                    <p id="meta-title" class="text-sm font-semibold text-surface-900 truncate">${esc(file.name)}</p>
+                    <label class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1 block">Title</label>
+                    <p id="meta-title" class="text-sm font-semibold text-surface-900 leading-tight">${esc(file.name)}</p>
                   </div>
                   <div>
-                    <h4 class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Artist</h4>
-                    <p id="meta-artist" class="text-sm text-surface-600 truncate">Unknown Artist</p>
+                    <label class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1 block">Artist</label>
+                    <p id="meta-artist" class="text-sm text-surface-600 leading-tight">Unknown Artist</p>
                   </div>
                   <div>
-                    <h4 class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Album</h4>
-                    <p id="meta-album" class="text-sm text-surface-600 truncate">—</p>
+                    <label class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1 block">Album</label>
+                    <p id="meta-album" class="text-sm text-surface-600 leading-tight">Unknown Album</p>
                   </div>
                 </div>
               </div>
 
-              <div class="md:col-span-2 flex flex-col gap-6">
+              <!-- Right Column: Player & Full Metadata -->
+              <div class="lg:col-span-8 space-y-6">
+                <!-- Player Card -->
                 <div class="rounded-2xl border border-surface-200 bg-white p-6 shadow-sm">
-                  <div class="flex items-center justify-between mb-6">
-                    <h3 class="font-semibold text-surface-800 flex items-center gap-2">
-                      <span class="w-2 h-2 bg-brand-500 rounded-full animate-pulse"></span>
-                      Waveform Analysis
-                    </h3>
-                    <span id="time-display" class="font-mono text-sm font-bold text-brand-600 bg-brand-50 px-3 py-1 rounded-full">00:00 / 00:00</span>
+                  <div class="flex items-center justify-between mb-8">
+                    <div class="flex items-center gap-3">
+                      <div class="w-10 h-10 rounded-full bg-brand-50 flex items-center justify-center">
+                        <svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
+                      </div>
+                      <div>
+                        <h3 class="font-bold text-surface-900 leading-none mb-1">Audio Visualizer</h3>
+                        <p class="text-xs text-surface-500">Interactive Waveform</p>
+                      </div>
+                    </div>
+                    <span id="time-display" class="font-mono text-sm font-bold text-brand-600 bg-brand-50 px-4 py-1.5 rounded-full border border-brand-100 shadow-sm">00:00 / 00:00</span>
                   </div>
                   
-                  <div id="waveform-container" class="relative w-full h-32 bg-surface-50 rounded-xl overflow-hidden mb-6">
-                     <canvas id="freq-canvas" class="absolute inset-0 w-full h-full opacity-20 pointer-events-none"></canvas>
-                     <div id="ws-mount" class="relative z-10"></div>
+                  <div id="waveform-outer" class="relative w-full h-40 bg-surface-50 rounded-2xl overflow-hidden mb-8 border border-surface-100 shadow-inner group">
+                     <canvas id="freq-canvas" class="absolute inset-0 w-full h-full opacity-30 pointer-events-none transition-opacity group-hover:opacity-50"></canvas>
+                     <div id="ws-mount" class="relative z-10 h-full"></div>
                   </div>
 
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-4">
-                      <button id="play-pause" class="w-14 h-14 rounded-full bg-brand-600 text-white flex items-center justify-center shadow-lg hover:bg-brand-700 transition-all focus:outline-none">
-                        <span id="play-icon" class="text-2xl ml-1">▶</span>
+                  <div class="flex flex-wrap items-center justify-between gap-6">
+                    <div class="flex items-center gap-6">
+                      <!-- Play/Pause -->
+                      <button id="play-pause" class="w-16 h-16 rounded-full bg-brand-600 text-white flex items-center justify-center shadow-xl hover:bg-brand-700 hover:scale-105 active:scale-95 transition-all focus:outline-none focus:ring-4 focus:ring-brand-200">
+                        <span id="play-icon" class="text-2xl ml-1">
+                          <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+                        </span>
                       </button>
                       
-                      <div class="flex items-center gap-2">
-                        <span class="text-xs">🔈</span>
+                      <!-- Volume -->
+                      <div class="flex items-center gap-3 bg-surface-50 px-4 py-2 rounded-2xl border border-surface-100">
+                        <svg class="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>
                         <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="1" class="w-24 accent-brand-600 h-1.5 bg-surface-200 rounded-lg appearance-none cursor-pointer">
-                        <span class="text-xs">🔊</span>
                       </div>
                     </div>
 
-                    <div class="flex items-center gap-1 bg-surface-100 p-1 rounded-lg border border-surface-200">
-                      ${[1, 1.5, 2].map(rate => `
-                        <button data-rate="${rate}" class="rate-btn px-2.5 py-1 text-[10px] font-bold rounded-md transition-all ${rate === 1 ? 'bg-white text-brand-600 shadow-sm' : 'text-surface-500 hover:text-surface-800'}">
+                    <!-- Speed Controls -->
+                    <div class="flex items-center gap-1 bg-surface-50 p-1.5 rounded-xl border border-surface-200 shadow-sm">
+                      ${[0.5, 1, 1.5, 2].map(rate => `
+                        <button data-rate="${rate}" class="rate-btn px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${rate === 1 ? 'bg-white text-brand-600 shadow-sm border border-surface-100' : 'text-surface-500 hover:text-surface-800 hover:bg-surface-100'}">
                           ${rate}x
                         </button>
                       `).join('')}
                     </div>
+                  </div>
+                </div>
+
+                <!-- U10. Metadata Table -->
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between px-1">
+                    <h3 class="font-bold text-surface-800">Extended Metadata</h3>
+                    <span id="meta-count" class="text-[10px] bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">0 Tags</span>
+                  </div>
+                  <div class="overflow-hidden rounded-2xl border border-surface-200 shadow-sm bg-white">
+                    <table class="min-w-full text-sm">
+                      <thead class="bg-surface-50 border-b border-surface-200">
+                        <tr>
+                          <th class="px-5 py-3 text-left font-bold text-surface-500 uppercase tracking-wider text-[10px]">Property</th>
+                          <th class="px-5 py-3 text-left font-bold text-surface-500 uppercase tracking-wider text-[10px]">Value</th>
+                        </tr>
+                      </thead>
+                      <tbody id="meta-tbody" class="divide-y divide-surface-100">
+                        <tr class="animate-pulse">
+                          <td colspan="2" class="px-5 py-8 text-center text-surface-400 italic">Extracting ID3 tags...</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>
@@ -176,17 +238,20 @@
           </div>
         `);
 
+        // Initialize WaveSurfer
         wavesurfer = WaveSurfer.create({
           container: '#ws-mount',
-          waveColor: '#94a3b8',
+          waveColor: '#cbd5e1',
           progressColor: '#4f46e5',
           cursorColor: '#4f46e5',
           barWidth: 2,
           barGap: 3,
           barRadius: 4,
-          height: 128,
+          height: 160,
           normalize: true,
-          url: currentAudioUrl
+          url: currentAudioUrl,
+          interact: true,
+          cursorWidth: 1
         });
 
         const playBtn = document.getElementById('play-pause');
@@ -208,14 +273,16 @@
         });
 
         wavesurfer.on('play', () => {
-          playIcon.textContent = '⏸';
-          playIcon.classList.remove('ml-1');
+          playIcon.innerHTML = `<svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>`;
           initVisualizer();
         });
 
         wavesurfer.on('pause', () => {
-          playIcon.textContent = '▶';
-          playIcon.classList.add('ml-1');
+          playIcon.innerHTML = `<svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>`;
+        });
+
+        wavesurfer.on('finish', () => {
+           if (animationId) { cancelAnimationFrame(animationId); animationId = null; }
         });
 
         playBtn.onclick = () => wavesurfer.playPause();
@@ -223,12 +290,16 @@
 
         rateBtns.forEach(btn => {
           btn.onclick = () => {
-            wavesurfer.setPlaybackRate(parseFloat(btn.dataset.rate));
-            rateBtns.forEach(b => b.classList.remove('bg-white', 'text-brand-600', 'shadow-sm'));
-            btn.classList.add('bg-white', 'text-brand-600', 'shadow-sm');
+            const rate = parseFloat(btn.dataset.rate);
+            wavesurfer.setPlaybackRate(rate);
+            rateBtns.forEach(b => b.classList.remove('bg-white', 'text-brand-600', 'shadow-sm', 'border'));
+            rateBtns.forEach(b => b.classList.add('text-surface-500', 'hover:text-surface-800', 'hover:bg-surface-100'));
+            btn.classList.add('bg-white', 'text-brand-600', 'shadow-sm', 'border', 'border-surface-100');
+            btn.classList.remove('text-surface-500', 'hover:text-surface-800', 'hover:bg-surface-100');
           };
         });
 
+        // Frequency Visualizer using Audio API
         const initVisualizer = () => {
           if (analyzer) return;
           try {
@@ -236,53 +307,93 @@
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             const source = audioCtx.createMediaElementSource(audio);
             analyzer = audioCtx.createAnalyser();
-            analyzer.fftSize = 256;
+            analyzer.fftSize = 128;
             source.connect(analyzer);
             analyzer.connect(audioCtx.destination);
             
             const canvas = document.getElementById('freq-canvas');
             const ctx = canvas.getContext('2d');
-            canvas.width = canvas.offsetWidth;
-            canvas.height = canvas.offsetHeight;
             
             const draw = () => {
               animationId = requestAnimationFrame(draw);
-              const dataArray = new Uint8Array(analyzer.frequencyBinCount);
+              const bufferLength = analyzer.frequencyBinCount;
+              const dataArray = new Uint8Array(bufferLength);
               analyzer.getByteFrequencyData(dataArray);
+
+              canvas.width = canvas.offsetWidth * devicePixelRatio;
+              canvas.height = canvas.offsetHeight * devicePixelRatio;
+              ctx.scale(devicePixelRatio, devicePixelRatio);
+
               ctx.clearRect(0, 0, canvas.width, canvas.height);
-              const barWidth = (canvas.width / dataArray.length) * 2.5;
+              
+              const barWidth = (canvas.offsetWidth / bufferLength) * 2.5;
               let x = 0;
-              for (let i = 0; i < dataArray.length; i++) {
-                const barHeight = (dataArray[i] / 255) * canvas.height;
-                ctx.fillStyle = `rgba(79, 70, 229, ${(dataArray[i]/255) * 0.3})`;
-                ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-                x += barWidth + 1;
+
+              for (let i = 0; i < bufferLength; i++) {
+                const barHeight = (dataArray[i] / 255) * canvas.offsetHeight;
+                const opacity = (dataArray[i] / 255) * 0.5;
+                ctx.fillStyle = `rgba(79, 70, 229, ${opacity})`;
+                ctx.fillRect(x, canvas.offsetHeight - barHeight, barWidth, barHeight);
+                x += barWidth + 2;
               }
             };
             draw();
-          } catch (e) { console.warn('Visualizer init failed', e); }
+          } catch (e) { 
+            console.warn('Visualizer context blocked or failed', e); 
+          }
         };
 
+        // ID3 Tag Extraction
         jsmediatags.read(blob, {
           onSuccess: function (tag) {
-            const { title, artist, album, picture } = tag.tags;
-            const meta = { title: title || file.name, artist: artist || 'Unknown Artist', album: album || '—' };
+            const { title, artist, album, picture, year, track, genre } = tag.tags;
+            const meta = { 
+              title: title || file.name, 
+              artist: artist || 'Unknown Artist', 
+              album: album || 'Unknown Album',
+              year: year || '—',
+              track: track || '—',
+              genre: genre || '—'
+            };
+            
             h.setState('metadata', meta);
             
             if (title) document.getElementById('meta-title').textContent = title;
             if (artist) document.getElementById('meta-artist').textContent = artist;
             if (album) document.getElementById('meta-album').textContent = album;
             
+            // Handle Artwork
             if (picture) {
-              let base64String = "";
-              for (let i = 0; i < picture.data.length; i++) base64String += String.fromCharCode(picture.data[i]);
-              const url = "data:" + picture.format + ";base64," + window.btoa(base64String);
+              const { data, format } = picture;
+              const uint8 = new Uint8Array(data);
+              const artBlob = new Blob([uint8], { type: format });
+              currentArtUrl = URL.createObjectURL(artBlob);
+              
               const artImg = document.getElementById('art-img');
-              artImg.style.backgroundImage = `url(${url})`;
+              artImg.style.backgroundImage = `url(${currentArtUrl})`;
               artImg.classList.remove('hidden');
               document.getElementById('art-placeholder').classList.add('hidden');
-              h.setState('picture', url);
             }
+
+            // Fill Metadata Table
+            const tbody = document.getElementById('meta-tbody');
+            const entries = Object.entries(tag.tags).filter(([k, v]) => k !== 'picture' && v && (typeof v === 'string' || typeof v === 'number'));
+            
+            if (entries.length > 0) {
+              document.getElementById('meta-count').textContent = `${entries.length} Tags`;
+              tbody.innerHTML = entries.map(([k, v]) => `
+                <tr class="hover:bg-brand-50/30 transition-colors">
+                  <td class="px-5 py-3 font-semibold text-surface-600 border-b border-surface-100 capitalize">${esc(k.replace(/_/g, ' '))}</td>
+                  <td class="px-5 py-3 text-surface-800 border-b border-surface-100">${esc(String(v))}</td>
+                </tr>
+              `).join('');
+            } else {
+              tbody.innerHTML = `<tr><td colspan="2" class="px-5 py-8 text-center text-surface-400 italic">No additional metadata tags found.</td></tr>`;
+            }
+          },
+          onError: function (error) {
+            console.error('jsmediatags error:', error);
+            document.getElementById('meta-tbody').innerHTML = `<tr><td colspan="2" class="px-5 py-8 text-center text-surface-400">Could not extract ID3 tags.</td></tr>`;
           }
         });
       },
