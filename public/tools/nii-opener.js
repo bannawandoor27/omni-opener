@@ -1,55 +1,54 @@
 (function () {
   'use strict';
 
-  function formatBytes(bytes, decimals = 2) {
-    if (!+bytes) return '0 Bytes';
+  /**
+   * OmniOpener NIfTI (.nii, .nii.gz) Tool
+   * A high-performance medical imaging viewer using nifti-reader-js.
+   */
+
+  function formatBytes(bytes) {
+    if (!bytes) return '0 Bytes';
     const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
   function escapeHtml(unsafe) {
     if (typeof unsafe !== 'string') return unsafe;
     return unsafe
-         .replace(/&/g, "&amp;")
-         .replace(/</g, "&lt;")
-         .replace(/>/g, "&gt;")
-         .replace(/"/g, "&quot;")
-         .replace(/'/g, "&#039;");
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   window.initTool = function (toolConfig, mountEl) {
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
       accept: '.nii,.nii.gz',
-      dropLabel: 'Drop a NIfTI (.nii, .nii.gz) file here',
-      infoHtml: '<strong>Medical Imaging Privacy:</strong> This tool parses NIfTI files 100% locally using nifti-reader-js. No data is ever uploaded.',
+      dropLabel: 'Drop a NIfTI (.nii, .nii.gz) medical image here',
+      infoHtml: '<strong>Privacy First:</strong> Medical images are processed entirely in your browser. No data is sent to any server.',
 
       actions: [
         {
           label: '📋 Copy Header',
           id: 'copy-header',
           onClick: function (h, btn) {
-            const header = h.getState().header;
-            if (header) {
-              const cleanHeader = Object.assign({}, header);
-              delete cleanHeader.extension; 
-              h.copyToClipboard(JSON.stringify(cleanHeader, null, 2), btn);
+            const state = h.getState();
+            if (state.headerJson) {
+              h.copyToClipboard(state.headerJson, btn);
             }
           }
         },
         {
-          label: '📥 Download Header',
+          label: '📥 Download JSON',
           id: 'dl-header',
           onClick: function (h) {
-            const header = h.getState().header;
-            if (header) {
-              const cleanHeader = Object.assign({}, header);
-              delete cleanHeader.extension;
-              const jsonStr = JSON.stringify(cleanHeader, null, 2);
-              const blob = new Blob([jsonStr], { type: 'application/json' });
+            const state = h.getState();
+            if (state.headerJson) {
+              const blob = new Blob([state.headerJson], { type: 'application/json' });
               h.download(h.getFile().name.replace(/\.nii(\.gz)?$/, '.json'), blob, 'application/json');
             }
           }
@@ -60,7 +59,7 @@
           onClick: function (h) {
             const canvas = h.getRenderEl().querySelector('#nii-canvas');
             if (canvas) {
-              canvas.toBlob(function(blob) {
+              canvas.toBlob(function (blob) {
                 h.download('nifti-slice.png', blob, 'image/png');
               }, 'image/png');
             }
@@ -77,18 +76,20 @@
       },
 
       onDestroy: function (h) {
-        // Any specific cleanup for NIfTI can go here
+        const state = h.getState();
+        if (state.rafId) cancelAnimationFrame(state.rafId);
       },
 
       onFile: function _onFileFn(file, content, h) {
-        if (typeof window.nifti === 'undefined') {
-          h.showLoading('Loading NIfTI engine...');
-          setTimeout(function() { _onFileFn(file, content, h); }, 500);
+        if (typeof window.nifti === 'undefined' || typeof window.fflate === 'undefined') {
+          h.showLoading('Initializing NIfTI engine...');
+          setTimeout(function () { _onFileFn(file, content, h); }, 300);
           return;
         }
 
-        h.showLoading('Decompressing and parsing NIfTI...');
+        h.showLoading('Decompressing and parsing NIfTI data...');
 
+        // Move to microtask to ensure loading UI shows
         setTimeout(() => {
           try {
             let data = content;
@@ -97,178 +98,245 @@
             }
 
             if (!window.nifti.isNIFTI(data)) {
-              h.showError('Could not open nii file', 'The file may be corrupted or in an unsupported variant. Try saving it again and re-uploading.');
+              h.showError('Invalid NIfTI File', 'The file does not appear to be a valid NIfTI-1 or NIfTI-2 image.');
               return;
             }
 
             const header = window.nifti.readHeader(data);
             const image = window.nifti.readImage(header, data);
 
-            h.setState({ header, image, file });
+            // Clean header for display/copy
+            const displayHeader = Object.assign({}, header);
+            delete displayHeader.extension;
+            const headerJson = JSON.stringify(displayHeader, null, 2);
+
+            h.setState({ 
+              header, 
+              image, 
+              file, 
+              headerJson,
+              plane: 'axial',
+              sliceIdx: Math.floor((header.dims[3] || 1) / 2),
+              contrast: 1,
+              brightness: 0
+            });
+
             renderNifti(h);
           } catch (err) {
-            h.showError('Could not open nii file', 'Error during parsing: ' + err.message);
+            console.error(err);
+            h.showError('Parse Error', 'Could not parse NIfTI file: ' + err.message);
           }
-        }, 50);
+        }, 10);
       }
     });
   };
 
   function renderNifti(h) {
     const state = h.getState();
-    const header = state.header;
-    const image = state.image;
-    const file = state.file;
+    const { header, image, file } = state;
 
-    // Dimensions
     const dims = header.dims; // [dim, x, y, z, t, ...]
     const nx = dims[1];
     const ny = dims[2];
     const nz = dims[3] || 1;
     const nt = dims[4] || 1;
 
-    if (nx === 0 || ny === 0) {
+    if (!nx || !ny) {
       h.render(`
-        <div class="flex flex-col items-center justify-center py-12 px-4 text-center">
-          <div class="w-16 h-16 bg-surface-100 rounded-full flex items-center justify-center mb-4">
-            <svg class="w-8 h-8 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+        <div class="flex flex-col items-center justify-center py-20 text-center">
+          <div class="w-20 h-20 bg-surface-100 rounded-full flex items-center justify-center mb-6">
+            <svg class="w-10 h-10 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
           </div>
-          <h3 class="text-lg font-medium text-surface-900 mb-1">Empty NIfTI File</h3>
-          <p class="text-surface-500 max-w-sm">The file was parsed successfully but contains no image dimensions.</p>
+          <h3 class="text-xl font-semibold text-surface-900 mb-2">No Image Data</h3>
+          <p class="text-surface-500 max-w-md">The file was parsed, but it contains no valid image dimensions (0x0).</p>
         </div>
       `);
       return;
     }
 
-    const fileSizeStr = formatBytes(file.size);
-
     const html = `
-      <!-- File Info Bar -->
-      <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">
+      <!-- U1: File Info Bar -->
+      <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100">
         <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
         <span class="text-surface-300">|</span>
-        <span>${fileSizeStr}</span>
+        <span>${formatBytes(file.size)}</span>
         <span class="text-surface-300">|</span>
-        <span class="text-surface-500">.nii NIfTI Image</span>
+        <span class="px-2 py-0.5 bg-brand-100 text-brand-700 rounded text-xs font-medium">NIfTI Image</span>
+        <span class="ml-auto text-xs text-surface-400 font-mono">${nx}x${ny}x${nz}${nt > 1 ? 'x' + nt : ''}</span>
       </div>
 
-      <div class="flex flex-col lg:flex-row gap-6 p-6 bg-surface-50 min-h-[600px] rounded-xl border border-surface-200">
-        <!-- Viewer -->
-        <div class="flex-1 flex flex-col gap-4">
-          <div class="bg-surface-900 rounded-xl border border-surface-200 shadow-inner flex items-center justify-center overflow-hidden relative" style="min-height: 500px;">
-            <canvas id="nii-canvas" class="max-w-full max-h-full image-pixelated"></canvas>
-            <div class="absolute bottom-4 left-4 flex gap-2">
-               <div class="bg-black/60 backdrop-blur px-3 py-1.5 rounded-lg text-white text-[10px] font-mono border border-white/20 shadow-sm">
-                  ${nx} x ${ny} x ${nz} ${nt > 1 ? ' x ' + nt : ''}
-               </div>
-               <div id="slice-label" class="bg-brand-600/80 backdrop-blur px-3 py-1.5 rounded-lg text-white text-[10px] font-mono border border-brand-400/20 shadow-sm">
-                  Slice: 1 / ${nz}
-               </div>
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <!-- Viewer Column -->
+        <div class="lg:col-span-8 space-y-4">
+          <div class="relative bg-black rounded-2xl overflow-hidden border border-surface-200 shadow-xl aspect-square flex items-center justify-center group">
+            <canvas id="nii-canvas" class="max-w-full max-h-full image-pixelated transition-transform cursor-crosshair"></canvas>
+            
+            <!-- Overlay Info -->
+            <div class="absolute top-4 left-4 flex flex-col gap-2 pointer-events-none">
+              <div class="bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-lg text-white text-[10px] font-mono shadow-lg">
+                <span class="text-white/60 mr-1">DIM:</span> ${nx} × ${ny} × ${nz}
+              </div>
+            </div>
+
+            <div class="absolute bottom-4 left-4 right-4 flex justify-between items-end pointer-events-none">
+              <div id="slice-label" class="bg-brand-600/90 backdrop-blur-md border border-brand-400/30 px-3 py-1.5 rounded-lg text-white text-xs font-bold shadow-lg">
+                Slice: -- / --
+              </div>
+              <div class="bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-lg text-white text-[10px] font-mono shadow-lg">
+                ${getDataTypeName(header.datatypeCode)} • ${header.numBitsPerVoxel} bit
+              </div>
             </div>
           </div>
 
-          <!-- Controls -->
-          <div class="bg-white p-4 rounded-xl border border-surface-200 shadow-sm space-y-4">
-             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div class="space-y-1">
-                   <label class="text-[10px] font-bold text-surface-400 uppercase">View Plane</label>
-                   <select id="view-plane" class="w-full text-xs p-2 bg-surface-50 border border-surface-200 rounded-lg outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all">
-                      <option value="axial">Axial (X-Y)</option>
-                      <option value="sagittal">Sagittal (Y-Z)</option>
-                      <option value="coronal">Coronal (X-Z)</option>
+          <!-- Controls Card -->
+          <div class="bg-white rounded-2xl border border-surface-200 p-6 shadow-sm space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                  <label class="text-xs font-bold text-surface-500 uppercase tracking-wider">Navigation</label>
+                  <span id="nav-val" class="text-xs font-mono text-brand-600 font-bold">--</span>
+                </div>
+                <div class="flex items-center gap-4">
+                   <select id="view-plane" class="flex-none w-32 px-3 py-2 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500 transition-all cursor-pointer">
+                      <option value="axial">Axial</option>
+                      <option value="sagittal">Sagittal</option>
+                      <option value="coronal">Coronal</option>
                    </select>
+                   <input type="range" id="slice-range" class="flex-1 h-1.5 bg-surface-100 rounded-lg appearance-none cursor-pointer accent-brand-600">
                 </div>
-                <div class="space-y-1">
-                   <label class="text-[10px] font-bold text-surface-400 uppercase">Slice Index</label>
-                   <input type="range" id="slice-range" class="w-full h-2 bg-surface-100 rounded-lg appearance-none cursor-pointer accent-brand-600 outline-none focus:ring-2 focus:ring-brand-500">
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <label class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Contrast</label>
+                  </div>
+                  <input type="range" id="contrast-range" min="0.1" max="5" step="0.1" value="1" class="w-full h-1.5 bg-surface-100 rounded-lg appearance-none cursor-pointer accent-surface-600">
                 </div>
-                <div class="space-y-1">
-                   <label class="text-[10px] font-bold text-surface-400 uppercase">Contrast</label>
-                   <input type="range" id="contrast-range" min="0.1" max="5" step="0.1" value="1" class="w-full h-2 bg-surface-100 rounded-lg appearance-none cursor-pointer accent-brand-600 outline-none focus:ring-2 focus:ring-brand-500">
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <label class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Brightness</label>
+                  </div>
+                  <input type="range" id="brightness-range" min="-100" max="100" step="1" value="0" class="w-full h-1.5 bg-surface-100 rounded-lg appearance-none cursor-pointer accent-surface-600">
                 </div>
-                <div class="space-y-1">
-                   <label class="text-[10px] font-bold text-surface-400 uppercase">Brightness</label>
-                   <input type="range" id="brightness-range" min="-100" max="100" step="1" value="0" class="w-full h-2 bg-surface-100 rounded-lg appearance-none cursor-pointer accent-brand-600 outline-none focus:ring-2 focus:ring-brand-500">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sidebar Column -->
+        <div class="lg:col-span-4 space-y-6">
+          <div class="bg-white rounded-2xl border border-surface-200 overflow-hidden shadow-sm">
+            <div class="px-4 py-3 bg-surface-50/50 border-b border-surface-100 flex items-center justify-between">
+              <h3 class="text-xs font-bold text-surface-800 uppercase tracking-wider">Image Metadata</h3>
+              <span class="text-[10px] bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-bold">NIFTI-1</span>
+            </div>
+            
+            <div class="p-4 space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar">
+              <div class="grid grid-cols-1 gap-3">
+                ${renderMetaRow('Voxel Size', header.pixDims.slice(1, dims[0] + 1).map(d => d.toFixed(2)).join(' × ') + ' ' + getUnits(header.xyzt_units).split('/')[0].trim())}
+                ${renderMetaRow('Intent', header.intent_name || 'None')}
+                ${renderMetaRow('Description', header.description || 'None')}
+                ${renderMetaRow('Aux File', header.aux_file || 'None')}
+              </div>
+
+              <div class="mt-6">
+                <div class="flex items-center justify-between mb-2">
+                   <h4 class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Header Raw</h4>
+                   <button id="toggle-raw" class="text-[10px] text-brand-600 font-bold hover:underline">Expand</button>
+                </div>
+                <div id="raw-container" class="hidden rounded-xl overflow-hidden border border-surface-200">
+                  <pre class="p-3 text-[10px] font-mono bg-gray-950 text-gray-300 overflow-x-auto leading-relaxed max-h-48">${escapeHtml(state.headerJson)}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-brand-50 rounded-2xl border border-brand-100 p-4">
+             <div class="flex gap-3">
+                <div class="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 flex-none">
+                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <div>
+                   <h4 class="text-xs font-bold text-brand-800 mb-1">Viewer Tips</h4>
+                   <p class="text-[11px] text-brand-700 leading-relaxed">
+                      Toggle the <b>View Plane</b> to see cross-sections. Use <b>Contrast</b> to bring out soft tissue details.
+                   </p>
                 </div>
              </div>
           </div>
         </div>
-
-        <!-- Metadata Sidebar -->
-        <div class="w-full lg:w-80 flex flex-col gap-4">
-           <div class="bg-white rounded-xl border border-surface-200 flex-1 flex flex-col overflow-hidden shadow-sm">
-              <div class="p-3 border-b border-surface-100 bg-surface-50/50 flex justify-between items-center">
-                 <h3 class="text-xs font-bold text-surface-700 uppercase tracking-wider font-mono">NIfTI Header</h3>
-              </div>
-              <div class="flex-1 overflow-auto p-4 space-y-4">
-                 <div>
-                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Dimensions</div>
-                    <div class="text-xs text-surface-700 font-mono bg-surface-50 p-2 rounded border border-surface-100">${dims.slice(1, dims[0] + 1).join(' x ')}</div>
-                 </div>
-                 <div>
-                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Voxel Size</div>
-                    <div class="text-xs text-surface-700 font-mono bg-surface-50 p-2 rounded border border-surface-100">${header.pixDims.slice(1, dims[0] + 1).map(d => d.toFixed(2)).join(' x ')}</div>
-                 </div>
-                 <div>
-                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Datatype</div>
-                    <div class="text-xs text-surface-700 font-mono bg-surface-50 p-2 rounded border border-surface-100">${getDataTypeName(header.datatypeCode)} (${header.numBitsPerVoxel} bits)</div>
-                 </div>
-                 <div>
-                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Units</div>
-                    <div class="text-xs text-surface-700 font-mono bg-surface-50 p-2 rounded border border-surface-100">${getUnits(header.xyzt_units)}</div>
-                 </div>
-                 <div class="pt-4 border-t border-surface-100">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-2">Attributes</div>
-                    <div class="space-y-2">
-                       ${['description', 'aux_file', 'intent_name'].map(key => header[key] && header[key].trim() ? `
-                          <div class="bg-surface-50 p-2 rounded border border-surface-100">
-                             <div class="text-[9px] text-surface-400 font-medium uppercase tracking-wider mb-0.5">${key}</div>
-                             <div class="text-[11px] text-surface-600 truncate" title="${escapeHtml(header[key])}">${escapeHtml(header[key])}</div>
-                          </div>
-                       ` : '').join('')}
-                    </div>
-                 </div>
-              </div>
-           </div>
-        </div>
       </div>
+
       <style>
-        .image-pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }
+        .image-pixelated { 
+          image-rendering: pixelated; 
+          image-rendering: crisp-edges; 
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
       </style>
     `;
 
     h.render(html);
 
+    setupLogic(h);
+  }
+
+  function renderMetaRow(label, value) {
+    if (!value || value === 'None') return '';
+    return `
+      <div class="group border-b border-surface-50 pb-2 last:border-0">
+        <div class="text-[10px] text-surface-400 font-bold uppercase mb-0.5 tracking-tighter">${label}</div>
+        <div class="text-xs text-surface-700 truncate font-medium group-hover:text-brand-600 transition-colors" title="${escapeHtml(value)}">${escapeHtml(value)}</div>
+      </div>
+    `;
+  }
+
+  function setupLogic(h) {
+    const state = h.getState();
+    const { header, image } = state;
     const canvas = document.getElementById('nii-canvas');
     const ctx = canvas.getContext('2d');
+    
     const sliceRange = document.getElementById('slice-range');
     const viewPlane = document.getElementById('view-plane');
     const contrastRange = document.getElementById('contrast-range');
     const brightnessRange = document.getElementById('brightness-range');
     const sliceLabel = document.getElementById('slice-label');
+    const navVal = document.getElementById('nav-val');
+    const toggleRaw = document.getElementById('toggle-raw');
+    const rawContainer = document.getElementById('raw-container');
 
-    // Typed data
+    const nx = header.dims[1];
+    const ny = header.dims[2];
+    const nz = header.dims[3] || 1;
+
+    // Typed data initialization
     let typedData;
-    if (header.datatypeCode === 2) typedData = new Uint8Array(image);
-    else if (header.datatypeCode === 4) typedData = new Int16Array(image);
-    else if (header.datatypeCode === 8) typedData = new Int32Array(image);
-    else if (header.datatypeCode === 16) typedData = new Float32Array(image);
-    else if (header.datatypeCode === 64) typedData = new Float64Array(image);
-    else if (header.datatypeCode === 512) typedData = new Uint16Array(image);
-    else typedData = new Float32Array(image);
+    try {
+      if (header.datatypeCode === 2) typedData = new Uint8Array(image);
+      else if (header.datatypeCode === 4) typedData = new Int16Array(image);
+      else if (header.datatypeCode === 8) typedData = new Int32Array(image);
+      else if (header.datatypeCode === 16) typedData = new Float32Array(image);
+      else if (header.datatypeCode === 64) typedData = new Float64Array(image);
+      else if (header.datatypeCode === 512) typedData = new Uint16Array(image);
+      else if (header.datatypeCode === 768) typedData = new Uint32Array(image);
+      else typedData = new Float32Array(image);
+    } catch (e) {
+      console.error('Buffer view creation failed', e);
+      typedData = new Uint8Array(image);
+    }
 
-    // Initial state
-    let plane = 'axial';
-    let sliceIdx = Math.floor(nz / 2);
-    let contrast = 1;
-    let brightness = 0;
-
-    // Pre-calculate statistics for normalization
+    // Min/Max for normalization
     let min = header.cal_min || 0;
     let max = header.cal_max || 0;
-    if (max === 0) {
-      min = typedData[0]; max = typedData[0];
-      const step = Math.max(1, Math.floor(typedData.length / 10000));
+    if (max === 0 || max <= min) {
+      min = typedData[0]; 
+      max = typedData[0];
+      const step = Math.max(1, Math.floor(typedData.length / 50000));
       for (let i = 0; i < typedData.length; i += step) {
         if (typedData[i] < min) min = typedData[i];
         if (typedData[i] > max) max = typedData[i];
@@ -276,32 +344,38 @@
     }
     const dataRange = (max - min) || 1;
 
-    function updateRange() {
-      if (plane === 'axial') {
-        sliceRange.max = nz - 1;
-        sliceIdx = Math.min(sliceIdx, nz - 1);
-      } else if (plane === 'sagittal') {
-        sliceRange.max = nx - 1;
-        sliceIdx = Math.min(sliceIdx, nx - 1);
-      } else {
-        sliceRange.max = ny - 1;
-        sliceIdx = Math.min(sliceIdx, ny - 1);
-      }
-      sliceRange.value = sliceIdx;
+    function updateNav() {
+      const plane = h.getState().plane;
+      let limit = 0;
+      if (plane === 'axial') limit = nz;
+      else if (plane === 'sagittal') limit = nx;
+      else if (plane === 'coronal') limit = ny;
+
+      sliceRange.max = limit - 1;
+      const currentIdx = Math.min(h.getState().sliceIdx, limit - 1);
+      sliceRange.value = currentIdx;
+      
+      sliceLabel.textContent = `Slice: ${currentIdx + 1} / ${limit}`;
+      navVal.textContent = `${currentIdx + 1} of ${limit}`;
     }
 
     function draw() {
+      const { plane, sliceIdx, contrast, brightness } = h.getState();
+      
       let width, height;
       if (plane === 'axial') { width = nx; height = ny; }
       else if (plane === 'sagittal') { width = ny; height = nz; }
       else { width = nx; height = nz; }
 
-      canvas.width = width;
-      canvas.height = height;
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
 
       const imgData = ctx.createImageData(width, height);
       const data = imgData.data;
 
+      // Tight loop for rendering
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           let idx = 0;
@@ -316,9 +390,11 @@
           const val = typedData[idx] || 0;
           let norm = ((val - min) / dataRange) * 255;
           norm = (norm - 128) * contrast + 128 + brightness;
-          norm = Math.max(0, Math.min(255, norm));
+          
+          if (norm < 0) norm = 0;
+          else if (norm > 255) norm = 255;
 
-          const pIdx = ((height - 1 - y) * width + x) * 4; // Flip Y for medical orientation
+          const pIdx = ((height - 1 - y) * width + x) * 4; // Radiologic orientation (flip Y)
           data[pIdx] = norm;
           data[pIdx + 1] = norm;
           data[pIdx + 2] = norm;
@@ -326,25 +402,56 @@
         }
       }
       ctx.putImageData(imgData, 0, 0);
-      sliceLabel.textContent = `Slice: ${sliceIdx + 1} / ${parseInt(sliceRange.max) + 1}`;
     }
 
-    viewPlane.addEventListener('change', (e) => { plane = e.target.value; updateRange(); draw(); });
-    sliceRange.addEventListener('input', (e) => { sliceIdx = parseInt(e.target.value, 10); draw(); });
-    contrastRange.addEventListener('input', (e) => { contrast = parseFloat(e.target.value); draw(); });
-    brightnessRange.addEventListener('input', (e) => { brightness = parseFloat(e.target.value); draw(); });
+    // Event listeners
+    viewPlane.addEventListener('change', (e) => {
+      h.setState({ plane: e.target.value, sliceIdx: 0 });
+      updateNav();
+      draw();
+    });
 
-    updateRange();
+    sliceRange.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.value, 10);
+      h.setState({ sliceIdx: idx });
+      updateNav();
+      draw();
+    });
+
+    contrastRange.addEventListener('input', (e) => {
+      h.setState({ contrast: parseFloat(e.target.value) });
+      draw();
+    });
+
+    brightnessRange.addEventListener('input', (e) => {
+      h.setState({ brightness: parseFloat(e.target.value) });
+      draw();
+    });
+
+    toggleRaw.addEventListener('click', () => {
+      const hidden = rawContainer.classList.toggle('hidden');
+      toggleRaw.textContent = hidden ? 'Expand' : 'Collapse';
+    });
+
+    // Initial render
+    updateNav();
     draw();
   }
 
   function getDataTypeName(code) {
-    const types = { 2: 'Uint8', 4: 'Int16', 8: 'Int32', 16: 'Float32', 32: 'Complex64', 64: 'Float64', 128: 'RGB24', 256: 'Int8', 512: 'Uint16', 768: 'Uint32' };
+    const types = { 
+      2: 'Uint8', 4: 'Int16', 8: 'Int32', 16: 'Float32', 
+      32: 'Complex64', 64: 'Float64', 128: 'RGB24', 256: 'Int8', 
+      512: 'Uint16', 768: 'Uint32' 
+    };
     return types[code] || 'Unknown';
   }
 
   function getUnits(code) {
-    const units = { 1: 'Unknown', 2: 'mm', 3: 'micron', 8: 'sec', 16: 'msec', 24: 'usec', 32: 'hz', 48: 'ppm', 64: 'rads' };
+    const units = { 
+      1: 'Unknown', 2: 'mm', 3: 'micron', 8: 'sec', 
+      16: 'msec', 24: 'usec', 32: 'hz', 48: 'ppm', 64: 'rads' 
+    };
     const space = code & 0x07;
     const time = code & 0x38;
     return (units[space] || 'mm') + (time ? ' / ' + (units[time] || 'sec') : '');
