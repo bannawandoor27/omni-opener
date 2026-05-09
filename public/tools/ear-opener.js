@@ -1,29 +1,35 @@
 (function () {
   'use strict';
 
+  /**
+   * OmniOpener EAR Tool
+   * A high-performance, browser-based Java Enterprise Archive (.ear) explorer.
+   */
   window.initTool = function (toolConfig, mountEl) {
     let _fileList = [];
     let _currentFile = null;
     let _searchTerm = '';
+    let _sortCol = 'path';
+    let _sortDir = 1; // 1 for asc, -1 for desc
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.ear',
       binary: true,
-      dropLabel: 'Drop an EAR file here',
-      infoHtml: 'Extract and explore the contents of Java Enterprise Archive (EAR) files directly in your browser. All processing happens locally.',
+      dropLabel: 'Drop .ear file here',
+      infoHtml: 'Extract and explore Java Enterprise Archive (EAR) contents. Supports deep inspection of WAR, JAR, and configuration files locally.',
 
       actions: [
         {
-          label: '📋 Copy File List',
-          id: 'copy-list',
+          label: '📋 Copy Paths',
+          id: 'copy-paths',
           onClick: function (h, btn) {
             if (!_fileList || _fileList.length === 0) return;
-            const text = _fileList.map(f => f.name).join('\n');
+            const text = _fileList.map(f => f.path).join('\n');
             h.copyToClipboard(text, btn);
           }
         },
         {
-          label: '📥 Download Original',
+          label: '📥 Original File',
           id: 'download-orig',
           onClick: function (h) {
             if (_currentFile) h.download(_currentFile.name, h.getContent());
@@ -44,6 +50,8 @@
         _currentFile = file;
         _searchTerm = '';
         _fileList = [];
+        _sortCol = 'path';
+        _sortDir = 1;
 
         const checkReady = () => {
           if (typeof JSZip !== 'undefined') {
@@ -53,7 +61,7 @@
           }
         };
 
-        h.showLoading('Extracting EAR archive...');
+        h.showLoading('Analyzing EAR structure...');
         checkReady();
       }
     });
@@ -66,33 +74,52 @@
         const zip = new JSZip();
         const zipData = await zip.loadAsync(content);
         
-        const files = [];
+        const entries = [];
         zipData.forEach((relativePath, zipEntry) => {
-          files.push({
-            name: relativePath,
+          entries.push({
+            path: relativePath,
+            name: relativePath.split('/').pop() || relativePath,
             size: zipEntry._data ? zipEntry._data.uncompressedSize : 0,
-            dir: zipEntry.dir,
+            isDir: zipEntry.dir,
             date: zipEntry.date,
-            ref: zipEntry
+            ref: zipEntry,
+            type: getFileType(relativePath, zipEntry.dir)
           });
         });
 
-        _fileList = files;
+        _fileList = entries;
         render(h);
       } catch (err) {
-        console.error(err);
-        h.showError('Could not open EAR file', 'The archive may be corrupted or in an unsupported format. Error: ' + err.message);
+        console.error('[EAR Tool] Error:', err);
+        h.showError(
+          'Could not parse EAR file', 
+          'The archive may be corrupted or encrypted. Ensure it is a valid Java Enterprise Archive.'
+        );
       }
     }
 
     /**
-     * Main render function
+     * Main render loop
      */
     function render(h) {
+      if (!_currentFile) return;
+
+      // Filter and Sort
       const filtered = _fileList.filter(f => 
-        f.name.toLowerCase().includes(_searchTerm.toLowerCase())
+        f.path.toLowerCase().includes(_searchTerm.toLowerCase())
       );
 
+      const sorted = [...filtered].sort((a, b) => {
+        let valA = a[_sortCol];
+        let valB = b[_sortCol];
+        
+        if (typeof valA === 'string') {
+          return valA.localeCompare(valB) * _sortDir;
+        }
+        return (valA - valB) * _sortDir;
+      });
+
+      // UI Components
       const infoBar = `
         <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">
           <span class="font-semibold text-surface-800">${esc(_currentFile.name)}</span>
@@ -103,7 +130,7 @@
         </div>
       `;
 
-      const searchHeader = `
+      const controls = `
         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
           <div class="flex items-center gap-2">
             <h3 class="font-semibold text-surface-800">Archive Contents</h3>
@@ -113,9 +140,9 @@
             <input 
               type="text" 
               id="ear-search" 
-              placeholder="Search files..." 
+              placeholder="Search by path..." 
               value="${esc(_searchTerm)}"
-              class="w-full pl-9 pr-4 py-2 text-sm border border-surface-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+              class="w-full pl-9 pr-4 py-2 text-sm border border-surface-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition-all"
             >
             <div class="absolute left-3 top-2.5 text-surface-400">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
@@ -125,74 +152,66 @@
       `;
 
       if (_fileList.length === 0) {
-        h.render(infoBar + '<div class="p-12 text-center border-2 border-dashed border-surface-200 rounded-xl text-surface-500">Archive is empty</div>');
+        h.render(infoBar + '<div class="p-12 text-center border border-dashed border-surface-200 rounded-xl text-surface-500">Archive is empty</div>');
         return;
       }
 
-      let tableRows = '';
-      filtered.forEach((f, idx) => {
-        const isDir = f.dir;
-        let type = 'File';
-        let icon = '📄';
-
-        if (isDir) {
-          type = 'Directory';
-          icon = '📁';
-        } else {
-          const lower = f.name.toLowerCase();
-          if (lower.endsWith('.war')) { type = 'Web Module'; icon = '🌐'; }
-          else if (lower.endsWith('.jar')) { type = 'Java Library'; icon = '📦'; }
-          else if (lower.endsWith('.xml')) { type = 'Config'; icon = '⚙️'; }
-          else if (lower.endsWith('.class')) { type = 'Java Class'; icon = '☕'; }
-          else if (lower.endsWith('.properties')) { type = 'Properties'; icon = '📝'; }
-        }
-
-        tableRows += `
-          <tr class="even:bg-surface-50/50 hover:bg-brand-50 transition-colors group">
-            <td class="px-4 py-2.5 text-surface-700 border-b border-surface-100 font-mono text-xs break-all">
-              <span class="mr-1.5">${icon}</span>${esc(f.name)}
-            </td>
-            <td class="px-4 py-2.5 text-surface-500 border-b border-surface-100 text-right whitespace-nowrap">
-              ${isDir ? '-' : formatSize(f.size)}
-            </td>
-            <td class="px-4 py-2.5 text-surface-500 border-b border-surface-100 hidden md:table-cell">
-              <span class="text-xs px-2 py-0.5 rounded-md bg-surface-100 text-surface-600">${type}</span>
-            </td>
-            <td class="px-4 py-2.5 text-right border-b border-surface-100">
-              ${!isDir ? `
-                <button 
-                  class="extract-btn opacity-0 group-hover:opacity-100 focus:opacity-100 text-brand-600 hover:text-brand-700 font-medium text-xs transition-opacity" 
-                  data-idx="${_fileList.indexOf(f)}"
-                >
-                  Download
-                </button>
-              ` : ''}
-            </td>
-          </tr>
-        `;
-      });
+      const sortIcon = (col) => {
+        if (_sortCol !== col) return '<span class="ml-1 opacity-20">↕</span>';
+        return _sortDir === 1 ? '<span class="ml-1 text-brand-500">↑</span>' : '<span class="ml-1 text-brand-500">↓</span>';
+      };
 
       const table = `
         <div class="overflow-hidden rounded-xl border border-surface-200 shadow-sm bg-white">
           <div class="overflow-x-auto">
-            <table class="min-w-full text-sm">
+            <table class="min-w-full text-sm border-separate border-spacing-0">
               <thead>
-                <tr class="bg-surface-50 border-b border-surface-200">
-                  <th class="px-4 py-3 text-left font-semibold text-surface-700">Path</th>
-                  <th class="px-4 py-3 text-right font-semibold text-surface-700 w-24">Size</th>
-                  <th class="px-4 py-3 text-left font-semibold text-surface-700 w-32 hidden md:table-cell">Type</th>
-                  <th class="px-4 py-3 text-right font-semibold text-surface-700 w-24">Action</th>
+                <tr class="bg-surface-50">
+                  <th class="sortable sticky top-0 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors" data-col="path">
+                    File Path ${sortIcon('path')}
+                  </th>
+                  <th class="sortable sticky top-0 px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors w-28" data-col="size">
+                    Size ${sortIcon('size')}
+                  </th>
+                  <th class="sortable sticky top-0 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors w-36 hidden md:table-cell" data-col="type">
+                    Type ${sortIcon('type')}
+                  </th>
+                  <th class="sticky top-0 px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 w-24">
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                ${tableRows || '<tr><td colspan="4" class="px-4 py-12 text-center text-surface-400">No matching files found</td></tr>'}
+                ${sorted.map((f, i) => `
+                  <tr class="even:bg-surface-50/50 hover:bg-brand-50 transition-colors group">
+                    <td class="px-4 py-2.5 text-surface-700 border-b border-surface-100 font-mono text-xs break-all">
+                      <span class="mr-2 inline-block w-4 text-center">${f.isDir ? '📁' : f.icon || '📄'}</span>${esc(f.path)}
+                    </td>
+                    <td class="px-4 py-2.5 text-surface-500 border-b border-surface-100 text-right whitespace-nowrap tabular-nums">
+                      ${f.isDir ? '—' : formatSize(f.size)}
+                    </td>
+                    <td class="px-4 py-2.5 text-surface-500 border-b border-surface-100 hidden md:table-cell">
+                      <span class="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 text-surface-600 uppercase font-bold tracking-tight">${f.type}</span>
+                    </td>
+                    <td class="px-4 py-2.5 text-right border-b border-surface-100">
+                      ${!f.isDir ? `
+                        <button 
+                          class="extract-btn opacity-0 group-hover:opacity-100 focus:opacity-100 text-brand-600 hover:text-brand-700 font-semibold text-xs transition-opacity" 
+                          data-idx="${_fileList.indexOf(f)}"
+                        >
+                          Extract
+                        </button>
+                      ` : ''}
+                    </td>
+                  </tr>
+                `).join('') || '<tr><td colspan="4" class="px-4 py-12 text-center text-surface-400">No matching files found</td></tr>'}
               </tbody>
             </table>
           </div>
         </div>
       `;
 
-      h.render(infoBar + searchHeader + table);
+      h.render(infoBar + controls + table);
 
       // Event Listeners
       const container = h.getRenderEl();
@@ -200,16 +219,25 @@
       const searchInput = container.querySelector('#ear-search');
       if (searchInput) {
         searchInput.focus();
-        // Place cursor at end
-        const val = searchInput.value;
-        searchInput.value = '';
-        searchInput.value = val;
-        
+        searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
         searchInput.addEventListener('input', (e) => {
           _searchTerm = e.target.value;
           render(h);
         });
       }
+
+      container.querySelectorAll('.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+          const col = th.dataset.col;
+          if (_sortCol === col) {
+            _sortDir *= -1;
+          } else {
+            _sortCol = col;
+            _sortDir = 1;
+          }
+          render(h);
+        });
+      });
 
       container.querySelectorAll('.extract-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -223,10 +251,10 @@
 
           try {
             const blob = await f.ref.async('blob');
-            h.download(f.name.split('/').pop(), blob);
+            h.download(f.name, blob);
           } catch (err) {
-            console.error(err);
-            alert('Extraction failed: ' + err.message);
+            console.error('[EAR Tool] Extraction error:', err);
+            h.showError('Extraction failed', 'Could not extract the individual file from the archive.');
           } finally {
             btn.textContent = originalText;
             btn.disabled = false;
@@ -235,17 +263,48 @@
       });
     }
 
+    /**
+     * Helper to classify file types in EAR
+     */
+    function getFileType(path, isDir) {
+      if (isDir) return 'Folder';
+      const ext = path.split('.').pop().toLowerCase();
+      switch (ext) {
+        case 'war': return 'Web Module';
+        case 'jar': return 'Java Library';
+        case 'rar': return 'Resource Adapter';
+        case 'xml': return 'Config (XML)';
+        case 'properties': return 'Properties';
+        case 'class': return 'Java Class';
+        case 'mf': return 'Manifest';
+        case 'json': return 'JSON Data';
+        case 'yaml': 
+        case 'yml': return 'YAML Config';
+        case 'txt': return 'Text File';
+        case 'html': return 'HTML Page';
+        case 'css': return 'Styles';
+        case 'js': return 'Script';
+        default: return ext.toUpperCase() || 'File';
+      }
+    }
+
+    /**
+     * Simple size formatter
+     */
     function formatSize(bytes) {
-      if (bytes === 0) return '0 B';
+      if (!bytes || bytes === 0) return '0 B';
       const k = 1024;
       const sizes = ['B', 'KB', 'MB', 'GB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     }
 
+    /**
+     * Minimal HTML Escaping
+     */
     function esc(str) {
       if (!str) return '';
-      return str
+      return String(str)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
