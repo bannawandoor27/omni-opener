@@ -13,13 +13,13 @@
       dropLabel: 'Drop a .torrent file here',
       binary: true,
       onInit: function(helpers) {
-        // No external dependencies needed
+        // No external dependencies
       },
       onDestroy: function() {
         // No persistent resources to clean up
       },
       onFile: async function _onFileFn(file, content, helpers) {
-        helpers.showLoading('Analyzing torrent structure...');
+        helpers.showLoading('Parsing torrent metadata...');
         
         try {
           if (!(content instanceof ArrayBuffer)) {
@@ -40,10 +40,9 @@
             throw new Error('Invalid torrent: Missing "info" dictionary');
           }
 
-          helpers.showLoading('Computing info hash...');
+          helpers.showLoading('Calculating cryptographic info hash...');
           const infoHash = await calculateInfoHash(infoWrap.slice);
           
-          // Metadata extraction
           const info = infoWrap.value;
           const name = getString(info.name) || 'Unnamed Torrent';
           const announce = getString(torrent.announce);
@@ -83,6 +82,10 @@
             files = [{ path: name, size }];
           }
 
+          if (files.length === 0) {
+            throw new Error('No files found in torrent metadata');
+          }
+
           const magnetLink = `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(name)}${trackers.slice(0, 5).map(tr => '&tr=' + encodeURIComponent(tr)).join('')}`;
 
           helpers.setState({
@@ -109,7 +112,7 @@
           console.error('[TorrentOpener] Parse Error:', e);
           helpers.showError(
             'Could not open torrent file',
-            'The file may be corrupted or in an unsupported format. Error: ' + e.message
+            'The file may be corrupted, encrypted, or uses an unsupported bencode variant. Error: ' + e.message
           );
         }
       },
@@ -131,7 +134,7 @@
           }
         },
         {
-          label: '📊 Export File List',
+          label: '📊 Export CSV',
           id: 'dl-csv',
           onClick: function(h) {
             const s = h.getState();
@@ -153,7 +156,7 @@
     function draw(helpers, mountEl) {
       const state = helpers.getState();
       const file = helpers.getFile();
-      if (!state.files) return;
+      if (!state.files || !file) return;
 
       const { name, infoHash, totalSize, files, trackers, searchTerm, sortKey, sortOrder, comment, createdBy, creationDate, pieceLength, piecesCount } = state;
 
@@ -178,45 +181,50 @@
 
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             
-            <!-- Left: Metadata & Files -->
+            <!-- Main Content Area -->
             <div class="lg:col-span-2 space-y-8">
               
-              <!-- Summary Card -->
+              <!-- Metadata Overview Card -->
               <div class="bg-white rounded-2xl border border-surface-200 shadow-sm overflow-hidden">
-                <div class="bg-surface-50/50 px-6 py-4 border-b border-surface-200">
+                <div class="bg-surface-50/50 px-6 py-5 border-b border-surface-200">
                   <h2 class="text-xl font-bold text-surface-900 truncate" title="${esc(name)}">${esc(name)}</h2>
                 </div>
                 <div class="p-6">
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
-                    <div class="space-y-4">
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-8 text-sm">
+                    <div class="space-y-6">
                       <div>
-                        <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Info Hash</div>
-                        <div class="font-mono text-xs bg-brand-50 text-brand-700 p-3 rounded-xl border border-brand-100 break-all select-all">${infoHash}</div>
+                        <div class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-2">Info Hash</div>
+                        <!-- U8: Code Block -->
+                        <div class="rounded-xl overflow-hidden border border-surface-200">
+                          <pre class="p-4 text-xs font-mono bg-gray-950 text-brand-400 overflow-x-auto leading-relaxed select-all">${infoHash}</pre>
+                        </div>
                       </div>
                       <div>
-                        <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Total Content Size</div>
-                        <div class="text-surface-800 font-semibold text-lg">${formatSize(totalSize)}</div>
+                        <div class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-1">Total Payload Size</div>
+                        <div class="text-surface-900 font-extrabold text-2xl">${formatSize(totalSize)}</div>
                       </div>
                     </div>
+                    
                     <div class="space-y-4">
-                      <div class="flex justify-between border-b border-surface-100 pb-2">
-                        <span class="text-surface-500 font-medium">Creation Date</span>
+                      <div class="flex justify-between items-center border-b border-surface-100 pb-3">
+                        <span class="text-surface-500 font-medium">Date Created</span>
                         <span class="text-surface-800 font-semibold text-right">${creationDate || 'Unknown'}</span>
                       </div>
-                      <div class="flex justify-between border-b border-surface-100 pb-2">
-                        <span class="text-surface-500 font-medium">Created By</span>
+                      <div class="flex justify-between items-center border-b border-surface-100 pb-3">
+                        <span class="text-surface-500 font-medium">Software</span>
                         <span class="text-surface-800 font-semibold truncate ml-4 text-right" title="${esc(createdBy)}">${esc(createdBy) || 'N/A'}</span>
                       </div>
-                      <div class="flex justify-between border-b border-surface-100 pb-2">
-                        <span class="text-surface-500 font-medium">Pieces</span>
-                        <span class="text-surface-800 font-semibold text-right">${piecesCount.toLocaleString()} × ${formatSize(pieceLength)}</span>
+                      <div class="flex justify-between items-center border-b border-surface-100 pb-3">
+                        <span class="text-surface-500 font-medium">Structure</span>
+                        <span class="text-surface-800 font-semibold text-right">${piecesCount.toLocaleString()} chunks @ ${formatSize(pieceLength)}</span>
                       </div>
                     </div>
                   </div>
+
                   ${comment ? `
-                    <div class="mt-6 pt-4 border-t border-surface-100">
-                      <div class="text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-1">Comment</div>
-                      <div class="text-surface-600 italic leading-relaxed text-sm">${esc(comment)}</div>
+                    <div class="mt-8 pt-6 border-t border-surface-100">
+                      <div class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-2">Comment</div>
+                      <div class="text-surface-600 italic leading-relaxed text-sm bg-surface-50 p-4 rounded-xl border border-surface-100">${esc(comment)}</div>
                     </div>
                   ` : ''}
                 </div>
@@ -224,50 +232,51 @@
 
               <!-- Files Section -->
               <div>
-                <div class="flex items-center justify-between mb-4">
-                  <!-- U10: Section Header with Count -->
-                  <h3 class="font-bold text-surface-800 text-lg">Files</h3>
+                <!-- U10: Section Header with Count -->
+                <div class="flex items-center justify-between mb-4 px-1">
+                  <h3 class="font-bold text-surface-800 text-lg">File Contents</h3>
                   <span class="text-xs bg-brand-100 text-brand-700 px-3 py-1 rounded-full font-bold">${files.length} items</span>
                 </div>
                 
-                <div class="mb-4 relative">
-                  <input type="text" id="torrent-search" placeholder="Search files by path..." value="${esc(searchTerm)}" 
-                    class="w-full px-4 py-3 pl-11 bg-white border border-surface-200 rounded-xl focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none transition-all shadow-sm">
-                  <span class="absolute left-4 top-3.5 text-surface-400">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <!-- Search Box -->
+                <div class="mb-5 relative">
+                  <input type="text" id="torrent-search" placeholder="Filter files by path or extension..." value="${esc(searchTerm)}" 
+                    class="w-full px-4 py-3.5 pl-12 bg-white border border-surface-200 rounded-2xl focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none transition-all shadow-sm">
+                  <span class="absolute left-4 top-4 text-surface-400">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                   </span>
                 </div>
 
-                <!-- U7: Table -->
-                <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white shadow-sm">
-                  <table class="min-w-full text-sm">
+                <!-- U7: Table Wrapper -->
+                <div class="overflow-x-auto rounded-2xl border border-surface-200 bg-white shadow-sm">
+                  <table class="min-w-full text-sm border-collapse">
                     <thead>
                       <tr>
-                        <th data-sort="path" class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-left font-bold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors select-none">
-                          <div class="flex items-center gap-1">
-                            File Path
-                            <span class="text-surface-400">${sortKey === 'path' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}</span>
+                        <th data-sort="path" class="sticky top-0 bg-white/95 backdrop-blur px-5 py-4 text-left font-bold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors select-none group">
+                          <div class="flex items-center gap-2">
+                            Path
+                            <span class="text-surface-300 group-hover:text-brand-500 transition-colors">${sortKey === 'path' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}</span>
                           </div>
                         </th>
-                        <th data-sort="size" class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-right font-bold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors w-32 select-none">
-                          <div class="flex items-center justify-end gap-1">
+                        <th data-sort="size" class="sticky top-0 bg-white/95 backdrop-blur px-5 py-4 text-right font-bold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors w-40 select-none group">
+                          <div class="flex items-center justify-end gap-2">
                             Size
-                            <span class="text-surface-400">${sortKey === 'size' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}</span>
+                            <span class="text-surface-300 group-hover:text-brand-500 transition-colors">${sortKey === 'size' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}</span>
                           </div>
                         </th>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-surface-100">
-                      ${filteredFiles.length > 0 ? filteredFiles.slice(0, 500).map(f => `
-                        <tr class="even:bg-surface-50 hover:bg-brand-50/50 transition-colors">
-                          <td class="px-4 py-3 text-surface-700 break-all font-medium leading-tight">${highlight(f.path, searchTerm)}</td>
-                          <td class="px-4 py-3 text-right text-surface-500 font-mono whitespace-nowrap">${formatSize(f.size)}</td>
+                      ${filteredFiles.length > 0 ? filteredFiles.slice(0, 1000).map(f => `
+                        <tr class="even:bg-surface-50/50 hover:bg-brand-50/40 transition-colors">
+                          <td class="px-5 py-4 text-surface-700 break-all font-medium leading-normal">${highlight(f.path, searchTerm)}</td>
+                          <td class="px-5 py-4 text-right text-surface-500 font-mono whitespace-nowrap">${formatSize(f.size)}</td>
                         </tr>
                       `).join('') : `
-                        <tr><td colspan="2" class="p-16 text-center text-surface-400 italic bg-surface-50/30">No files found matching your search</td></tr>
+                        <tr><td colspan="2" class="p-20 text-center text-surface-400 italic bg-surface-50/20">No matching files found</td></tr>
                       `}
-                      ${filteredFiles.length > 500 ? `
-                        <tr><td colspan="2" class="p-4 text-center text-xs text-surface-500 font-medium bg-surface-50/50 italic border-t border-surface-100">Showing first 500 of ${filteredFiles.length} files.</td></tr>
+                      ${filteredFiles.length > 1000 ? `
+                        <tr><td colspan="2" class="p-4 text-center text-xs text-surface-500 font-semibold bg-surface-50/50 italic border-t border-surface-100 uppercase tracking-widest">Showing first 1,000 of ${filteredFiles.length.toLocaleString()} files</td></tr>
                       ` : ''}
                     </tbody>
                   </table>
@@ -275,34 +284,37 @@
               </div>
             </div>
 
-            <!-- Right: Trackers & Sidebar -->
+            <!-- Sidebar -->
             <div class="space-y-8">
               
-              <!-- Trackers Card -->
+              <!-- Trackers Section -->
               <div class="bg-white rounded-2xl border border-surface-200 shadow-sm overflow-hidden flex flex-col">
-                <div class="bg-surface-50/50 px-4 py-3 border-b border-surface-200 flex items-center justify-between">
+                <div class="bg-surface-50/50 px-5 py-4 border-b border-surface-200 flex items-center justify-between">
                   <h3 class="font-bold text-surface-800 text-xs uppercase tracking-widest">Trackers</h3>
-                  <span class="text-[10px] font-bold bg-surface-200 text-surface-600 px-2 py-0.5 rounded-full">${trackers.length}</span>
+                  <span class="text-[10px] font-bold bg-brand-100 text-brand-700 px-2.5 py-0.5 rounded-full">${trackers.length}</span>
                 </div>
-                <div class="p-4 space-y-3 max-h-[600px] overflow-y-auto bg-surface-50/10">
+                <div class="p-5 space-y-3 max-h-[500px] overflow-y-auto bg-surface-50/10">
                   ${trackers.length > 0 ? trackers.map(tr => `
                     <!-- U9: Content Card -->
-                    <div class="rounded-xl border border-surface-200 p-3 hover:border-brand-300 hover:shadow-md transition-all bg-white group">
-                      <div class="text-[10px] font-mono break-all text-surface-500 leading-relaxed group-hover:text-surface-900 transition-colors">${esc(tr)}</div>
+                    <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:shadow-md transition-all bg-white group cursor-default">
+                      <div class="text-[11px] font-mono break-all text-surface-500 leading-relaxed group-hover:text-surface-900 transition-colors">${esc(tr)}</div>
                     </div>
-                  `).join('') : '<div class="text-center text-surface-400 text-sm py-12 italic">No trackers listed</div>'}
+                  `).join('') : '<div class="text-center text-surface-400 text-sm py-16 italic">No trackers found</div>'}
                 </div>
               </div>
 
-              <!-- Technical Tip -->
-              <div class="p-6 bg-gradient-to-br from-brand-50 to-indigo-50 rounded-2xl border border-brand-100 shadow-sm">
-                <h4 class="font-bold text-brand-900 text-sm mb-2 flex items-center gap-2">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0114 0z"/></svg>
-                  Client Info
+              <!-- Information Panel -->
+              <div class="p-6 bg-gradient-to-br from-indigo-50/50 to-brand-50/50 rounded-2xl border border-brand-100 shadow-sm">
+                <h4 class="font-bold text-brand-900 text-sm mb-3 flex items-center gap-2">
+                  <svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0114 0z"/></svg>
+                  BitTorrent Metadata
                 </h4>
-                <p class="text-xs text-brand-700 leading-relaxed">
-                  A .torrent file contains metadata about files and trackers. The Info Hash is a unique SHA-1 identifier for the data itself, used by BitTorrent clients to find peers via DHT or PEX.
+                <p class="text-xs text-brand-800/80 leading-relaxed space-y-2">
+                  The <strong class="text-brand-900">Info Hash</strong> is a unique SHA-1 fingerprint of the file metadata. It allows clients to verify data integrity and find peers across the global network via DHT.
                 </p>
+                <div class="mt-4 pt-4 border-t border-brand-100/50">
+                  <p class="text-[10px] text-brand-600/70 font-medium italic">Parsed locally. Your data never leaves your browser.</p>
+                </div>
               </div>
             </div>
           </div>
@@ -311,7 +323,7 @@
 
       helpers.render(html);
 
-      // Re-attach listeners (B9 compliance)
+      // B9: Namespace pollution avoidance - re-attach listeners
       const searchInput = mountEl.querySelector('#torrent-search');
       if (searchInput) {
         if (state.isSearching) {
@@ -337,12 +349,11 @@
       });
     }
 
-    // --- Core Torrent Utilities ---
-    
+    // --- Bencode Decoder (Handles B2: Binary correctly) ---
     function decodeBencode(buffer) {
       let pos = 0;
       function parse() {
-        if (pos >= buffer.length) throw new Error('Unexpected End of Buffer');
+        if (pos >= buffer.length) throw new Error('Unexpected EOF');
         const start = pos;
         const char = buffer[pos];
 
@@ -380,7 +391,7 @@
           if (colon === -1) throw new Error('Invalid string length prefix');
           const len = parseInt(decoder.decode(buffer.subarray(pos, colon)), 10);
           pos = colon + 1;
-          if (pos + len > buffer.length) throw new Error('Buffer overflow while reading string');
+          if (pos + len > buffer.length) throw new Error('Buffer overflow');
           const val = buffer.subarray(pos, pos + len);
           pos += len;
           return { type: 'string', value: val, slice: buffer.subarray(start, pos) };
@@ -400,7 +411,7 @@
     function formatSize(bytes) {
       if (!bytes || bytes === 0) return '0 B';
       const k = 1024;
-      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
