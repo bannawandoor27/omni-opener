@@ -1,6 +1,11 @@
 (function () {
   'use strict';
 
+  /**
+   * Senior Staff Engineer Edition: Tar Opener
+   * A high-performance, browser-native TAR/TGZ explorer.
+   */
+
   function esc(str) {
     if (str === null || str === undefined) return '';
     const div = document.createElement('div');
@@ -29,7 +34,7 @@
   }
 
   /**
-   * Basic TAR parser for POSIX/ustar/GNU formats.
+   * Robust TAR parser for POSIX/ustar/GNU formats.
    */
   function parseTar(buffer) {
     const bytes = new Uint8Array(buffer);
@@ -40,6 +45,8 @@
 
     while (offset + 512 <= bytes.length) {
       const header = bytes.subarray(offset, offset + 512);
+      
+      // Check for end of archive (two 512-byte blocks of zeros)
       if (header[0] === 0) {
         if (offset + 1024 <= bytes.length && bytes[offset + 512] === 0) break;
         offset += 512;
@@ -67,6 +74,7 @@
       const data = bytes.subarray(contentOffset, contentOffset + size);
 
       if (type === 'L') {
+        // GNU Long Link
         nextFileName = decoder.decode(data).split('\0')[0];
       } else {
         const isDir = type === '5' || name.endsWith('/');
@@ -121,26 +129,51 @@
       const state = h.getState();
       const files = state.tarFiles || [];
       const searchTerm = (state.searchTerm || '').toLowerCase();
-      const filtered = searchTerm 
+      const sortCol = state.sortCol || 'name';
+      const sortDir = state.sortDir || 'asc';
+
+      let filtered = searchTerm 
         ? files.filter(f => f.name.toLowerCase().includes(searchTerm))
-        : files;
+        : [...files];
+
+      // Sorting Logic
+      filtered.sort((a, b) => {
+        let valA = a[sortCol];
+        let valB = b[sortCol];
+        
+        if (sortCol === 'name') {
+          // Keep directories at top if sorting by name
+          if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        }
+
+        if (typeof valA === 'string') valA = valA.toLowerCase();
+        if (typeof valB === 'string') valB = valB.toLowerCase();
+
+        if (valA < valB) return sortDir === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
 
       const html = `
-        <div class="p-6">
+        <div class="p-6 max-w-6xl mx-auto">
           <!-- U1. File info bar -->
           <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100">
             <span class="font-semibold text-surface-800">${esc(state.fileName)}</span>
             <span class="text-surface-300">|</span>
             <span>${formatSize(state.fileSize)}</span>
             <span class="text-surface-300">|</span>
-            <span class="text-surface-500">.tar archive</span>
+            <span class="text-surface-500">${state.isGzip ? '.tar.gz (Gzipped TAR)' : '.tar archive'}</span>
+            ${state.totalUncompressedSize ? `
+              <span class="text-surface-300">|</span>
+              <span class="text-brand-600 font-medium">Extracted: ${formatSize(state.totalUncompressedSize)}</span>
+            ` : ''}
           </div>
 
           <!-- U10. Section header with count -->
           <div class="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-4">
             <div class="flex items-center gap-3">
               <h3 class="font-semibold text-surface-800">Archive Entries</h3>
-              <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${files.length} items</span>
+              <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-medium">${files.length} items</span>
             </div>
             
             <div class="relative group">
@@ -148,9 +181,9 @@
               <input 
                 type="text" 
                 id="tar-search" 
-                placeholder="Filter files..." 
+                placeholder="Search archive contents..." 
                 value="${esc(state.searchTerm)}"
-                class="w-full md:w-64 pl-9 pr-4 py-2 text-sm bg-white border border-surface-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all outline-none"
+                class="w-full md:w-80 pl-9 pr-4 py-2 text-sm bg-white border border-surface-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all outline-none shadow-sm"
               >
             </div>
           </div>
@@ -159,59 +192,70 @@
           <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm bg-white">
             <table class="min-w-full text-sm">
               <thead>
-                <tr class="bg-surface-50">
-                  <th class="sticky top-0 bg-surface-50 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200">Name</th>
-                  <th class="sticky top-0 bg-surface-50 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 w-28">Size</th>
-                  <th class="sticky top-0 bg-surface-50 px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 w-32">Actions</th>
+                <tr class="bg-surface-50/50">
+                  <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors sort-header" data-col="name">
+                    Name ${sortCol === 'name' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                  </th>
+                  <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 w-32 cursor-pointer hover:bg-surface-100 transition-colors sort-header" data-col="size">
+                    Size ${sortCol === 'size' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                  </th>
+                  <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 w-32">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-surface-100">
                 ${filtered.map((f) => `
-                  <tr class="even:bg-surface-50/30 hover:bg-brand-50 transition-colors group cursor-pointer tar-entry-row" data-name="${esc(f.name)}">
-                    <td class="px-4 py-2.5 text-surface-700 font-mono text-xs truncate max-w-md">
-                      <span class="mr-2 inline-block w-5 text-center">${f.isDir ? '📁' : getFileIcon(f.name)}</span>
+                  <tr class="even:bg-surface-50/30 hover:bg-brand-50/50 transition-colors group cursor-pointer tar-entry-row" data-name="${esc(f.name)}">
+                    <td class="px-4 py-2.5 text-surface-700 font-mono text-xs truncate max-w-lg">
+                      <span class="mr-2 inline-block w-5 text-center transition-transform group-hover:scale-110">${f.isDir ? '📁' : getFileIcon(f.name)}</span>
                       <span class="${f.isDir ? 'font-bold text-surface-900' : ''}">${esc(f.name)}</span>
                     </td>
                     <td class="px-4 py-2.5 text-surface-500 whitespace-nowrap tabular-nums">
                       ${f.isDir ? '<span class="text-surface-300">—</span>' : formatSize(f.size)}
                     </td>
                     <td class="px-4 py-2.5 text-right">
-                      ${f.isDir ? '' : `
-                        <button class="preview-entry-btn text-brand-600 hover:text-brand-700 font-semibold px-2 py-1 rounded hover:bg-brand-100 transition-colors" data-name="${esc(f.name)}">Preview</button>
-                        <button class="dl-entry-btn text-surface-400 hover:text-surface-700 ml-1 p-1" data-name="${esc(f.name)}" title="Download">💾</button>
-                      `}
+                      <div class="flex items-center justify-end gap-1">
+                        ${f.isDir ? '' : `
+                          <button class="preview-entry-btn text-brand-600 hover:text-brand-700 font-semibold px-2 py-1 rounded-lg hover:bg-brand-100 transition-colors text-xs" data-name="${esc(f.name)}">Preview</button>
+                          <button class="dl-entry-btn p-1.5 text-surface-400 hover:text-surface-700 hover:bg-surface-100 rounded-lg transition-all" data-name="${esc(f.name)}" title="Download entry">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a2 2 0 002 2h12 a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                          </button>
+                        `}
+                      </div>
                     </td>
                   </tr>
                 `).join('')}
               </tbody>
             </table>
             ${filtered.length === 0 ? `
-              <div class="py-12 text-center bg-white">
-                <div class="text-3xl mb-2">📦</div>
-                <p class="text-surface-500">${files.length === 0 ? 'Archive is empty' : 'No files match your search'}</p>
+              <div class="py-20 text-center bg-white">
+                <div class="text-5xl mb-4 opacity-20">📦</div>
+                <h4 class="text-surface-800 font-medium mb-1">${files.length === 0 ? 'Empty Archive' : 'No matches found'}</h4>
+                <p class="text-surface-500 text-xs">${files.length === 0 ? 'This TAR file has no entries.' : 'Try a different search term.'}</p>
               </div>
             ` : ''}
           </div>
 
           <!-- Preview Modal -->
-          <div id="tar-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-surface-900/60 backdrop-blur-sm">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-              <div class="px-6 py-4 border-b border-surface-100 flex items-center justify-between bg-surface-50/50">
-                <div class="flex items-center gap-3 overflow-hidden">
-                  <span id="modal-icon" class="text-2xl"></span>
+          <div id="tar-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-surface-950/40 backdrop-blur-[2px]">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden border border-surface-200">
+              <div class="px-6 py-4 border-b border-surface-100 flex items-center justify-between bg-surface-50/80 backdrop-blur">
+                <div class="flex items-center gap-4 overflow-hidden">
+                  <span id="modal-icon" class="text-3xl"></span>
                   <div class="overflow-hidden">
                     <h4 id="modal-filename" class="text-sm font-bold text-surface-900 truncate"></h4>
-                    <p id="modal-meta" class="text-[10px] text-surface-500 font-semibold uppercase tracking-wider"></p>
+                    <p id="modal-meta" class="text-[10px] text-surface-500 font-bold uppercase tracking-widest"></p>
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
-                  <button id="modal-copy" class="hidden px-3 py-1.5 text-xs font-semibold text-brand-600 hover:bg-brand-50 rounded-lg transition-colors">Copy Text</button>
-                  <button id="modal-close" class="p-2 text-surface-400 hover:text-surface-900 hover:bg-surface-100 rounded-full transition-all">
+                  <button id="modal-copy" class="hidden px-4 py-1.5 text-xs font-bold text-brand-600 bg-brand-50 hover:bg-brand-100 rounded-xl transition-all">Copy Content</button>
+                  <button id="modal-close" class="p-2 text-surface-400 hover:text-surface-900 hover:bg-surface-200 rounded-full transition-all">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                   </button>
                 </div>
               </div>
-              <div id="modal-body" class="flex-1 overflow-auto bg-white min-h-[300px]"></div>
+              <div id="modal-body" class="flex-1 overflow-auto bg-white min-h-[400px]"></div>
             </div>
           </div>
         </div>
@@ -219,7 +263,7 @@
 
       h.render(html);
 
-      // Search Logic
+      // Search Persistence
       const search = document.getElementById('tar-search');
       if (search) {
         search.addEventListener('input', (e) => {
@@ -233,9 +277,19 @@
         });
       }
 
-      // Event Listeners
+      // Sorting Listeners
       const mount = h.getRenderEl();
-      
+      mount.querySelectorAll('.sort-header').forEach(header => {
+        header.onclick = () => {
+          const col = header.dataset.col;
+          const currentDir = state.sortDir || 'asc';
+          const newDir = (state.sortCol === col && currentDir === 'asc') ? 'desc' : 'asc';
+          h.setState({ sortCol: col, sortDir: newDir });
+          _renderFn(h);
+        };
+      });
+
+      // Entry Actions
       const openPreview = (name) => {
         const file = files.find(f => f.name === name);
         if (file && !file.isDir) showPreview(file, h);
@@ -272,7 +326,7 @@
       revoke();
       modal.classList.remove('hidden');
       filename.textContent = file.name;
-      meta.textContent = `${formatSize(file.size)} • Uncompressed Entry`;
+      meta.textContent = `${formatSize(file.size)} • Extracted Entry`;
       icon.textContent = getFileIcon(file.name);
       copy.classList.add('hidden');
       body.innerHTML = '';
@@ -293,7 +347,10 @@
         const blob = new Blob([file.data]);
         const url = URL.createObjectURL(blob);
         _lastUrl = url;
-        body.innerHTML = `<div class="flex items-center justify-center p-8 h-full"><img src="${url}" class="max-w-full max-h-[70vh] object-contain shadow-lg rounded-lg border border-surface-100 bg-surface-50"></div>`;
+        body.innerHTML = `
+          <div class="flex items-center justify-center p-12 h-full bg-surface-50/50">
+            <img src="${url}" class="max-w-full max-h-[70vh] object-contain shadow-2xl rounded-xl border border-surface-200 bg-white">
+          </div>`;
       } else {
         const text = new TextDecoder().decode(file.data);
         const isBinary = /[\x00-\x08\x0E-\x1F]/.test(text.slice(0, 1024));
@@ -301,14 +358,14 @@
         if (isBinary) {
           // U8. Code/pre block
           body.innerHTML = `
-            <div class="rounded-none overflow-hidden border-t border-surface-100">
-              <pre class="p-4 text-xs font-mono bg-gray-950 text-gray-400 overflow-x-auto leading-relaxed select-all">${generateHexDump(file.data)}</pre>
+            <div class="h-full bg-gray-950 overflow-hidden">
+              <pre class="p-6 text-[11px] font-mono text-blue-400 overflow-x-auto leading-relaxed h-full select-all">${generateHexDump(file.data)}</pre>
             </div>`;
         } else {
           // U8. Code/pre block
           body.innerHTML = `
-            <div class="rounded-none overflow-hidden border-t border-surface-100">
-              <pre class="p-6 text-sm font-mono bg-gray-950 text-gray-100 overflow-x-auto leading-relaxed select-all">${esc(text)}</pre>
+            <div class="h-full bg-gray-900 overflow-hidden">
+              <pre class="p-8 text-sm font-mono text-gray-100 overflow-x-auto leading-relaxed h-full select-all">${esc(text)}</pre>
             </div>`;
           copy.classList.remove('hidden');
           copy.onclick = (e) => h.copyToClipboard(text, e.target);
@@ -320,7 +377,7 @@
       accept: '.tar,.tgz,.tar.gz',
       binary: true,
       dropLabel: 'Drop a .tar or .tgz file here',
-      infoHtml: '<strong>Privacy:</strong> All files are processed locally in your browser using pako and fflate. No data is sent to any server.',
+      infoHtml: 'Secure browser-side extraction. No data ever leaves your device.',
 
       onInit: function (h) {
         h.loadScripts([
@@ -334,56 +391,56 @@
       },
 
       onFile: function _onFileFn(file, content, h) {
-        // U2. Descriptive loading message
+        revoke(); // B5. Revoke any existing object URLs on new file load
         h.showLoading('Reading archive structure...');
         
-        const checkAndProcess = () => {
+        const checkLibraries = () => {
           if (typeof pako === 'undefined' || typeof fflate === 'undefined') {
-            setTimeout(checkAndProcess, 50);
+            setTimeout(checkLibraries, 50);
             return;
           }
 
           try {
             let data = new Uint8Array(content);
+            let isGzip = false;
             
-            // B1. Handle GZIP if needed
+            // B1. Handle GZIP if detected (0x1f 0x8b magic)
             if (data[0] === 0x1f && data[1] === 0x8b) {
-              h.showLoading('Decompressing GZIP content...');
+              isGzip = true;
+              h.showLoading('Decompressing GZIP stream...');
               data = pako.ungzip(data);
             }
 
-            h.showLoading('Parsing TAR headers...');
+            h.showLoading('Parsing TAR entries...');
             const files = parseTar(data.buffer);
             
             if (!files || files.length === 0) {
-              return h.showError('Empty Archive', 'The TAR file contains no files.');
+              return h.showError('Empty Archive', 'The TAR file contains no valid entries.');
             }
 
             let totalUncompressedSize = 0;
             files.forEach(f => { if (!f.isDir) totalUncompressedSize += f.size; });
 
-            files.sort((a, b) => {
-              if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-              return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-            });
-
             h.setState({
               tarFiles: files,
               fileName: file.name,
               fileSize: file.size,
+              isGzip: isGzip,
               totalUncompressedSize: totalUncompressedSize,
-              searchTerm: ''
+              searchTerm: '',
+              sortCol: 'name',
+              sortDir: 'asc'
             });
 
             _renderTar(h);
+            h.showLoading(false);
           } catch (e) {
-            console.error(e);
-            // U3. Friendly error message
-            h.showError('Could not open archive', 'The file may be corrupted or in an unsupported format. TAR and TAR.GZ (ustar/GNU) are supported.');
+            console.error('[TarOpener] Parsing error:', e);
+            h.showError('Failed to open archive', 'The file may be corrupted, or uses an unsupported compression variant. Only standard TAR and GZIP-TAR are supported.');
           }
         };
 
-        checkAndProcess();
+        checkLibraries();
       },
 
       actions: [
@@ -404,23 +461,32 @@
             const state = h.getState();
             if (!state.tarFiles || typeof fflate === 'undefined') return;
             
-            h.showLoading('Compressing to ZIP...');
+            h.showLoading('Preparing ZIP archive...');
             
+            // Use setTimeout to allow UI to update
             setTimeout(() => {
               try {
                 const zipData = {};
+                let filesIncluded = 0;
+                
                 state.tarFiles.forEach(f => {
                   if (!f.isDir && f.data) {
                     zipData[f.name] = f.data;
+                    filesIncluded++;
                   }
                 });
+
+                if (filesIncluded === 0) {
+                  h.showError('No files to compress', 'The archive only contains directories.');
+                  return;
+                }
 
                 const zipped = fflate.zipSync(zipData);
                 const zipName = state.fileName.replace(/\.tar(\.gz)?$/i, '') + '.zip';
                 h.download(zipName, zipped, 'application/zip');
                 h.showLoading(false);
               } catch (e) {
-                h.showError('Conversion failed', e.message);
+                h.showError('Conversion failed', 'An error occurred during ZIP creation: ' + e.message);
               }
             }, 50);
           }
