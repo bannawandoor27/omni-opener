@@ -13,9 +13,7 @@
       infoHtml: '<strong>How it works:</strong> This tool parses NuGet packages (.nupkg) as ZIP archives, extracts metadata from the included .nuspec file, and lists all packaged contents directly in your browser.',
 
       onInit: function (h) {
-        if (typeof JSZip === 'undefined') {
-          h.loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
-        }
+        return h.loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
       },
 
       onFile: function (file, content, h) {
@@ -39,20 +37,20 @@
         {
           label: '📋 Copy File List',
           id: 'copy-list',
-          onClick: function(helpers, btn) {
-            const state = helpers.getState();
-            const files = state.zipFiles || state.tarFiles || state.entries || [];
-            if (!files || files.length === 0) {
-                 helpers.copyToClipboard(helpers.getFile().name, btn);
-                 return;
+          onClick: function (h, btn) {
+            var files = h.getState().fileList || [];
+            if (files.length === 0) {
+              h.copyToClipboard(h.getFile().name, btn);
+              return;
             }
-            const list = files.map(f => (f.name || f.path || f.name)).join('\n');
-            helpers.copyToClipboard(list, btn);
+            var text = files.map(function (f) { return f.path; }).sort().join('\n');
+            h.copyToClipboard(text, btn);
           }
         },
-
         {
-          label: '📋 Copy Metadata', id: 'copy-meta', onClick: function (h, btn) {
+          label: '📋 Copy Metadata',
+          id: 'copy-meta',
+          onClick: function (h, btn) {
             var meta = h.getState().metadata;
             if (meta) {
               var text = Object.keys(meta).map(function (k) { return k + ': ' + meta[k]; }).join('\n');
@@ -61,7 +59,9 @@
           }
         },
         {
-          label: '📥 Download .nuspec', id: 'dl-nuspec', onClick: function (h) {
+          label: '📥 Download .nuspec',
+          id: 'dl-nuspec',
+          onClick: function (h) {
             var specText = h.getState().specText;
             var specName = h.getState().specName || 'package.nuspec';
             if (specText) h.download(specName, specText, 'application/xml');
@@ -79,11 +79,16 @@
     var fileList = [];
 
     zip.forEach(function (relativePath, file) {
-      fileList.push({ path: relativePath, size: file._data ? file._data.uncompressedSize : 0 });
+      fileList.push({
+        path: relativePath,
+        size: file._data ? (file._data.uncompressedSize || 0) : 0
+      });
       if (relativePath.toLowerCase().endsWith('.nuspec')) {
         nuspecFile = file;
       }
     });
+
+    h.setState('fileList', fileList);
 
     if (!nuspecFile) {
       h.showError('Incomplete package', 'No .nuspec file found inside the package.');
