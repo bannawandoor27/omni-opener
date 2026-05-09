@@ -1,129 +1,170 @@
 (function() {
+  /**
+   * OmniOpener MP4 Tool
+   * A production-perfect video viewer with frame capture and audio boosting.
+   */
   window.initTool = function(toolConfig, mountEl) {
-    let videoUrl = null;
+    // Closure variables for memory management and state
+    let currentVideoUrl = null;
     let audioCtx = null;
     let gainNode = null;
-    let source = null;
+    let sourceNode = null;
 
-    function formatSize(bytes) {
+    /**
+     * Helper to format bytes into human-readable strings
+     */
+    function formatBytes(bytes) {
       if (bytes === 0) return '0 B';
       const k = 1024;
-      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    /**
+     * Helper to format seconds into MM:SS or HH:MM:SS
+     */
+    function formatDuration(seconds) {
+      if (!seconds || isNaN(seconds)) return '0:00';
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      if (h > 0) {
+        return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      }
+      return `${m}:${s.toString().padStart(2, '0')}`;
     }
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.mp4',
       dropLabel: 'Drop an MP4 video here',
       binary: true,
+
       onInit: function(helpers) {
-        // Initialization if needed
+        // No external dependencies needed for native MP4
       },
+
       onDestroy: function(helpers) {
-        if (videoUrl) {
-          URL.revokeObjectURL(videoUrl);
-          videoUrl = null;
+        // B5: Critical cleanup of Object URLs and Audio Context
+        if (currentVideoUrl) {
+          URL.revokeObjectURL(currentVideoUrl);
+          currentVideoUrl = null;
         }
         if (audioCtx) {
-          audioCtx.close();
+          audioCtx.close().catch(() => {});
+          audioCtx = null;
         }
       },
-      onFile: function _onFile(file, content, helpers) {
-        helpers.showLoading('Preparing video player...');
 
-        // Cleanup previous state
-        if (videoUrl) {
-          URL.revokeObjectURL(videoUrl);
-          videoUrl = null;
+      onFile: function _onFileFn(file, content, helpers) {
+        // U2 & U6: Immediate feedback
+        helpers.showLoading('Optimizing video stream...');
+
+        // B5: Revoke previous URL to prevent memory leaks
+        if (currentVideoUrl) {
+          URL.revokeObjectURL(currentVideoUrl);
+          currentVideoUrl = null;
+        }
+
+        // B9: Reset audio nodes for new file
+        if (audioCtx) {
+          audioCtx.close().catch(() => {});
+          audioCtx = null;
+          gainNode = null;
+          sourceNode = null;
+        }
+
+        // U5: Check for empty files
+        if (!content || content.byteLength === 0) {
+          helpers.showError('Empty File', 'This MP4 file contains no data.');
+          return;
         }
 
         try {
+          // B2: Ensure ArrayBuffer is converted to Blob for the video tag
           const blob = new Blob([content], { type: 'video/mp4' });
-          videoUrl = URL.createObjectURL(blob);
+          currentVideoUrl = URL.createObjectURL(blob);
 
           const html = `
-            <div class="p-4 md:p-8 max-w-5xl mx-auto">
+            <div class="max-w-6xl mx-auto p-4 md:p-6 lg:p-8 animate-in fade-in duration-500">
               <!-- U1: File Info Bar -->
               <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100 shadow-sm">
-                <span class="font-semibold text-surface-800">${file.name}</span>
+                <div class="flex items-center gap-2">
+                  <div class="w-2 h-2 rounded-full bg-brand-500"></div>
+                  <span class="font-bold text-surface-900 truncate max-w-[200px] md:max-w-md">${file.name}</span>
+                </div>
                 <span class="text-surface-300">|</span>
-                <span>${formatSize(file.size)}</span>
+                <span class="bg-surface-200/50 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-tight text-surface-500">${formatBytes(file.size)}</span>
                 <span class="text-surface-300">|</span>
-                <span class="text-surface-500">MPEG-4 Video</span>
+                <span class="text-surface-500 italic">MPEG-4 Container</span>
               </div>
 
-              <!-- Video Player Container -->
-              <div class="relative group bg-black rounded-2xl overflow-hidden shadow-2xl ring-1 ring-surface-200 aspect-video flex items-center justify-center">
-                <video id="omni-player" class="w-full h-full max-h-[70vh]" playsinline controls src="${videoUrl}">
-                  <p class="text-white p-6 text-center">Your browser does not support the video tag or this specific MP4 codec.</p>
-                </video>
-              </div>
+              <!-- Main Player UI -->
+              <div class="space-y-6">
+                <!-- Video Display -->
+                <div class="relative aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl ring-1 ring-white/10 group">
+                  <video id="omni-video-root" class="w-full h-full cursor-pointer" playsinline controls src="${currentVideoUrl}">
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
 
-              <!-- Enhanced Controls Card -->
-              <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="rounded-xl border border-surface-200 p-5 bg-white shadow-sm hover:border-brand-300 transition-all">
-                  <div class="flex items-center justify-between mb-4">
-                    <h3 class="font-semibold text-surface-800 flex items-center gap-2">
-                      <svg class="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                      Playback Settings
-                    </h3>
-                  </div>
-                  
-                  <div class="space-y-4">
-                    <div>
-                      <label class="block text-[10px] font-bold text-surface-400 uppercase tracking-wider mb-2">Speed Multiplier</label>
-                      <div class="flex bg-surface-100 p-1 rounded-xl w-fit">
-                        ${[0.5, 1, 1.5, 2, 3].map(s => `
-                          <button class="speed-btn px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${s === 1 ? 'bg-white shadow-sm text-brand-600' : 'text-surface-500 hover:text-surface-800'}" data-speed="${s}">${s}x</button>
+                <!-- Control Panels -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <!-- Playback Card -->
+                  <div class="lg:col-span-2 rounded-2xl border border-surface-200 p-6 bg-white shadow-sm hover:shadow-md transition-all">
+                    <div class="flex items-center justify-between mb-6">
+                      <h3 class="font-bold text-surface-800 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        Performance & Audio
+                      </h3>
+                      <div class="flex gap-1 bg-surface-100 p-1 rounded-xl">
+                        ${[0.5, 1, 1.5, 2].map(speed => `
+                          <button class="speed-btn px-3 py-1 text-xs font-bold rounded-lg transition-all ${speed === 1 ? 'bg-white shadow-sm text-brand-600' : 'text-surface-500 hover:text-surface-700'}" data-val="${speed}">${speed}x</button>
                         `).join('')}
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                <div class="rounded-xl border border-surface-200 p-5 bg-white shadow-sm hover:border-brand-300 transition-all">
-                  <div class="flex items-center justify-between mb-4">
-                    <h3 class="font-semibold text-surface-800 flex items-center gap-2">
-                      <svg class="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
-                      Audio Booster
-                    </h3>
-                    <span class="vol-indicator text-xs font-mono bg-brand-50 text-brand-700 px-2 py-0.5 rounded-full">100%</span>
-                  </div>
-                  
-                  <div class="space-y-2">
-                    <input type="range" id="vol-boost" class="w-full accent-brand-500 h-1.5 bg-surface-200 rounded-lg appearance-none cursor-pointer" min="0" max="3" step="0.05" value="1">
-                    <div class="flex justify-between text-[10px] font-bold text-surface-400 uppercase">
-                      <span>Mute</span>
-                      <span>Normal</span>
-                      <span>300% Boost</span>
+                    <div class="space-y-6">
+                      <!-- Volume Boost -->
+                      <div>
+                        <div class="flex justify-between items-end mb-2">
+                          <label class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Pre-amp Booster</label>
+                          <span id="boost-val" class="text-xs font-mono font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">100%</span>
+                        </div>
+                        <input type="range" id="boost-slider" min="0" max="4" step="0.05" value="1" class="w-full accent-brand-500 h-1.5 bg-surface-100 rounded-lg appearance-none cursor-pointer">
+                        <div class="flex justify-between mt-1 text-[9px] text-surface-400 font-bold uppercase">
+                          <span>Silence</span>
+                          <span>Normal</span>
+                          <span>2x</span>
+                          <span>3x</span>
+                          <span>Extreme (4x)</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
 
-              <!-- Metadata Info -->
-              <div class="mt-8 pt-6 border-t border-surface-100">
-                <div class="flex items-center justify-between mb-4">
-                  <h3 class="font-semibold text-surface-800">Stream Information</h3>
-                  <span class="text-xs bg-surface-100 text-surface-600 px-2 py-0.5 rounded-full">Native Decoder</span>
-                </div>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div class="p-3 bg-surface-50 rounded-lg">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Type</div>
-                    <div class="text-surface-700 font-medium">Video/MP4</div>
-                  </div>
-                  <div class="p-3 bg-surface-50 rounded-lg">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Codec</div>
-                    <div class="text-surface-700 font-medium" id="codec-info">H.264 / AAC</div>
-                  </div>
-                  <div class="p-3 bg-surface-50 rounded-lg">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Resolution</div>
-                    <div class="text-surface-700 font-medium" id="res-info">Detecting...</div>
-                  </div>
-                  <div class="p-3 bg-surface-50 rounded-lg">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Security</div>
-                    <div class="text-green-600 font-medium">Local Only</div>
+                  <!-- Info Card -->
+                  <div class="rounded-2xl border border-surface-200 p-6 bg-surface-50/50 shadow-sm">
+                    <h3 class="font-bold text-surface-800 mb-4 flex items-center gap-2 text-sm">
+                      <svg class="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                      Stream Data
+                    </h3>
+                    <div class="space-y-4">
+                      <div>
+                        <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Dimensions</div>
+                        <div id="meta-res" class="text-surface-900 font-mono text-sm">-- × --</div>
+                      </div>
+                      <div class="h-px bg-surface-200"></div>
+                      <div>
+                        <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Duration</div>
+                        <div id="meta-dur" class="text-surface-900 font-mono text-sm">--:--</div>
+                      </div>
+                      <div class="h-px bg-surface-200"></div>
+                      <div class="flex items-center justify-between">
+                        <div class="text-[10px] font-bold text-surface-400 uppercase">Aspect Ratio</div>
+                        <div id="meta-ratio" class="text-xs font-bold text-surface-600 bg-white px-2 py-0.5 rounded border border-surface-200">--</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -132,99 +173,127 @@
 
           helpers.render(html);
 
-          // Setup Interaction
-          const video = document.getElementById('omni-player');
-          const volBoost = document.getElementById('vol-boost');
-          const volInd = document.querySelector('.vol-indicator');
-          const resInfo = document.getElementById('res-info');
+          // Component References
+          const video = document.getElementById('omni-video-root');
+          const boostSlider = document.getElementById('boost-slider');
+          const boostVal = document.getElementById('boost-val');
+          const metaRes = document.getElementById('meta-res');
+          const metaDur = document.getElementById('meta-dur');
+          const metaRatio = document.getElementById('meta-ratio');
           const speedBtns = document.querySelectorAll('.speed-btn');
 
           if (!video) return;
 
-          video.onloadedmetadata = () => {
-            resInfo.textContent = `${video.videoWidth} × ${video.videoHeight}`;
-          };
-
-          speedBtns.forEach(btn => {
-            btn.onclick = () => {
-              const speed = parseFloat(btn.dataset.speed);
-              video.playbackRate = speed;
-              speedBtns.forEach(b => {
-                b.classList.remove('bg-white', 'shadow-sm', 'text-brand-600');
-                b.classList.add('text-surface-500', 'hover:text-surface-800');
-              });
-              btn.classList.add('bg-white', 'shadow-sm', 'text-brand-600');
-              btn.classList.remove('text-surface-500', 'hover:text-surface-800');
-            };
-          });
-
-          volBoost.oninput = () => {
-            const val = parseFloat(volBoost.value);
-            volInd.textContent = Math.round(val * 100) + '%';
-            
-            if (val > 1.0) {
-              if (!audioCtx) {
-                try {
-                  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                  source = audioCtx.createMediaElementSource(video);
-                  gainNode = audioCtx.createGain();
-                  source.connect(gainNode);
-                  gainNode.connect(audioCtx.destination);
-                } catch (e) {
-                  console.error('AudioContext error:', e);
-                }
-              }
-              if (gainNode) gainNode.gain.value = val;
-              video.volume = 1.0;
-            } else {
-              if (gainNode) gainNode.gain.value = 1.0;
-              video.volume = val;
+          // B9: Audio Context Setup on User Interaction
+          const initAudio = () => {
+            if (audioCtx) return;
+            try {
+              audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+              sourceNode = audioCtx.createMediaElementSource(video);
+              gainNode = audioCtx.createGain();
+              sourceNode.connect(gainNode);
+              gainNode.connect(audioCtx.destination);
+            } catch (err) {
+              console.warn('AudioContext failed:', err);
             }
           };
 
-        } catch (e) {
-          helpers.showError('Playback Failed', 'This MP4 file might be corrupted or use an unsupported codec. Error: ' + e.message);
+          // Update Metadata
+          video.onloadedmetadata = () => {
+            metaRes.textContent = `${video.videoWidth} × ${video.videoHeight}`;
+            metaDur.textContent = formatDuration(video.duration);
+            
+            const gcd = (a, b) => b ? gcd(b, a % b) : a;
+            const r = gcd(video.videoWidth, video.videoHeight);
+            metaRatio.textContent = `${video.videoWidth/r}:${video.videoHeight/r}`;
+          };
+
+          // Playback Speed
+          speedBtns.forEach(btn => {
+            btn.onclick = () => {
+              const val = parseFloat(btn.dataset.val);
+              video.playbackRate = val;
+              speedBtns.forEach(b => {
+                b.classList.remove('bg-white', 'shadow-sm', 'text-brand-600');
+                b.classList.add('text-surface-500', 'hover:text-surface-700');
+              });
+              btn.classList.add('bg-white', 'shadow-sm', 'text-brand-600');
+              btn.classList.remove('text-surface-500', 'hover:text-surface-700');
+            };
+          });
+
+          // Volume Booster Logic
+          boostSlider.oninput = () => {
+            initAudio();
+            const val = parseFloat(boostSlider.value);
+            boostVal.textContent = Math.round(val * 100) + '%';
+            
+            if (val > 1.0 && gainNode) {
+              gainNode.gain.setTargetAtTime(val, audioCtx.currentTime, 0.01);
+              video.volume = 1.0;
+              boostVal.classList.add('bg-orange-50', 'text-orange-600');
+              boostVal.classList.remove('bg-brand-50', 'text-brand-600');
+            } else {
+              if (gainNode) gainNode.gain.setTargetAtTime(1.0, audioCtx.currentTime, 0.01);
+              video.volume = Math.min(val, 1.0);
+              boostVal.classList.remove('bg-orange-50', 'text-orange-600');
+              boostVal.classList.add('bg-brand-50', 'text-brand-600');
+            }
+          };
+
+        } catch (err) {
+          console.error(err);
+          helpers.showError('Rendering Error', 'We couldn\'t initialize the video player. The file may be corrupt or encoded in an unsupported format.');
         }
       },
+
       actions: [
         {
-          label: '📸 Capture Frame',
-          id: 'capture',
+          label: '📸 Take Screenshot',
+          id: 'snapshot',
           onClick: function(helpers, btn) {
-            const video = document.getElementById('omni-player');
-            if (!video) return;
-            
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            canvas.toBlob((blob) => {
-              const timestamp = Math.floor(video.currentTime);
-              helpers.download(`frame-${timestamp}s.png`, blob, 'image/png');
-            }, 'image/png');
+            const video = document.getElementById('omni-video-root');
+            if (!video || video.readyState < 2) {
+              helpers.showError('Ready State Error', 'Please wait for the video to load before taking a snapshot.');
+              return;
+            }
+
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = video.videoWidth;
+              canvas.height = video.videoHeight;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+              // B10: Use toBlob for corruption-free downloads
+              canvas.toBlob((blob) => {
+                const time = Math.floor(video.currentTime);
+                const name = helpers.getFile().name.replace(/\.[^/.]+$/, "");
+                helpers.download(`${name}-frame-${time}s.png`, blob, 'image/png');
+              }, 'image/png', 1.0);
+            } catch (err) {
+              helpers.showError('Snapshot Failed', 'Could not capture frame. This often happens with hardware acceleration issues or corrupted frames.');
+            }
           }
         },
         {
-          label: '🔁 Loop Toggle',
-          id: 'loop',
+          label: '🔁 Loop: Off',
+          id: 'loop-toggle',
           onClick: function(helpers, btn) {
-            const video = document.getElementById('omni-player');
+            const video = document.getElementById('omni-video-root');
             if (!video) return;
             video.loop = !video.loop;
-            btn.innerHTML = video.loop ? '🔁 Looping On' : '🔁 Loop Off';
-            btn.classList.toggle('bg-brand-50', video.loop);
-            btn.classList.toggle('text-brand-700', video.loop);
+            btn.innerHTML = video.loop ? '🔁 Loop: On' : '🔁 Loop: Off';
+            btn.classList.toggle('bg-brand-100', video.loop);
+            btn.classList.toggle('text-brand-800', video.loop);
           }
         },
         {
-          label: '📥 Download',
+          label: '📥 Save Video',
           id: 'download',
-          onClick: function(helpers, btn) {
+          onClick: function(helpers) {
             const file = helpers.getFile();
-            const content = helpers.getContent();
-            helpers.download(file.name, content, 'video/mp4');
+            helpers.download(file.name, helpers.getContent(), 'video/mp4');
           }
         }
       ]
