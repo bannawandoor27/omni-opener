@@ -4,26 +4,12 @@
   window.initTool = function(toolConfig, mountEl) {
     let lastPreviewUrl = null;
 
-    /**
-     * @typedef {Object} DDSResult
-     * @property {HTMLCanvasElement} canvas
-     * @property {number} width
-     * @property {number} height
-     * @property {string} format
-     * @property {number} mipmapCount
-     * @property {string} fourCC
-     * @property {number} rgbBitCount
-     * @property {number} caps
-     * @property {number} flags
-     * @property {number} headerSize
-     */
-
     OmniTool.create(mountEl, toolConfig, {
       accept: '.dds',
       dropLabel: 'Drop a .dds texture here',
       binary: true,
       onInit: function(helpers) {
-        // No external dependencies to load
+        // No external dependencies needed for this format
       },
       onDestroy: function() {
         if (lastPreviewUrl) {
@@ -37,14 +23,14 @@
           lastPreviewUrl = null;
         }
 
-        helpers.showLoading('Analyzing DirectDraw Surface header...');
+        helpers.showLoading('Parsing DirectDraw Surface...');
         
-        // Small delay to ensure UI updates before heavy lifting
-        await new Promise(r => setTimeout(r, 50));
+        // Small delay to allow UI to show loading state
+        await new Promise(r => setTimeout(r, 10));
 
         try {
           if (!content || content.byteLength < 128) {
-            throw new Error('File too small to be a valid DDS texture.');
+            throw new Error('File is too small to be a valid DDS texture.');
           }
 
           const dds = parseDDS(content);
@@ -60,6 +46,11 @@
             return b + ' bytes';
           };
 
+          const esc = (str) => {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+          };
+
           const html = `
             <div class="max-w-6xl mx-auto p-4 md:p-6">
               <!-- U1: File info bar -->
@@ -73,88 +64,70 @@
                 <span class="px-2 py-0.5 bg-brand-100 text-brand-700 rounded text-[10px] font-bold uppercase tracking-tight">${esc(dds.format)}</span>
               </div>
 
-              <div class="space-y-6">
-                <!-- Preview Card -->
-                <div class="rounded-2xl border border-surface-200 overflow-hidden bg-white shadow-sm">
-                  <div class="px-5 py-3.5 border-b border-surface-100 flex items-center justify-between bg-surface-50/50">
-                    <div class="flex items-center gap-2">
-                      <svg class="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.587-1.587a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                      <h3 class="font-semibold text-surface-800 text-sm">Texture Preview</h3>
+              <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Preview Section -->
+                <div class="lg:col-span-2 space-y-4">
+                  <div class="rounded-2xl border border-surface-200 overflow-hidden bg-white shadow-sm flex flex-col h-full">
+                    <div class="px-5 py-3.5 border-b border-surface-100 flex items-center justify-between bg-surface-50/50">
+                      <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.587-1.587a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <h3 class="font-semibold text-surface-800 text-sm">Texture Preview</h3>
+                      </div>
+                      <div class="flex items-center gap-1.5">
+                        <button id="btn-zoom-out" class="p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-surface-200 text-surface-600 transition-all active:scale-95" title="Zoom Out">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path></svg>
+                        </button>
+                        <span id="zoom-label" class="text-xs font-medium text-surface-500 min-w-[3rem] text-center">100%</span>
+                        <button id="btn-zoom-in" class="p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-surface-200 text-surface-600 transition-all active:scale-95" title="Zoom In">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        </button>
+                        <div class="w-px h-4 bg-surface-200 mx-1"></div>
+                        <button id="btn-bg-toggle" class="p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-surface-200 text-brand-600 transition-all active:scale-95" title="Toggle Transparency Grid">
+                          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.993.883L13 3v1h1a1 1 0 01.117 1.993L14 6h-1v1a1 1 0 01-1.993.117L11 7V6h-1a1 1 0 01-.117-1.993L10 4h1V3a1 1 0 011-1zm0 10a1 1 0 01.993.883L13 13v1h1a1 1 0 01.117 1.993L14 16h-1v1a1 1 0 01-1.993.117L11 15v-1h-1a1 1 0 01-.117-1.993L10 12h1v-1a1 1 0 011-1z" clip-rule="evenodd"></path></svg>
+                        </button>
+                      </div>
                     </div>
-                    <div class="flex items-center gap-1">
-                      <button id="btn-zoom-out" class="p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-surface-200 text-surface-600 transition-all active:scale-95" title="Zoom Out">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path></svg>
-                      </button>
-                      <button id="btn-zoom-reset" class="px-2 py-1 hover:bg-white rounded-lg border border-transparent hover:border-surface-200 text-surface-600 text-xs font-medium transition-all active:scale-95">100%</button>
-                      <button id="btn-zoom-in" class="p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-surface-200 text-surface-600 transition-all active:scale-95" title="Zoom In">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                      </button>
-                      <div class="w-px h-4 bg-surface-200 mx-1"></div>
-                      <button id="btn-rotate" class="p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-surface-200 text-surface-600 transition-all active:scale-95" title="Rotate 90°">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                      </button>
-                      <button id="btn-bg-toggle" class="p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-surface-200 text-surface-600 transition-all active:scale-95 text-brand-600" title="Toggle Transparency Grid">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                      </button>
+                    <div id="preview-viewport" class="relative flex-1 overflow-auto bg-surface-100 min-h-[400px] flex items-center justify-center p-8 transition-colors border-b border-surface-100">
+                      <div id="checkerboard-bg" class="absolute inset-0 opacity-40 pointer-events-none" style="background-image: conic-gradient(#fff 0.25turn, #cbd5e1 0.25turn 0.5turn, #fff 0.5turn 0.75turn, #cbd5e1 0.75turn); background-size: 20px 20px;"></div>
+                      <div id="img-container" class="relative transition-transform duration-200 ease-out will-change-transform shadow-xl bg-white ring-1 ring-black/5">
+                        <!-- Canvas inserted here via JS -->
+                      </div>
                     </div>
-                  </div>
-                  <div id="preview-viewport" class="relative overflow-auto bg-surface-100 min-h-[500px] flex items-center justify-center p-8 transition-colors">
-                    <div id="checkerboard-bg" class="absolute inset-0 opacity-40 pointer-events-none" style="background-image: conic-gradient(#fff 0.25turn, #e5e7eb 0.25turn 0.5turn, #fff 0.5turn 0.75turn, #e5e7eb 0.75turn); background-size: 24px 24px;"></div>
-                    <div id="img-container" class="relative transition-transform duration-200 ease-out will-change-transform shadow-2xl bg-white ring-1 ring-black/5">
-                      <!-- Canvas inserted here via JS -->
+                    <div class="px-5 py-3 bg-surface-50/30 flex items-center justify-between text-[11px] text-surface-400 font-mono">
+                      <span>ORIGIN: TOP-LEFT</span>
+                      <span id="coord-info">0, 0</span>
                     </div>
                   </div>
                 </div>
 
-                <!-- Metadata Sections -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Metadata Section -->
+                <div class="space-y-6">
+                  <!-- U10: Section header with count -->
                   <div class="bg-white p-5 rounded-2xl border border-surface-200 shadow-sm">
                     <div class="flex items-center justify-between mb-4">
-                      <h3 class="font-semibold text-surface-800">Texture Details</h3>
-                      <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">Core Info</span>
+                      <h3 class="font-semibold text-surface-800">Properties</h3>
+                      <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">Core</span>
                     </div>
-                    <div class="space-y-0.5">
-                      <div class="flex justify-between items-center py-2 border-b border-surface-50 hover:bg-surface-50 px-2 rounded-lg transition-colors">
-                        <span class="text-sm text-surface-500 font-medium">Resolution</span>
-                        <span class="text-sm font-semibold text-surface-900 font-mono">${dds.width} × ${dds.height}</span>
-                      </div>
-                      <div class="flex justify-between items-center py-2 border-b border-surface-50 hover:bg-surface-50 px-2 rounded-lg transition-colors">
-                        <span class="text-sm text-surface-500 font-medium">Encoding</span>
-                        <span class="text-sm font-semibold text-surface-900">${esc(dds.format)}</span>
-                      </div>
-                      <div class="flex justify-between items-center py-2 border-b border-surface-50 hover:bg-surface-50 px-2 rounded-lg transition-colors">
-                        <span class="text-sm text-surface-500 font-medium">Mipmaps</span>
-                        <span class="text-sm font-semibold text-surface-900">${dds.mipmapCount}</span>
-                      </div>
-                      <div class="flex justify-between items-center py-2 hover:bg-surface-50 px-2 rounded-lg transition-colors">
-                        <span class="text-sm text-surface-500 font-medium">Aspect Ratio</span>
-                        <span class="text-sm font-semibold text-surface-900">${(dds.width / dds.height).toFixed(3)}:1</span>
-                      </div>
+                    <div class="space-y-1">
+                      ${renderMetaRow('Format', dds.format)}
+                      ${renderMetaRow('Dimensions', `${dds.width} × ${dds.height}`)}
+                      ${renderMetaRow('Mipmaps', dds.mipmapCount)}
+                      ${renderMetaRow('Bit Depth', dds.rgbBitCount ? dds.rgbBitCount + ' bits' : 'Compressed')}
+                      ${renderMetaRow('FourCC', dds.fourCC || 'N/A')}
                     </div>
                   </div>
 
                   <div class="bg-white p-5 rounded-2xl border border-surface-200 shadow-sm">
                     <div class="flex items-center justify-between mb-4">
-                      <h3 class="font-semibold text-surface-800">DDS Header Flags</h3>
-                      <span class="text-xs bg-surface-100 text-surface-600 px-2 py-0.5 rounded-full">Internal</span>
+                      <h3 class="font-semibold text-surface-800">Flags</h3>
+                      <span class="text-xs bg-surface-100 text-surface-600 px-2 py-0.5 rounded-full">DDS Header</span>
                     </div>
-                    <div class="space-y-0.5 font-mono text-xs">
-                      <div class="flex justify-between items-center py-2 border-b border-surface-50 hover:bg-surface-50 px-2 rounded-lg transition-colors">
-                        <span class="text-surface-400 uppercase tracking-tighter">Pixel FourCC</span>
-                        <span class="font-bold text-surface-700">${esc(dds.fourCC || 'None')}</span>
-                      </div>
-                      <div class="flex justify-between items-center py-2 border-b border-surface-50 hover:bg-surface-50 px-2 rounded-lg transition-colors">
-                        <span class="text-surface-400 uppercase tracking-tighter">RGB Bit Count</span>
-                        <span class="font-bold text-surface-700">${dds.rgbBitCount} bits</span>
-                      </div>
-                      <div class="flex justify-between items-center py-2 border-b border-surface-50 hover:bg-surface-50 px-2 rounded-lg transition-colors">
-                        <span class="text-surface-400 uppercase tracking-tighter">Header Size</span>
-                        <span class="font-bold text-surface-700">${dds.headerSize} bytes</span>
-                      </div>
-                      <div class="flex justify-between items-center py-2 hover:bg-surface-50 px-2 rounded-lg transition-colors">
-                        <span class="text-surface-400 uppercase tracking-tighter">Caps/Flags</span>
-                        <span class="font-bold text-surface-700">0x${dds.caps.toString(16).toUpperCase()} / 0x${dds.flags.toString(16).toUpperCase()}</span>
-                      </div>
+                    <!-- U7: Table-like list for metadata -->
+                    <div class="space-y-1 text-xs font-mono">
+                      ${renderMetaRow('Caps', '0x' + dds.caps.toString(16).toUpperCase())}
+                      ${renderMetaRow('Caps 2', '0x' + dds.caps2.toString(16).toUpperCase())}
+                      ${renderMetaRow('Flags', '0x' + dds.flags.toString(16).toUpperCase())}
+                      ${renderMetaRow('Header Size', dds.headerSize + ' bytes')}
                     </div>
                   </div>
                 </div>
@@ -163,29 +136,37 @@
           `;
 
           helpers.render(html);
+
+          function renderMetaRow(label, value) {
+            return `
+              <div class="flex justify-between items-center py-2 border-b border-surface-50 last:border-0 hover:bg-surface-50 px-2 -mx-2 rounded-lg transition-colors">
+                <span class="text-sm text-surface-500 font-medium">${label}</span>
+                <span class="text-sm font-semibold text-surface-900">${value}</span>
+              </div>
+            `;
+          }
           
           const container = document.getElementById('img-container');
           const canvas = dds.canvas;
           canvas.className = 'block max-w-none h-auto select-none';
-          canvas.style.imageRendering = 'pixelated';
+          canvas.style.imageRendering = (dds.width < 128 || dds.height < 128) ? 'pixelated' : 'auto';
           container.appendChild(canvas);
 
           // Interaction Closure
           let scale = 1;
-          let rotation = 0;
           let bgVisible = true;
 
           const updateTransform = () => {
-            container.style.transform = `scale(${scale}) rotate(${rotation}deg)`;
-            const resetBtn = document.getElementById('btn-zoom-reset');
-            if (resetBtn) resetBtn.textContent = `${Math.round(scale * 100)}%`;
+            container.style.transform = `scale(${scale})`;
+            const label = document.getElementById('zoom-label');
+            if (label) label.textContent = `${Math.round(scale * 100)}%`;
           };
 
           const el = (id) => document.getElementById(id);
-          if (el('btn-zoom-in')) el('btn-zoom-in').onclick = () => { scale = Math.min(scale * 1.25, 16); updateTransform(); };
-          if (el('btn-zoom-out')) el('btn-zoom-out').onclick = () => { scale = Math.max(scale * 0.8, 0.05); updateTransform(); };
-          if (el('btn-zoom-reset')) el('btn-zoom-reset').onclick = () => { scale = 1; updateTransform(); };
-          if (el('btn-rotate')) el('btn-rotate').onclick = () => { rotation = (rotation + 90) % 360; updateTransform(); };
+          
+          if (el('btn-zoom-in')) el('btn-zoom-in').onclick = () => { scale = Math.min(scale * 1.5, 32); updateTransform(); };
+          if (el('btn-zoom-out')) el('btn-zoom-out').onclick = () => { scale = Math.max(scale / 1.5, 0.1); updateTransform(); };
+          
           if (el('btn-bg-toggle')) el('btn-bg-toggle').onclick = () => {
             bgVisible = !bgVisible;
             const bg = el('checkerboard-bg');
@@ -194,22 +175,32 @@
             el('btn-bg-toggle').classList.toggle('text-surface-400', !bgVisible);
           };
 
+          canvas.onmousemove = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor((e.clientX - rect.left) / (rect.width / canvas.width));
+            const y = Math.floor((e.clientY - rect.top) / (rect.height / canvas.height));
+            const coordEl = el('coord-info');
+            if (coordEl && x >= 0 && x < canvas.width && y >= 0 && y < canvas.height) {
+              coordEl.textContent = `${x}, ${y}`;
+            }
+          };
+
           helpers.hideLoading();
 
         } catch (err) {
           console.error('[DDS Opener] Error:', err);
-          helpers.showError('Could not open DDS file', 'The browser-based decoder failed. This file might use an unsupported compression (like BC6/BC7/DX10) or be corrupted.');
+          helpers.showError('Could not render DDS file', 'This format or variant might be unsupported by the browser decoder. ' + (err.message || ''));
         }
       },
       actions: [
         {
-          label: 'Download as PNG',
+          label: 'Download PNG',
           id: 'dl-png',
           icon: 'download',
           onClick: function(helpers) {
             const canvas = helpers.getRenderEl().querySelector('canvas');
             if (!canvas) return;
-            helpers.showLoading('Compressing PNG...');
+            helpers.showLoading('Converting to PNG...');
             canvas.toBlob(function(blob) {
               helpers.hideLoading();
               if (blob) {
@@ -220,34 +211,7 @@
           }
         },
         {
-          label: 'Download as JPG',
-          id: 'dl-jpg',
-          icon: 'download',
-          onClick: function(helpers) {
-            const canvas = helpers.getRenderEl().querySelector('canvas');
-            if (!canvas) return;
-            helpers.showLoading('Generating JPG...');
-            
-            // Create a temporary canvas with white background for JPG (removes transparency)
-            const tmp = document.createElement('canvas');
-            tmp.width = canvas.width;
-            tmp.height = canvas.height;
-            const tctx = tmp.getContext('2d');
-            tctx.fillStyle = '#FFFFFF';
-            tctx.fillRect(0, 0, tmp.width, tmp.height);
-            tctx.drawImage(canvas, 0, 0);
-
-            tmp.toBlob(function(blob) {
-              helpers.hideLoading();
-              if (blob) {
-                const name = helpers.getFile().name.replace(/\.[^/.]+$/, "") + ".jpg";
-                helpers.download(name, blob, 'image/jpeg');
-              }
-            }, 'image/jpeg', 0.92);
-          }
-        },
-        {
-          label: 'Copy Details',
+          label: 'Copy Info',
           id: 'copy-meta',
           icon: 'copy',
           onClick: function(helpers, btn) {
@@ -256,25 +220,16 @@
                 const key = el.querySelector('span:first-child')?.innerText.trim() || '';
                 const val = el.querySelector('span:last-child')?.innerText.trim() || '';
                 return `${key}: ${val}`;
-              }).filter(l => l !== ': ');
+              }).filter(l => l && l !== ': ');
             helpers.copyToClipboard(lines.join('\n'), btn);
           }
         }
       ],
-      infoHtml: '<strong>Secure & Private:</strong> DirectDraw Surface textures are processed entirely in your browser using local resources. No data is ever uploaded.'
+      infoHtml: '<strong>Private & Secure:</strong> Textures are processed entirely in your browser. No data is sent to any server.'
     });
 
     /**
-     * @param {string} str 
-     */
-    function esc(str) {
-      if (!str) return '';
-      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
-
-    /**
      * @param {ArrayBuffer} buffer 
-     * @returns {DDSResult}
      */
     function parseDDS(buffer) {
       const header = new Int32Array(buffer, 0, 31);
@@ -287,6 +242,7 @@
       const width = header[4];
       const mipmapCount = Math.max(1, header[7]);
       const caps = header[27];
+      const caps2 = header[28];
       
       const pixelFormat = new Int32Array(buffer, 76, 8);
       const pfFlags = pixelFormat[0];
@@ -301,8 +257,7 @@
       let format = fourCC || (rgbBitCount + '-bit RGB');
       let offset = 128;
       if (fourCC === 'DX10') {
-        // Handle DX10 header extension if present
-        offset += 20;
+        offset += 20; // Skip DX10 header extension
       }
 
       const canvas = document.createElement('canvas');
@@ -319,16 +274,16 @@
         decompressDXT3(data, width, height, pixels);
       } else if (fourCC === 'DXT5') {
         decompressDXT5(data, width, height, pixels);
-      } else if (pfFlags & 0x40) { // Uncompressed RGB
+      } else if (pfFlags & 0x40 || pfFlags & 0x41) { // Uncompressed RGB or RGBA
         decodeUncompressed(data, width, height, rgbBitCount, pfFlags, pixelFormat, pixels);
       } else {
-        throw new Error('Unsupported format: ' + format);
+        throw new Error('Unsupported DDS format: ' + format);
       }
 
       ctx.putImageData(imageData, 0, 0);
 
       return {
-        canvas, width, height, format, mipmapCount, fourCC, rgbBitCount, caps, flags, headerSize
+        canvas, width, height, format, mipmapCount, fourCC, rgbBitCount, caps, caps2, flags, headerSize
       };
     }
 
@@ -341,10 +296,12 @@
       for (let i = 0; i < width * height; i++) {
         let val = 0;
         const base = i * bytesPerPixel;
-        // Read little-endian value
+        if (base + bytesPerPixel > data.length) break;
+        
         for (let b = 0; b < bytesPerPixel; b++) {
-          if (base + b < data.length) val |= (data[base + b] << (b * 8));
+          val |= (data[base + b] << (b * 8));
         }
+        
         const target = i * 4;
         pixels[target + 0] = ((val & rMask) >>> rShift) & 0xFF;
         pixels[target + 1] = ((val & gMask) >>> gShift) & 0xFF;
@@ -371,6 +328,7 @@
       let offset = 0;
       for (let y = 0; y < height; y += 4) {
         for (let x = 0; x < width; x += 4) {
+          if (offset + 8 > data.length) break;
           const c0 = data[offset] | (data[offset + 1] << 8);
           const c1 = data[offset + 2] | (data[offset + 3] << 8);
           offset += 4;
@@ -411,6 +369,7 @@
       let offset = 0;
       for (let y = 0; y < height; y += 4) {
         for (let x = 0; x < width; x += 4) {
+          if (offset + 16 > data.length) break;
           const alphaOffset = offset;
           offset += 8;
           const c0 = data[offset] | (data[offset + 1] << 8), c1 = data[offset + 2] | (data[offset + 3] << 8);
@@ -438,6 +397,7 @@
       let offset = 0;
       for (let y = 0; y < height; y += 4) {
         for (let x = 0; x < width; x += 4) {
+          if (offset + 16 > data.length) break;
           alpha[0] = data[offset]; alpha[1] = data[offset + 1];
           if (alpha[0] > alpha[1]) {
             for (let i = 1; i < 7; i++) alpha[i + 1] = (((7 - i) * alpha[0] + i * alpha[1]) / 7) | 0;
