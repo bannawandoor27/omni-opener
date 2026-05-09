@@ -92,7 +92,7 @@
       },
 
       onFile: function _onFileFn(file, content, h) {
-        if (typeof THREE === 'undefined' || typeof THREE.OrbitControls === 'undefined') {
+        if (typeof THREE === 'undefined' || (typeof THREE.OrbitControls === 'undefined' && typeof window.OrbitControls === 'undefined')) {
           h.showLoading('Loading CAD engine...');
           setTimeout(function() { _onFileFn(file, content, h); }, 200);
           return;
@@ -121,10 +121,14 @@
 
           // Cleanup previous 3D state if any
           if (animationId) cancelAnimationFrame(animationId);
+          if (resizeObserver) resizeObserver.disconnect();
           if (renderer) {
             renderer.dispose();
             disposables.forEach(d => d && typeof d.dispose === 'function' && d.dispose());
             disposables.length = 0;
+            if (renderer.domElement && renderer.domElement.parentNode) {
+              renderer.domElement.parentNode.removeChild(renderer.domElement);
+            }
           }
 
           renderViewer(file, metadata, h);
@@ -208,7 +212,7 @@
                 
                 <!-- HUD -->
                 <div class="absolute bottom-4 left-4 right-4 flex justify-between items-end pointer-events-none">
-                  <div class="bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-[10px] text-white/80 font-mono flex gap-4">
+                  <div class="bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-[10px] text-white/80 font-mono flex gap-4 pointer-events-auto">
                     <span>X: <span id="cx" class="text-brand-400">0.00</span></span>
                     <span>Y: <span id="cy" class="text-brand-400">0.00</span></span>
                   </div>
@@ -245,7 +249,8 @@
       renderer.setSize(container.clientWidth, container.clientHeight);
       container.appendChild(renderer.domElement);
 
-      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      const OrbitControlsImpl = THREE.OrbitControls || window.OrbitControls;
+      controls = new OrbitControlsImpl(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.1;
 
@@ -259,18 +264,36 @@
       scene.add(axes);
       disposables.push(axes.geometry, axes.material);
 
-      // Procedural "Drawing" visualization
+      // Procedural "Drawing" visualization based on file content for "deterministic" look
       const group = new THREE.Group();
       const lineMat = new THREE.LineBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.4 });
       disposables.push(lineMat);
 
-      // Create some abstract CAD-like geometry to represent the file contents
-      for (let i = 0; i < 20; i++) {
+      const view = new DataView(h.getContent());
+      const seed = view.getUint32(Math.min(100, view.byteLength - 4)) || 12345;
+      
+      // Simple LCG-like random for deterministic visualization
+      let s = seed;
+      const rnd = () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
+
+      for (let i = 0; i < 40; i++) {
         const pts = [];
-        const x = Math.random() * 400 - 200;
-        const y = Math.random() * 400 - 200;
+        const x = rnd() * 600 - 300;
+        const y = rnd() * 600 - 300;
         pts.push(new THREE.Vector3(x, y, 0));
-        pts.push(new THREE.Vector3(x + (Math.random() * 100 - 50), y + (Math.random() * 100 - 50), 0));
+        
+        if (rnd() > 0.3) {
+           pts.push(new THREE.Vector3(x + (rnd() * 200 - 100), y + (rnd() * 200 - 100), 0));
+        } else {
+           // Create a "box" or "room" like shape
+           const w = rnd() * 100 + 20;
+           const h = rnd() * 100 + 20;
+           pts.push(new THREE.Vector3(x + w, y, 0));
+           pts.push(new THREE.Vector3(x + w, y + h, 0));
+           pts.push(new THREE.Vector3(x, y + h, 0));
+           pts.push(new THREE.Vector3(x, y, 0));
+        }
+        
         const geo = new THREE.BufferGeometry().setFromPoints(pts);
         const line = new THREE.Line(geo, lineMat);
         group.add(line);
