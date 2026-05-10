@@ -28,6 +28,17 @@
           }
         },
         {
+          label: '📸 Screenshot',
+          id: 'screenshot',
+          onClick: function (h) {
+            const canvas = h.getRenderEl().querySelector('canvas');
+            if (canvas) {
+              const dataUrl = canvas.toDataURL('image/png');
+              h.download(h.getFile().name + '.png', dataUrl, 'image/png');
+            }
+          }
+        },
+        {
           label: '📥 Download OBJ',
           id: 'download',
           onClick: function (h) {
@@ -35,34 +46,23 @@
             const file = h.getFile();
             if (content) h.download(file.name, content, 'text/plain');
           }
-        },
-        {
-          label: '📸 Screenshot',
-          id: 'screenshot',
-          onClick: function (h) {
-            const canvas = h.getRenderEl().querySelector('canvas');
-            if (canvas) {
-              const dataUrl = canvas.toDataURL('image/png');
-              h.download('screenshot.png', dataUrl, 'image/png');
-            }
-          }
         }
       ],
 
       onInit: function (h) {
         return h.loadScripts([
-          'https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js',
-          'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/OBJLoader.js',
-          'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js'
+          'https://cdn.jsdelivr.net/npm/three@0.144.0/build/three.min.js',
+          'https://cdn.jsdelivr.net/npm/three@0.144.0/examples/js/loaders/OBJLoader.js',
+          'https://cdn.jsdelivr.net/npm/three@0.144.0/examples/js/controls/OrbitControls.js'
         ]);
       },
 
       onFile: function (file, content, h) {
-        h.showLoading('Preparing 3D engine...');
+        h.showLoading('Initializing 3D engine...');
         h.loadScripts([
-          'https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js',
-          'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/OBJLoader.js',
-          'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js'
+          'https://cdn.jsdelivr.net/npm/three@0.144.0/build/three.min.js',
+          'https://cdn.jsdelivr.net/npm/three@0.144.0/examples/js/loaders/OBJLoader.js',
+          'https://cdn.jsdelivr.net/npm/three@0.144.0/examples/js/controls/OrbitControls.js'
         ]).then(() => {
           h.showLoading('Parsing 3D model...');
           try {
@@ -90,21 +90,21 @@
     h.render(`
       <div class="flex flex-col h-[85vh] font-sans">
         <div class="flex items-center gap-3 px-4 py-2 bg-surface-50 rounded-xl text-[10px] text-surface-500 mb-2 border border-surface-200">
-          <span class="font-bold text-surface-900 uppercase">${esc(file.name)}</span>
+          <span class="font-bold text-surface-900 uppercase tracking-wider">${esc(file.name)}</span>
           <span class="text-surface-300">|</span>
           <span>${meshCount} Meshes</span>
           <span class="text-surface-300">|</span>
-          <span class="text-brand-600 font-bold">${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)} units</span>
+          <span class="text-brand-600 font-bold">${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)} Units</span>
         </div>
         <div class="relative flex-1 bg-slate-900 rounded-2xl overflow-hidden border border-surface-200 shadow-xl">
           <div id="three-container" class="w-full h-full cursor-move"></div>
           <div class="absolute top-4 right-4 w-48 bg-white/95 backdrop-blur shadow-xl rounded-xl border border-surface-200 p-4 space-y-4">
              <section>
                 <label class="block text-[10px] font-bold text-surface-400 uppercase mb-2">Environment</label>
-                <select id="env-preset" class="w-full text-xs p-1.5 bg-surface-50 border border-surface-200 rounded outline-none font-bold">
-                   <option value="studio">Studio</option>
-                   <option value="night">Night</option>
-                   <option value="sunset">Sunset</option>
+                <select id="env-preset" class="w-full text-xs p-1.5 bg-surface-50 border border-surface-200 rounded outline-none font-bold cursor-pointer">
+                   <option value="studio">Studio Dark</option>
+                   <option value="night">Deep Night</option>
+                   <option value="sunset">Warm Sunset</option>
                 </select>
              </section>
              <section class="space-y-2">
@@ -127,7 +127,7 @@
     const container = renderEl.querySelector('#three-container');
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -136,23 +136,30 @@
     const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 10000);
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
     const mainLight = new THREE.DirectionalLight(0xffffff, 1.2);
     mainLight.position.set(5, 10, 7);
     scene.add(mainLight);
+    
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+    fillLight.position.set(-5, -2, -5);
+    scene.add(fillLight);
 
     scene.add(object);
+    
     const center = box.getCenter(new THREE.Vector3());
     object.position.sub(center);
     const maxDim = Math.max(size.x, size.y, size.z) || 1;
-    camera.position.set(maxDim * 2, maxDim * 2, maxDim * 2);
+    camera.position.set(maxDim * 1.8, maxDim * 1.8, maxDim * 1.8);
     camera.lookAt(0, 0, 0);
+    controls.saveState();
 
     const envs = {
        studio: { bg: 0x0f172a, light: 1.2 },
-       night: { bg: 0x020617, light: 0.4 },
-       sunset: { bg: 0x451a03, light: 1.5 }
+       night: { bg: 0x020617, light: 0.5 },
+       sunset: { bg: 0x451a03, light: 1.6 }
     };
 
     renderEl.querySelector('#env-preset').onchange = (e) => {
@@ -164,7 +171,7 @@
        object.traverse(n => { if (n.isMesh) n.material.wireframe = e.target.checked; });
     };
     renderEl.querySelector('#check-rotate').onchange = (e) => { controls.autoRotate = e.target.checked; };
-    renderEl.querySelector('#btn-reset').onclick = () => { camera.position.set(maxDim*2, maxDim*2, maxDim*2); controls.reset(); };
+    renderEl.querySelector('#btn-reset').onclick = () => { controls.reset(); };
 
     const animate = () => {
        if (!container.isConnected) { 
