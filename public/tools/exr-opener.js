@@ -5,7 +5,6 @@
 (function () {
   'use strict';
 
-  // Helper for human-readable file sizes
   function formatBytes(bytes) {
     if (!bytes || bytes === 0) return '0 B';
     const k = 1024;
@@ -14,7 +13,6 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
-  // Helper to escape HTML and prevent XSS
   function escapeHtml(str) {
     if (typeof str !== 'string') str = String(str);
     return str
@@ -32,56 +30,53 @@
       accept: '.exr',
       binary: true,
       dropLabel: 'Drop an EXR image here',
-      infoHtml: 'Professional High Dynamic Range (HDR) image viewer with multi-algorithm tone mapping and full metadata inspection.',
+      infoHtml: 'Professional High Dynamic Range (HDR) image viewer with multi-algorithm tone mapping and full metadata inspection. All processing is done locally in your browser.',
 
       onInit: function (h) {
         h.setState('libsReady', false);
-        // Load Three.js core and EXRLoader from CDN
-        h.loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js', () => {
-          h.loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/EXRLoader.js', () => {
-            h.setState('libsReady', true);
-          });
+        h.loadScripts([
+          'https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js',
+          'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/EXRLoader.js'
+        ], () => {
+          h.setState('libsReady', true);
         });
       },
 
-      onFile: async function _onFileFn(file, content, h) {
-        // B1. Handle library loading state
+      onFile: async function (file, content, h) {
         if (!h.getState('libsReady')) {
-          h.showLoading('Initializing HDR engine...');
+          h.showLoading('Loading HDR engine...');
           let retries = 0;
-          while (!h.getState('libsReady') && retries < 20) {
-            await new Promise(r => setTimeout(r, 200));
+          while (!h.getState('libsReady') && retries < 50) {
+            await new Promise(r => setTimeout(r, 100));
             retries++;
           }
           if (!h.getState('libsReady')) {
-            h.showError('Engine Timeout', 'The 3D rendering engine failed to load. Please check your connection.');
+            h.showError('Engine Error', 'Could not load rendering engine. Please refresh and try again.');
             return;
           }
         }
 
-        h.showLoading('Decoding HDR image data...');
+        h.showLoading('Decoding EXR data...');
+        
+        // Small delay to allow UI to update
+        await new Promise(r => setTimeout(r, 50));
 
-        // B8. Use a small timeout to allow UI thread to breathe for large files
-        setTimeout(() => {
-          try {
-            const loader = new THREE.EXRLoader();
-            // B2. content is an ArrayBuffer (binary: true)
-            const texData = loader.parse(content);
+        try {
+          const loader = new THREE.EXRLoader();
+          const texData = loader.parse(content);
 
-            if (!texData || !texData.data) {
-              throw new Error('No image data found in file.');
-            }
-
-            renderView(file, texData, h);
-          } catch (err) {
-            console.error('[EXR] Parse error:', err);
-            h.showError('Could not open EXR', 'The file might be corrupted or uses an unsupported OpenEXR feature. ' + err.message);
+          if (!texData || !texData.data) {
+            throw new Error('Invalid or empty EXR data.');
           }
-        }, 50);
+
+          renderView(file, texData, h);
+        } catch (err) {
+          console.error('[EXR] Parse error:', err);
+          h.showError('Failed to open EXR', err.message);
+        }
       },
 
       onDestroy: function () {
-        // B5. Global cleanup
         if (currentResources) {
           currentResources.dispose();
           currentResources = null;
@@ -93,15 +88,12 @@
           label: '📸 Save as PNG',
           id: 'save-png',
           onClick: function (h) {
-            const canvas = document.querySelector('#exr-canvas-container canvas');
+            const canvas = h.getRenderEl().querySelector('#exr-canvas-container canvas');
             if (!canvas) return;
             
-            h.showLoading('Converting to PNG...');
-            // B10. Use toBlob instead of toDataURL for downloads
             canvas.toBlob((blob) => {
-              h.showLoading(false);
               const filename = h.getFile().name.replace(/\.[^/.]+$/, "") + ".png";
-              h.helpers.download(filename, blob, 'image/png');
+              h.download(filename, blob, 'image/png');
             }, 'image/png');
           }
         },
@@ -119,7 +111,6 @@
     });
 
     function renderView(file, texData, h) {
-      // B5. Cleanup previous file's resources if any
       if (currentResources) {
         currentResources.dispose();
       }
@@ -136,8 +127,7 @@
       h.setState('metadata', meta);
 
       h.render(`
-        <div class="flex flex-col h-full overflow-hidden">
-          <!-- U1. File info bar -->
+        <div class="flex flex-col h-full overflow-hidden p-4">
           <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-100">
             <span class="font-semibold text-surface-800">${escapeHtml(stats.name)}</span>
             <span class="text-surface-300">|</span>
@@ -149,15 +139,11 @@
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-0">
-            <!-- Viewport (8/12) -->
             <div class="lg:col-span-8 flex flex-col min-h-0 space-y-4">
-              <div id="exr-canvas-container" class="relative flex-1 bg-slate-950 rounded-2xl overflow-hidden border border-surface-200 shadow-2xl flex items-center justify-center">
-                <!-- Three.js Canvas will be here -->
-                
-                <!-- Floating HUD Controls -->
-                <div class="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-white/95 backdrop-blur-xl shadow-2xl rounded-2xl border border-white/40 p-5 space-y-4 z-10 transition-all ring-1 ring-black/5">
+              <div id="exr-canvas-container" class="relative flex-1 bg-slate-950 rounded-2xl overflow-hidden border border-surface-200 shadow-lg flex items-center justify-center">
+                <div class="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-white/95 backdrop-blur shadow-xl rounded-2xl border border-white/40 p-5 space-y-4 z-10 transition-all">
                   <div class="flex justify-between items-center mb-1">
-                    <span class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Exposure & Gamma</span>
+                    <span class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Exposure</span>
                     <span id="exp-label" class="text-xs font-mono font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded">1.0</span>
                   </div>
                   
@@ -166,17 +152,17 @@
                   
                   <div class="grid grid-cols-2 gap-4">
                     <div class="space-y-1.5">
-                      <label class="block text-[10px] font-bold text-surface-400 uppercase tracking-widest">Algorithm</label>
-                      <select id="tm-select" class="w-full text-xs p-2.5 bg-white border border-surface-200 rounded-xl outline-none font-medium text-surface-700 focus:ring-2 focus:ring-brand-500/20 transition-all">
+                      <label class="block text-[10px] font-bold text-surface-400 uppercase tracking-widest">Tone Mapping</label>
+                      <select id="tm-select" class="w-full text-xs p-2 bg-white border border-surface-200 rounded-lg outline-none font-medium text-surface-700 focus:ring-2 focus:ring-brand-500/20 transition-all">
                         <option value="reinhard" selected>Reinhard</option>
                         <option value="aces">ACES Filmic</option>
                         <option value="cineon">Cineon</option>
-                        <option value="linear">No Tone Mapping</option>
+                        <option value="linear">Linear (None)</option>
                       </select>
                     </div>
                     <div class="flex items-end">
-                      <button id="reset-view" class="w-full h-[40px] bg-surface-100 hover:bg-surface-200 text-surface-700 text-[10px] font-bold rounded-xl transition-all uppercase tracking-wider border border-surface-200">
-                        Reset Defaults
+                      <button id="reset-view" class="w-full h-[36px] bg-surface-100 hover:bg-surface-200 text-surface-700 text-[10px] font-bold rounded-lg transition-all uppercase tracking-wider border border-surface-200">
+                        Reset
                       </button>
                     </div>
                   </div>
@@ -184,14 +170,12 @@
               </div>
             </div>
 
-            <!-- Sidebar (4/12) -->
             <div class="lg:col-span-4 flex flex-col min-h-0 space-y-4">
               <div class="flex items-center justify-between">
                 <h3 class="font-bold text-surface-800">EXR Metadata</h3>
                 <span class="text-[10px] bg-surface-100 text-surface-500 px-2 py-1 rounded-full uppercase font-bold tracking-tight">${Object.keys(meta).length} tags</span>
               </div>
 
-              <!-- Metadata search -->
               <div class="relative">
                 <input type="text" id="meta-search" placeholder="Search metadata tags..." 
                   class="w-full pl-9 pr-4 py-2 text-sm bg-white border border-surface-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500/20 transition-all">
@@ -200,19 +184,8 @@
                 </svg>
               </div>
 
-              <!-- Metadata list -->
               <div id="meta-container" class="flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
                 ${renderMetadata(meta)}
-              </div>
-              
-              <div class="p-4 rounded-xl bg-blue-50 border border-blue-100 text-blue-800">
-                <h4 class="text-xs font-bold mb-1 flex items-center gap-1">
-                  <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z"/></svg>
-                  Pro Tip
-                </h4>
-                <p class="text-[11px] leading-relaxed opacity-80">
-                  EXR stores linear light values. Exposure adjustment allows you to see details in highlights that would be clipped in standard images.
-                </p>
               </div>
             </div>
           </div>
@@ -226,8 +199,8 @@
         </style>
       `);
 
-      setupThree(texData);
-      setupMetadataFilter();
+      setupThree(texData, h);
+      setupMetadataFilter(h);
     }
 
     function renderMetadata(meta) {
@@ -242,7 +215,7 @@
         }
         
         return `
-          <div class="meta-item p-3 rounded-xl border border-surface-100 bg-surface-50/50 hover:bg-white hover:border-brand-200 transition-all group" data-key="${key.toLowerCase()}" data-val="${String(displayVal).toLowerCase()}">
+          <div class="meta-item p-3 rounded-xl border border-surface-100 bg-surface-50/50 hover:bg-white transition-all group" data-key="${key.toLowerCase()}" data-val="${String(displayVal).toLowerCase()}">
             <div class="text-[10px] font-bold text-surface-400 uppercase tracking-tight mb-0.5 group-hover:text-brand-500">${escapeHtml(key)}</div>
             <div class="text-sm font-medium text-surface-700 break-all">${escapeHtml(displayVal)}</div>
           </div>
@@ -250,9 +223,10 @@
       }).join('');
     }
 
-    function setupMetadataFilter() {
-      const searchInput = document.getElementById('meta-search');
-      const items = document.querySelectorAll('.meta-item');
+    function setupMetadataFilter(h) {
+      const el = h.getRenderEl();
+      const searchInput = el.querySelector('#meta-search');
+      const items = el.querySelectorAll('.meta-item');
       
       if (!searchInput) return;
       
@@ -270,8 +244,9 @@
       });
     }
 
-    function setupThree(texData) {
-      const container = document.getElementById('exr-canvas-container');
+    function setupThree(texData, h) {
+      const el = h.getRenderEl();
+      const container = el.querySelector('#exr-canvas-container');
       if (!container) return;
 
       const renderer = new THREE.WebGLRenderer({ 
@@ -280,7 +255,7 @@
         preserveDrawingBuffer: true 
       });
       
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setPixelRatio(window.devicePixelRatio);
       renderer.setSize(container.clientWidth, container.clientHeight);
       renderer.toneMapping = THREE.ReinhardToneMapping;
       renderer.toneMappingExposure = 1.0;
@@ -307,7 +282,6 @@
       const mesh = new THREE.Mesh(geometry, material);
       scene.add(mesh);
 
-      // Store in currentResources for cleanup
       currentResources = {
         dispose: () => {
           cancelAnimationFrame(frameId);
@@ -341,11 +315,10 @@
       const resizeObserver = new ResizeObserver(() => updateScale());
       resizeObserver.observe(container);
 
-      // UI Control bindings
-      const expSlider = document.getElementById('exp-slider');
-      const expLabel = document.getElementById('exp-label');
-      const tmSelect = document.getElementById('tm-select');
-      const resetBtn = document.getElementById('reset-view');
+      const expSlider = el.querySelector('#exp-slider');
+      const expLabel = el.querySelector('#exp-label');
+      const tmSelect = el.querySelector('#tm-select');
+      const resetBtn = el.querySelector('#reset-view');
 
       expSlider.oninput = (e) => {
         const val = parseFloat(e.target.value);
