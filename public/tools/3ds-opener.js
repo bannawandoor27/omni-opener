@@ -1,12 +1,12 @@
 (function () {
   'use strict';
 
-  function formatSize(b) {
-    if (b === 0) return '0 B';
+  function formatSize(bytes) {
+    if (bytes === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(b) / Math.log(k));
-    return parseFloat((b / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
   function escapeHtml(str) {
@@ -18,7 +18,8 @@
 
   window.initTool = function (toolConfig, mountEl) {
     let animationId, renderer, scene, camera, controls, resizeObserver;
-    let currentModel = null;
+    let currentObject = null;
+    let currentFile = null;
 
     function cleanupThree() {
       if (animationId) {
@@ -41,15 +42,11 @@
           if (node.isMesh) {
             if (node.geometry) node.geometry.dispose();
             if (node.material) {
-              if (Array.isArray(node.material)) {
-                node.material.forEach(m => {
-                  if (m.map) m.map.dispose();
-                  m.dispose();
-                });
-              } else {
-                if (node.material.map) node.material.map.dispose();
-                node.material.dispose();
-              }
+              const materials = Array.isArray(node.material) ? node.material : [node.material];
+              materials.forEach(m => {
+                if (m.map) m.map.dispose();
+                m.dispose();
+              });
             }
           }
         });
@@ -57,12 +54,12 @@
       }
       camera = null;
       controls = null;
-      currentModel = null;
+      currentObject = null;
     }
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.3ds',
-      dropLabel: 'Drop a .3ds file here',
+      dropLabel: 'Drop a .3ds model here',
       binary: true,
       onInit: function (h) {
         const threeVer = '0.147.0';
@@ -74,219 +71,254 @@
         });
       },
       onFile: function _onFile(file, content, h) {
+        currentFile = file;
         cleanupThree();
 
-        if (file.size > 50 * 1024 * 1024) {
+        if (file.size > 100 * 1024 * 1024) {
           h.render(`
             <div class="p-12 text-center">
               <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-100 text-amber-600 text-2xl mb-4">⚠️</div>
-              <h3 class="text-surface-900 font-bold text-lg mb-2">Large 3D Model</h3>
-              <p class="text-sm text-surface-500 mb-8 mx-auto max-w-sm">This file is ${formatSize(file.size)}. Parsing large 3DS files in the browser may be slow.</p>
-              <button id="btn-proceed" class="px-8 py-3 bg-brand-600 text-white rounded-xl font-bold shadow-lg shadow-brand-500/20 hover:bg-brand-700 hover:-translate-y-0.5 transition-all">Proceed Anyway</button>
+              <h3 class="text-surface-900 font-bold text-lg mb-2">Very Large 3D Model</h3>
+              <p class="text-sm text-surface-500 mb-8 mx-auto max-w-sm">This file is ${formatSize(file.size)}. Processing large 3DS files in the browser may cause your tab to freeze.</p>
+              <button id="btn-proceed" class="px-8 py-3 bg-brand-600 text-white rounded-xl font-bold shadow-lg shadow-brand-500/20 hover:bg-brand-700 hover:-translate-y-0.5 transition-all">Proceed with Caution</button>
             </div>
           `);
           const btn = document.getElementById('btn-proceed');
-          if (btn) btn.onclick = () => _processFile(file, content, h);
+          if (btn) btn.onclick = () => _startParsing(file, content, h);
           return;
         }
 
-        _processFile(file, content, h);
+        _startParsing(file, content, h);
 
-        function _processFile(file, content, h) {
-          if (typeof THREE === 'undefined' || typeof THREE.TDSLoader === 'undefined' || typeof THREE.OrbitControls === 'undefined') {
-            h.showLoading('Initializing 3D engine...');
-            setTimeout(() => _processFile(file, content, h), 200);
+        function _startParsing(file, content, h) {
+          if (typeof THREE === 'undefined' || !THREE.TDSLoader || !THREE.OrbitControls) {
+            h.showLoading('Loading 3D Engine...');
+            setTimeout(function () { _startParsing(file, content, h); }, 200);
             return;
           }
 
-          h.showLoading('Parsing 3DS model structures...');
+          h.showLoading('Parsing 3DS geometry...');
           
-          // Use a small delay to allow the loading state to render
           setTimeout(() => {
             try {
               const loader = new THREE.TDSLoader();
-              // TDSLoader.parse expects an ArrayBuffer
               const object = loader.parse(content);
-              if (!object) throw new Error('Could not extract 3D data from file.');
+              if (!object) throw new Error('Loader returned no data');
+              
+              let meshFound = false;
+              object.traverse(n => { if (n.isMesh) meshFound = true; });
+              if (!meshFound) {
+                h.render(`
+                  <div class="p-12 text-center">
+                    <div class="text-4xl mb-4">📭</div>
+                    <h3 class="text-lg font-bold text-surface-900">Empty Model</h3>
+                    <p class="text-surface-500">The 3DS file was parsed successfully but contains no renderable meshes.</p>
+                  </div>
+                `);
+                return;
+              }
+
               _renderViewer(object, file, h);
             } catch (err) {
               console.error(err);
-              h.showError('Could not open 3DS file', 'The file may be corrupted, encrypted, or in an unsupported sub-format. Error: ' + err.message);
+              h.showError('Could not open 3DS file', 'The file might be corrupted or using an unsupported variant of the 3DS format. Error: ' + err.message);
             }
-          }, 50);
+          }, 100);
         }
 
         function _renderViewer(object, file, h) {
-          let vertices = 0;
-          let faces = 0;
-          let meshCount = 0;
+          currentObject = object;
+          const meshes = [];
+          let totalVerts = 0;
+          let totalFaces = 0;
 
           object.traverse(node => {
             if (node.isMesh) {
-              meshCount++;
               const geo = node.geometry;
+              let v = 0, f = 0;
               if (geo.isBufferGeometry) {
                 const pos = geo.attributes.position;
                 if (pos) {
-                  vertices += pos.count;
-                  faces += geo.index ? geo.index.count / 3 : pos.count / 3;
+                  v = pos.count;
+                  f = geo.index ? geo.index.count / 3 : pos.count / 3;
                 }
               }
+              meshes.push({
+                name: node.name || 'Unnamed Mesh',
+                verts: v,
+                faces: Math.round(f),
+                visible: node.visible
+              });
+              totalVerts += v;
+              totalFaces += f;
             }
           });
 
           const box = new THREE.Box3().setFromObject(object);
           const size = box.getSize(new THREE.Vector3());
           const center = box.getCenter(new THREE.Vector3());
-          currentModel = object;
 
           h.render(`
-            <div class="flex flex-col h-full min-h-[600px] font-sans">
+            <div class="flex flex-col h-full space-y-4">
               <!-- U1: File Info Bar -->
-              <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-200">
-                <span class="font-semibold text-surface-800 truncate max-w-[200px]">${escapeHtml(file.name)}</span>
+              <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 border border-surface-200">
+                <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
                 <span class="text-surface-300">|</span>
                 <span>${formatSize(file.size)}</span>
                 <span class="text-surface-300">|</span>
                 <span class="text-surface-500">.3ds model</span>
-                <div class="ml-auto flex items-center gap-3">
-                  <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full bg-brand-100 text-brand-700 text-xs font-medium">
-                    ${Math.round(faces).toLocaleString()} polygons
-                  </span>
+                <div class="ml-auto hidden sm:flex items-center gap-2">
+                  <span class="px-2 py-0.5 bg-brand-100 text-brand-700 rounded-full text-xs font-medium">${Math.round(totalFaces).toLocaleString()} polygons</span>
                 </div>
               </div>
 
-              <!-- Main Stage -->
-              <div class="relative flex-1 min-h-0 bg-slate-950 rounded-2xl overflow-hidden border border-surface-200 group shadow-inner">
-                <div id="three-mount" class="w-full h-full cursor-move outline-none"></div>
+              <!-- Main Viewer Stage -->
+              <div class="relative flex-1 min-h-[500px] bg-slate-950 rounded-2xl overflow-hidden border border-surface-200 shadow-inner group">
+                <div id="three-canvas-container" class="w-full h-full cursor-move outline-none"></div>
 
-                <!-- Floating Toolbar -->
+                <!-- Overlay Controls -->
                 <div class="absolute top-4 right-4 flex flex-col gap-2">
-                  <div class="bg-white/90 backdrop-blur-md p-1.5 rounded-xl shadow-xl border border-surface-200 flex flex-col gap-1">
-                    <button id="view-reset" title="Reset Camera" class="p-2 hover:bg-surface-100 rounded-lg transition-colors text-surface-600">
+                  <div class="bg-white/90 backdrop-blur p-1 rounded-xl shadow-xl border border-surface-200 flex flex-col">
+                    <button id="tool-reset" title="Reset View" class="p-2.5 hover:bg-surface-100 rounded-lg text-surface-600 transition-colors">
                       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
                     </button>
-                    <button id="view-wire" title="Toggle Wireframe" class="p-2 hover:bg-surface-100 rounded-lg transition-colors text-surface-600">
+                    <button id="tool-wire" title="Toggle Wireframe" class="p-2.5 hover:bg-surface-100 rounded-lg text-surface-600 transition-colors">
                       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13h16M12 4v16"/></svg>
                     </button>
-                    <div class="h-px bg-surface-200 mx-2"></div>
-                    <button id="view-rotate" title="Auto Rotate" class="p-2 hover:bg-surface-100 rounded-lg transition-colors text-surface-600">
+                    <div class="h-px bg-surface-200 my-1 mx-2"></div>
+                    <button id="tool-rotate" title="Auto Rotate" class="p-2.5 hover:bg-surface-100 rounded-lg text-surface-600 transition-colors">
                       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                     </button>
                   </div>
                 </div>
 
-                <!-- Scene Stats & Config -->
-                <div class="absolute bottom-4 left-4 right-4 flex items-end justify-between pointer-events-none">
-                  <div class="bg-black/40 backdrop-blur-md px-3 py-2 rounded-lg border border-white/10 text-[10px] text-white/80 font-mono pointer-events-auto">
+                <!-- Scene Data Overlay -->
+                <div class="absolute bottom-4 left-4 pointer-events-none">
+                  <div class="bg-black/40 backdrop-blur px-3 py-2 rounded-lg border border-white/10 font-mono text-[10px] text-white/90">
                     <div class="flex gap-4">
-                      <span>VERTS: ${vertices.toLocaleString()}</span>
-                      <span>FACES: ${faces.toLocaleString()}</span>
-                      <span>MESHES: ${meshCount}</span>
+                      <span>VERTS: ${totalVerts.toLocaleString()}</span>
+                      <span>FACES: ${totalFaces.toLocaleString()}</span>
                     </div>
-                    <div class="mt-1 text-white/40">
-                      DIM: ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}
+                    <div class="mt-1 text-white/50">
+                      BOX: ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}
                     </div>
                   </div>
+                </div>
 
-                  <div class="bg-white/90 backdrop-blur-md p-2 rounded-xl border border-surface-200 shadow-lg pointer-events-auto flex items-center gap-3">
-                    <select id="env-mode" class="text-xs font-medium bg-transparent border-none focus:ring-0 text-surface-700 cursor-pointer">
-                      <option value="studio">Studio Light</option>
-                      <option value="dusk">Cyber Dusk</option>
-                      <option value="bright">Daylight</option>
-                      <option value="dark">Vantablack</option>
-                    </select>
-                  </div>
+                <div class="absolute bottom-4 right-4 flex items-center gap-2">
+                  <select id="env-theme" class="bg-white/90 backdrop-blur border border-surface-200 rounded-lg px-2 py-1.5 text-xs font-medium text-surface-700 shadow-lg cursor-pointer focus:ring-2 focus:ring-brand-500/20 outline-none">
+                    <option value="dark">Vantablack</option>
+                    <option value="studio">Studio Blue</option>
+                    <option value="bright">Clean White</option>
+                    <option value="dusk">Deep Purple</option>
+                  </select>
                 </div>
               </div>
 
-              <!-- Footer Stats / Details -->
-              <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                 <div class="p-3 bg-surface-50 rounded-xl border border-surface-100">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Scale Profile</div>
-                    <div class="text-sm font-semibold text-surface-700">${size.x > 100 ? 'Large Scale' : size.x < 1 ? 'Micro Scale' : 'Standard'}</div>
-                 </div>
-                 <div class="p-3 bg-surface-50 rounded-xl border border-surface-100">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Complexity</div>
-                    <div class="text-sm font-semibold text-surface-700">${faces > 100000 ? 'High Poly' : faces > 10000 ? 'Mid Poly' : 'Low Poly'}</div>
-                 </div>
-                 <div class="p-3 bg-surface-50 rounded-xl border border-surface-100">
-                    <div class="text-[10px] font-bold text-surface-400 uppercase mb-1">Center Offset</div>
-                    <div class="text-sm font-semibold text-surface-700">${center.length().toFixed(2)} units</div>
-                 </div>
+              <!-- U10: Section Header with Count -->
+              <div class="flex items-center justify-between mt-6 mb-3">
+                <h3 class="font-semibold text-surface-800">Mesh Hierarchy</h3>
+                <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${meshes.length} components</span>
+              </div>
+
+              <!-- U7: Table for Meshes -->
+              <div class="overflow-x-auto rounded-xl border border-surface-200">
+                <table class="min-w-full text-sm">
+                  <thead>
+                    <tr class="bg-surface-50">
+                      <th class="px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200">Mesh Name</th>
+                      <th class="px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200">Vertices</th>
+                      <th class="px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200">Polygons</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${meshes.slice(0, 100).map(m => `
+                      <tr class="even:bg-surface-50/50 hover:bg-brand-50 transition-colors">
+                        <td class="px-4 py-2 text-surface-700 border-b border-surface-100 font-medium">${escapeHtml(m.name)}</td>
+                        <td class="px-4 py-2 text-right text-surface-600 border-b border-surface-100 font-mono text-xs">${m.verts.toLocaleString()}</td>
+                        <td class="px-4 py-2 text-right text-surface-600 border-b border-surface-100 font-mono text-xs">${m.faces.toLocaleString()}</td>
+                      </tr>
+                    `).join('')}
+                    ${meshes.length > 100 ? `
+                      <tr>
+                        <td colspan="3" class="px-4 py-3 text-center text-surface-400 italic border-b border-surface-100 bg-surface-50/20">
+                          ... and ${meshes.length - 100} more components
+                        </td>
+                      </tr>
+                    ` : ''}
+                  </tbody>
+                </table>
               </div>
             </div>
           `);
 
-          const mount = document.getElementById('three-mount');
-          if (!mount) return;
+          const container = document.getElementById('three-canvas-container');
+          if (!container) return;
 
           renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
           renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-          renderer.setSize(mount.clientWidth, mount.clientHeight);
-          mount.appendChild(renderer.domElement);
+          renderer.setSize(container.clientWidth, container.clientHeight);
+          container.appendChild(renderer.domElement);
 
           scene = new THREE.Scene();
           scene.background = new THREE.Color(0x020617);
 
-          const aspect = mount.clientWidth / mount.clientHeight;
-          camera = new THREE.PerspectiveCamera(45, aspect, 0.01, 20000);
+          camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.01, 100000);
           
           controls = new THREE.OrbitControls(camera, renderer.domElement);
           controls.enableDamping = true;
           controls.dampingFactor = 0.05;
 
-          // Lighting Setup
           const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
           scene.add(ambientLight);
 
-          const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
-          sunLight.position.set(100, 100, 100);
-          scene.add(sunLight);
+          const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+          mainLight.position.set(100, 100, 100);
+          scene.add(mainLight);
 
-          const fillLight = new THREE.DirectionalLight(0xdbeafe, 0.4);
-          fillLight.position.set(-100, 50, -100);
-          scene.add(fillLight);
+          const backLight = new THREE.DirectionalLight(0xdbeafe, 0.4);
+          backLight.position.set(-100, 50, -100);
+          scene.add(backLight);
 
-          // Position Model
           object.position.sub(center);
           scene.add(object);
 
-          // Fit Camera
           const maxDim = Math.max(size.x, size.y, size.z) || 1;
-          const dist = maxDim * 1.5 / Math.tan(Math.PI * 45 / 360);
-          camera.position.set(dist * 0.8, dist * 0.5, dist * 0.8);
+          const fov = camera.fov * (Math.PI / 180);
+          let cameraZ = Math.abs(maxDim / 2 * Math.tan(fov * 2));
+          cameraZ *= 2.2; 
+          
+          camera.position.set(cameraZ * 0.8, cameraZ * 0.5, cameraZ * 0.8);
           camera.lookAt(0, 0, 0);
           controls.update();
 
-          // Environment Presets
-          const envs = {
-            studio: { bg: 0x0f172a, ambient: 0.6, sun: 0.8, fill: 0.4 },
-            dusk: { bg: 0x1e1b4b, ambient: 0.4, sun: 1.2, fill: 0.8 },
-            bright: { bg: 0xf8fafc, ambient: 0.8, sun: 1.0, fill: 0.2 },
-            dark: { bg: 0x020617, ambient: 0.2, sun: 0.5, fill: 0.1 }
+          const themes = {
+            dark: { bg: 0x020617, amb: 0.6, main: 0.8, back: 0.4 },
+            studio: { bg: 0x0f172a, amb: 0.8, main: 1.0, back: 0.6 },
+            bright: { bg: 0xffffff, amb: 1.0, main: 1.2, back: 0.4 },
+            dusk: { bg: 0x2e1065, amb: 0.4, main: 1.4, back: 1.0 }
           };
 
-          const envSelect = document.getElementById('env-mode');
-          if (envSelect) {
-            envSelect.onchange = (e) => {
-              const theme = envs[e.target.value] || envs.studio;
-              scene.background = new THREE.Color(theme.bg);
-              ambientLight.intensity = theme.ambient;
-              sunLight.intensity = theme.sun;
-              fillLight.intensity = theme.fill;
+          const themeSelect = document.getElementById('env-theme');
+          if (themeSelect) {
+            themeSelect.onchange = (e) => {
+              const t = themes[e.target.value] || themes.dark;
+              scene.background = new THREE.Color(t.bg);
+              ambientLight.intensity = t.amb;
+              mainLight.intensity = t.main;
+              backLight.intensity = t.back;
             };
           }
 
           let isWire = false;
-          const wireBtn = document.getElementById('view-wire');
+          const wireBtn = document.getElementById('tool-wire');
           if (wireBtn) {
             wireBtn.onclick = () => {
               isWire = !isWire;
               object.traverse(n => {
                 if (n.isMesh && n.material) {
-                  if (Array.isArray(n.material)) n.material.forEach(m => m.wireframe = isWire);
-                  else n.material.wireframe = isWire;
+                  const mats = Array.isArray(n.material) ? n.material : [n.material];
+                  mats.forEach(m => m.wireframe = isWire);
                 }
               });
               wireBtn.classList.toggle('bg-brand-50', isWire);
@@ -294,7 +326,7 @@
             };
           }
 
-          const rotateBtn = document.getElementById('view-rotate');
+          const rotateBtn = document.getElementById('tool-rotate');
           if (rotateBtn) {
             rotateBtn.onclick = () => {
               controls.autoRotate = !controls.autoRotate;
@@ -303,17 +335,17 @@
             };
           }
 
-          const resetBtn = document.getElementById('view-reset');
+          const resetBtn = document.getElementById('tool-reset');
           if (resetBtn) {
             resetBtn.onclick = () => {
-              camera.position.set(dist * 0.8, dist * 0.5, dist * 0.8);
+              camera.position.set(cameraZ * 0.8, cameraZ * 0.5, cameraZ * 0.8);
               controls.target.set(0, 0, 0);
               controls.reset();
             };
           }
 
           function _animate() {
-            if (!mount.isConnected) {
+            if (!container.isConnected) {
               cleanupThree();
               return;
             }
@@ -324,12 +356,12 @@
           _animate();
 
           resizeObserver = new ResizeObserver(() => {
-            if (!mount.clientWidth || !mount.clientHeight || !renderer) return;
-            camera.aspect = mount.clientWidth / mount.clientHeight;
+            if (!container.clientWidth || !container.clientHeight || !renderer) return;
+            camera.aspect = container.clientWidth / container.clientHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(mount.clientWidth, mount.clientHeight);
+            renderer.setSize(container.clientWidth, container.clientHeight);
           });
-          resizeObserver.observe(mount);
+          resizeObserver.observe(container);
         }
       },
       onDestroy: function () {
@@ -337,43 +369,48 @@
       },
       actions: [
         {
-          label: '📋 Copy Stats',
-          id: 'copy-stats',
+          label: '📋 Copy Metadata',
+          id: 'copy-meta',
           onClick: function (h, btn) {
-            if (!currentModel) return;
-            const box = new THREE.Box3().setFromObject(currentModel);
+            if (!currentObject || !currentFile) return;
+            const box = new THREE.Box3().setFromObject(currentObject);
             const size = box.getSize(new THREE.Vector3());
-            
-            let v = 0, f = 0;
-            currentModel.traverse(n => {
-              if (n.isMesh && n.geometry.isBufferGeometry) {
-                const p = n.geometry.attributes.position;
-                if (p) {
-                  v += p.count;
-                  f += n.geometry.index ? n.geometry.index.count / 3 : p.count / 3;
+            let v = 0, f = 0, m = 0;
+            currentObject.traverse(n => {
+              if (n.isMesh) {
+                m++;
+                if (n.geometry.isBufferGeometry) {
+                  const p = n.geometry.attributes.position;
+                  if (p) {
+                    v += p.count;
+                    f += n.geometry.index ? n.geometry.index.count / 3 : p.count / 3;
+                  }
                 }
               }
             });
 
             const text = [
-              `File: ${h.getFile().name}`,
+              `File: ${currentFile.name}`,
+              `Size: ${formatSize(currentFile.size)}`,
               `Vertices: ${v.toLocaleString()}`,
               `Polygons: ${Math.round(f).toLocaleString()}`,
-              `Dimensions: ${size.x.toFixed(3)} x ${size.y.toFixed(3)} x ${size.z.toFixed(3)} units`
+              `Components: ${m}`,
+              `Bounding Box: ${size.x.toFixed(3)} x ${size.y.toFixed(3)} x ${size.z.toFixed(3)} units`
             ].join('\n');
             
             h.copyToClipboard(text, btn);
           }
         },
         {
-          label: '📥 Download',
-          id: 'dl-file',
+          label: '📥 Download Original',
+          id: 'download-3ds',
           onClick: function (h) {
-            h.download(h.getFile().name, h.getContent(), 'application/x-3ds');
+            const file = h.getFile();
+            h.download(file.name, h.getContent(), 'application/x-3ds');
           }
         }
       ],
-      infoHtml: '<strong>Secure 3D Viewer:</strong> Your files stay in the browser. Supports 3ds Mesh data, basic materials, and hierarchy visualization.'
+      infoHtml: '<strong>Secure 3D Inspection:</strong> High-performance 3DS mesh parsing with hierarchical component breakdown and scene statistics. All rendering happens client-side.'
     });
   };
 })();
