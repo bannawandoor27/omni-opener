@@ -8,33 +8,46 @@
     let _currentSvg = null;
     let _viewMode = 'graph'; // 'graph' or 'source'
     let _searchTerm = '';
+    let _searchTimeout = null;
+    let _zoomLevel = 100;
+    const _svgUrls = new Set();
 
-    // Local escape helper
     function escapeHtml(str) {
       if (!str) return '';
-      const div = document.createElement('div');
-      div.textContent = str;
-      return div.innerHTML;
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
     }
 
-    // Capture the onFile function for internal re-renders
-    let _onFileInternal = null;
+    function formatSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function cleanupUrls() {
+      _svgUrls.forEach(url => URL.revokeObjectURL(url));
+      _svgUrls.clear();
+    }
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.dot,.gv',
       dropLabel: 'Drop a DOT or GV file here',
       binary: false,
-      infoHtml: '<strong>Graphviz Viewer:</strong> Renders DOT language diagrams using WebAssembly. Your data never leaves your browser.',
+      infoHtml: '<strong>Graphviz Viewer:</strong> Renders DOT language diagrams using WebAssembly (hpcc-js). Private, fast, and entirely client-side.',
 
       actions: [
         {
-          label: '📊 Toggle View',
+          label: '🔄 Toggle View',
           id: 'toggle-view',
           onClick: function (h) {
             _viewMode = _viewMode === 'graph' ? 'source' : 'graph';
-            if (_onFileInternal && _lastFile && _lastContent) {
-              _onFileInternal(_lastFile, _lastContent, h);
-            }
+            _onFileFn(_lastFile, _lastContent, h);
           }
         },
         {
@@ -47,7 +60,7 @@
           }
         },
         {
-          label: '🖼️ Download SVG',
+          label: '🖼️ Save SVG',
           id: 'download-svg',
           onClick: function (h) {
             if (_currentSvg) {
@@ -57,27 +70,30 @@
           }
         },
         {
-          label: '📷 Download PNG',
+          label: '📷 Save PNG',
           id: 'download-png',
           onClick: function (h) {
-            const svgEl = h.getRenderEl().querySelector('svg');
-            if (!svgEl) return;
+            const svgEl = h.getRenderEl().querySelector('#svg-wrapper svg');
+            if (!svgEl) {
+              h.showError('No graph found', 'Please wait for the graph to render before exporting.');
+              return;
+            }
 
             h.showLoading('Generating PNG...');
             const bbox = svgEl.getBBox();
-            const width = svgEl.width.baseVal.value || bbox.width;
-            const height = svgEl.height.baseVal.value || bbox.height;
+            const width = (svgEl.width.baseVal.value || bbox.width) * 2;
+            const height = (svgEl.height.baseVal.value || bbox.height) * 2;
             
             const canvas = document.createElement('canvas');
-            const scale = 2; 
-            canvas.width = width * scale;
-            canvas.height = height * scale;
+            canvas.width = width;
+            canvas.height = height;
             const ctx = canvas.getContext('2d');
             
             const svgData = new XMLSerializer().serializeToString(svgEl);
             const img = new Image();
             const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
             const url = URL.createObjectURL(svgBlob);
+            _svgUrls.add(url);
             
             img.onload = function () {
               ctx.fillStyle = 'white';
@@ -86,12 +102,14 @@
               canvas.toBlob(function (blob) {
                 h.download((_lastFile?.name || 'graph') + '.png', blob, 'image/png');
                 URL.revokeObjectURL(url);
+                _svgUrls.delete(url);
                 h.showLoading(false);
               }, 'image/png');
             };
             img.onerror = function() {
               URL.revokeObjectURL(url);
-              h.showError('Export Failed', 'Could not convert SVG to PNG.');
+              _svgUrls.delete(url);
+              h.showError('Export Failed', 'The browser could not convert this SVG to an image.');
               h.showLoading(false);
             };
             img.src = url;
@@ -106,18 +124,22 @@
       },
 
       onDestroy: function() {
+        cleanupUrls();
         _hpcc = null;
         _lastFile = null;
         _lastContent = null;
         _currentSvg = null;
-        _onFileInternal = null;
+        if (_searchTimeout) clearTimeout(_searchTimeout);
       },
 
       onFile: function _onFileFn(file, content, h) {
-        if (!_onFileInternal) _onFileInternal = _onFileFn;
-        
         if (!content || (typeof content === 'string' && !content.trim())) {
-          h.render('<div class="p-12 text-center text-surface-500 italic">This file is empty.</div>');
+          h.render(`
+            <div class="flex flex-col items-center justify-center p-20 text-surface-400 border-2 border-dashed border-surface-200 rounded-2xl">
+              <span class="text-4xl mb-4">📄</span>
+              <p>This .dot file is empty</p>
+            </div>
+          `);
           return;
         }
 
@@ -126,49 +148,67 @@
 
         const hpccLib = window['@hpcc-js/wasm'];
         if (!hpccLib) {
-          h.showLoading('Loading Graphviz engine...');
-          setTimeout(function() { _onFileFn(file, content, h); }, 100);
+          h.showLoading('Waking up Graphviz engine...');
+          setTimeout(function() { _onFileFn(file, content, h); }, 200);
           return;
         }
 
-        h.showLoading('Rendering Graph...');
+        h.showLoading('Rendering complex relationships...');
 
-        async function process() {
+        (async function() {
           try {
             if (!_hpcc) {
               _hpcc = await hpccLib.Graphviz.load();
             }
 
-            _currentSvg = _hpcc.dot(content);
-            
-            const sizeStr = file.size < 1024 * 1024 
-              ? (file.size / 1024).toFixed(1) + ' KB'
-              : (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+            // Render DOT to SVG
+            try {
+              _currentSvg = _hpcc.dot(content);
+            } catch (dotErr) {
+              h.showError('Syntax Error', 'Graphviz failed to parse your DOT source. Please check for missing semicolons or braces.');
+              h.showLoading(false);
+              return;
+            }
 
             const infoBar = `
               <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">
                 <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
                 <span class="text-surface-300">|</span>
-                <span>${sizeStr}</span>
+                <span>${formatSize(file.size)}</span>
                 <span class="text-surface-300">|</span>
-                <span class="text-surface-500">.dot file</span>
+                <span class="text-surface-500">Graphviz DOT</span>
               </div>
             `;
 
-            let mainContent = '';
+            let mainView = '';
+
             if (_viewMode === 'graph') {
-              mainContent = `
-                <div class="flex flex-col gap-4">
+              mainView = `
+                <div class="space-y-4">
                   <div class="flex items-center justify-between">
-                    <h3 class="font-semibold text-surface-800">Diagram Preview</h3>
-                    <div class="relative">
-                      <input type="text" id="node-search" placeholder="Highlight nodes..." 
-                        class="px-3 py-1 text-xs border border-surface-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none w-48"
-                        value="${escapeHtml(_searchTerm)}">
+                    <div>
+                      <h3 class="font-semibold text-surface-800">Visual Diagram</h3>
+                      <p class="text-xs text-surface-500">Interactive SVG rendering</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <div class="relative group">
+                        <span class="absolute inset-y-0 left-3 flex items-center text-surface-400">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                        </span>
+                        <input type="text" id="dot-search" placeholder="Highlight nodes..." 
+                          class="pl-9 pr-4 py-1.5 text-sm border border-surface-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none w-48 transition-all"
+                          value="${escapeHtml(_searchTerm)}">
+                      </div>
+                      <div class="flex items-center bg-surface-100 rounded-lg p-1">
+                        <button id="zoom-out" class="p-1 hover:bg-white rounded transition-colors" title="Zoom Out">➖</button>
+                        <span class="px-2 text-xs font-mono text-surface-600 min-w-[45px] text-center">${_zoomLevel}%</span>
+                        <button id="zoom-in" class="p-1 hover:bg-white rounded transition-colors" title="Zoom In">➕</button>
+                      </div>
                     </div>
                   </div>
-                  <div class="bg-white border border-surface-200 rounded-xl p-4 overflow-auto flex justify-center min-h-[400px]">
-                    <div id="svg-container" class="w-full h-full flex justify-center">
+
+                  <div class="bg-white border border-surface-200 rounded-2xl p-6 overflow-auto shadow-sm min-h-[500px] flex items-start justify-center transition-all">
+                    <div id="svg-wrapper" class="w-full h-full flex justify-center origin-top transition-transform duration-200" style="transform: scale(${_zoomLevel / 100})">
                       ${_currentSvg}
                     </div>
                   </div>
@@ -176,69 +216,93 @@
               `;
             } else {
               const lines = content.split('\n');
-              const filteredLines = lines.map((line, i) => {
-                const isMatch = _searchTerm && line.toLowerCase().includes(_searchTerm.toLowerCase());
+              const lineCount = lines.length;
+              
+              // Only render first 2000 lines if huge, to avoid DOM crash
+              const maxLines = 2000;
+              const displayLines = lines.slice(0, maxLines);
+              
+              const codeRows = displayLines.map((line, i) => {
                 const escaped = escapeHtml(line);
-                const highlighted = isMatch ? `<mark class="bg-yellow-200 text-black">${escaped}</mark>` : escaped;
-                return `<div class="table-row hover:bg-white/10 ${isMatch ? 'bg-white/20' : ''}">
-                  <span class="table-cell pr-4 text-gray-500 text-right select-none w-12 border-r border-gray-800">${i + 1}</span>
-                  <span class="table-cell pl-4 whitespace-pre">${highlighted || ' '}</span>
-                </div>`;
+                const isMatch = _searchTerm && line.toLowerCase().includes(_searchTerm.toLowerCase());
+                const highlighted = isMatch 
+                  ? escaped.replace(new RegExp(`(${_searchTerm})`, 'gi'), '<mark class="bg-brand-200 text-brand-900 rounded-sm">$1</mark>')
+                  : escaped;
+                
+                return `
+                  <div class="flex hover:bg-white/5 transition-colors ${isMatch ? 'bg-white/10' : ''}">
+                    <span class="w-12 flex-shrink-0 text-right pr-4 text-surface-500 select-none font-mono border-r border-surface-800/50">${i + 1}</span>
+                    <span class="px-4 whitespace-pre font-mono text-gray-100">${highlighted || ' '}</span>
+                  </div>
+                `;
               }).join('');
 
-              mainContent = `
-                <div class="flex flex-col gap-4">
+              mainView = `
+                <div class="space-y-4">
                   <div class="flex items-center justify-between">
-                    <h3 class="font-semibold text-surface-800">Source Code</h3>
                     <div class="flex items-center gap-3">
-                      <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${lines.length} lines</span>
-                      <input type="text" id="node-search" placeholder="Filter code..." 
-                        class="px-3 py-1 text-xs border border-surface-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none w-48"
+                      <h3 class="font-semibold text-surface-800">Source Definition</h3>
+                      <span class="text-xs bg-brand-100 text-brand-700 px-2.5 py-1 rounded-full font-medium">${lineCount} lines</span>
+                    </div>
+                    <div class="relative">
+                      <span class="absolute inset-y-0 left-3 flex items-center text-surface-400">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                      </span>
+                      <input type="text" id="dot-search" placeholder="Search source..." 
+                        class="pl-9 pr-4 py-1.5 text-sm border border-surface-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none w-48 transition-all"
                         value="${escapeHtml(_searchTerm)}">
                     </div>
                   </div>
-                  <div class="rounded-xl overflow-hidden border border-surface-200">
-                    <pre class="p-4 text-sm font-mono bg-gray-950 text-gray-100 overflow-x-auto leading-relaxed max-h-[600px]"><div class="table w-full border-collapse">${filteredLines}</div></pre>
+
+                  <div class="rounded-2xl overflow-hidden border border-surface-200 shadow-sm">
+                    <div class="bg-gray-950 p-4 text-sm overflow-x-auto max-h-[70vh] custom-scrollbar">
+                      <div class="inline-block min-w-full">
+                        ${codeRows}
+                        ${lineCount > maxLines ? `<div class="p-4 text-surface-500 italic text-center border-t border-surface-800/30">... only showing first ${maxLines} lines ...</div>` : ''}
+                      </div>
+                    </div>
                   </div>
                 </div>
               `;
             }
 
-            h.render(infoBar + mainContent);
+            h.render(infoBar + mainView);
 
-            const svgContainer = h.getRenderEl().querySelector('#svg-container');
-            if (svgContainer) {
-              const svgEl = svgContainer.querySelector('svg');
-              if (svgEl) {
-                svgEl.style.width = '100%';
-                svgEl.style.height = 'auto';
-                svgEl.classList.add('max-w-full');
-                
-                if (_searchTerm && _viewMode === 'graph') {
-                  const nodes = svgEl.querySelectorAll('.node');
-                  nodes.forEach(node => {
-                    const text = node.textContent.toLowerCase();
-                    if (text.includes(_searchTerm.toLowerCase())) {
-                      const shape = node.querySelector('ellipse, polygon, path, circle');
-                      if (shape) {
-                        shape.style.fill = '#fef08a';
-                        shape.style.stroke = '#eab308';
-                        shape.style.strokeWidth = '3px';
-                      }
+            // Post-render logic
+            const renderEl = h.getRenderEl();
+            const svgEl = renderEl.querySelector('#svg-wrapper svg');
+            
+            if (svgEl && _viewMode === 'graph') {
+              svgEl.setAttribute('width', '100%');
+              svgEl.setAttribute('height', 'auto');
+              svgEl.classList.add('max-w-none'); // Allow it to expand for zoom
+              
+              // Apply highlights
+              if (_searchTerm) {
+                const nodes = svgEl.querySelectorAll('.node');
+                nodes.forEach(node => {
+                  const text = node.textContent.toLowerCase();
+                  if (text.includes(_searchTerm.toLowerCase())) {
+                    const polygon = node.querySelector('ellipse, polygon, path, circle');
+                    if (polygon) {
+                      polygon.style.fill = '#fde68a'; // yellow-200
+                      polygon.style.stroke = '#d97706'; // amber-600
+                      polygon.style.strokeWidth = '3px';
                     }
-                  });
-                }
+                  }
+                });
               }
             }
 
-            const searchInput = h.getRenderEl().querySelector('#node-search');
+            // Events
+            const searchInput = renderEl.querySelector('#dot-search');
             if (searchInput) {
               searchInput.addEventListener('input', function(e) {
                 _searchTerm = e.target.value;
-                clearTimeout(this.searchTimeout);
-                this.searchTimeout = setTimeout(() => {
-                  _onFileInternal(_lastFile, _lastContent, h);
-                }, 250);
+                if (_searchTimeout) clearTimeout(_searchTimeout);
+                _searchTimeout = setTimeout(() => {
+                  _onFileFn(_lastFile, _lastContent, h);
+                }, 300);
               });
               
               if (_searchTerm) {
@@ -247,15 +311,26 @@
               }
             }
 
+            const zoomIn = renderEl.querySelector('#zoom-in');
+            const zoomOut = renderEl.querySelector('#zoom-out');
+            if (zoomIn && zoomOut) {
+              zoomIn.onclick = () => {
+                _zoomLevel = Math.min(_zoomLevel + 25, 300);
+                _onFileFn(_lastFile, _lastContent, h);
+              };
+              zoomOut.onclick = () => {
+                _zoomLevel = Math.max(_zoomLevel - 25, 25);
+                _onFileFn(_lastFile, _lastContent, h);
+              };
+            }
+
           } catch (err) {
-            h.showError('Rendering Error', 'The DOT file could not be parsed. The syntax might be invalid.');
-            console.error(err);
+            console.error('Graphviz failure:', err);
+            h.showError('Rendering Failed', 'Graphviz could not render this file. The DOT syntax might be incompatible with the WASM engine.');
           } finally {
             h.showLoading(false);
           }
-        }
-
-        process();
+        })();
       }
     });
   };
