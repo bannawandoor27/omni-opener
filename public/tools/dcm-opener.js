@@ -38,29 +38,42 @@
   window.initTool = function (toolConfig, mountEl) {
     let drawFn = null;
     let cleanupFns = [];
+    let currentMetadata = [];
 
     function formatSize(bytes) {
-      if (bytes === 0) return '0 Bytes';
+      if (!bytes) return '0 Bytes';
       const k = 1024;
       const sizes = ['Bytes', 'KB', 'MB', 'GB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
+    function escapeHtml(str) {
+      if (typeof str !== 'string') return String(str);
+      return str.replace(/[&<>"']/g, function (m) {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[m];
+      });
+    }
+
     OmniTool.create(mountEl, toolConfig, {
       binary: true,
       accept: '.dcm',
-      dropLabel: 'Drop a DICOM file to view imaging and metadata',
-      infoHtml: '<strong>Secure Medical Viewer:</strong> All DICOM parsing and rendering happens locally. Your medical data never leaves this device.',
+      dropLabel: 'Drop a DICOM file to view medical imaging and metadata',
+      infoHtml: '<strong>Medical Privacy:</strong> All DICOM processing occurs locally in your browser. No patient data or medical images are ever uploaded.',
 
       actions: [
         {
           label: '📋 Copy Metadata',
           id: 'copy-meta',
           onClick: function (h, btn) {
-            const meta = h.getState().metadata;
-            if (!meta) return;
-            const text = meta.map(m => `${m.tag} [${m.name}]: ${m.value}`).join('\n');
+            if (!currentMetadata.length) return;
+            const text = currentMetadata.map(m => `${m.tag} [${m.name}]: ${m.value}`).join('\n');
             h.copyToClipboard(text, btn);
           }
         },
@@ -70,8 +83,10 @@
           onClick: function (h) {
             const canvas = h.getRenderEl().querySelector('#dicom-canvas');
             if (canvas) {
-              canvas.toBlob((blob) => {
-                if (blob) h.download(h.getFile().name.replace('.dcm', '.png'), blob, 'image/png');
+              canvas.toBlob(function (blob) {
+                if (blob) {
+                  h.download(h.getFile().name.replace(/\.dcm$/i, '') + '.png', blob, 'image/png');
+                }
               }, 'image/png');
             }
           }
@@ -86,24 +101,17 @@
           }
         },
         {
-          label: '🔄 Reset View',
+          label: '🔄 Reset',
           id: 'reset-view',
           onClick: function (h) {
-            const canvas = h.getRenderEl().querySelector('#dicom-canvas');
-            if (canvas) {
-              canvas.style.transform = 'scale(1) translate(0px, 0px)';
+            const wcInput = h.getRenderEl().querySelector('#win-center');
+            const wwInput = h.getRenderEl().querySelector('#win-width');
+            if (wcInput && wwInput) {
+              wcInput.value = h.getState().defaultWC || 40;
+              wwInput.value = h.getState().defaultWW || 400;
               h.setState('zoom', 1);
               h.setState('pan', { x: 0, y: 0 });
-              
-              const wcInput = h.getRenderEl().querySelector('#win-center');
-              const wwInput = h.getRenderEl().querySelector('#win-width');
-              if (wcInput && wwInput) {
-                const wcDefault = h.getState().defaultWC || 40;
-                const wwDefault = h.getState().defaultWW || 400;
-                wcInput.value = wcDefault;
-                wwInput.value = wwDefault;
-                if (drawFn) drawFn();
-              }
+              if (drawFn) drawFn();
             }
           }
         }
@@ -122,12 +130,16 @@
 
       onFile: function _onFileFn(file, content, h) {
         if (typeof dicomParser === 'undefined') {
-          h.showLoading('Initializing medical imaging engine...');
-          setTimeout(function() { _onFileFn(file, content, h); }, 500);
+          h.showLoading('Loading medical imaging engine...');
+          setTimeout(function () { _onFileFn(file, content, h); }, 500);
           return;
         }
 
         h.showLoading('Parsing DICOM dataset...');
+
+        // Clear previous state
+        cleanupFns.forEach(fn => fn());
+        cleanupFns = [];
 
         try {
           const byteArray = new Uint8Array(content);
@@ -138,7 +150,7 @@
             const element = dataSet.elements[tag];
             let value = '(binary)';
             try {
-              if (element.length < 128) {
+              if (element.length < 1024) { // Only attempt to read small-ish tags as strings
                 value = dataSet.string(tag) || value;
               }
             } catch (e) {}
@@ -151,7 +163,7 @@
             });
           }
 
-          h.setState('metadata', meta);
+          currentMetadata = meta;
           h.setState('inverted', false);
           h.setState('zoom', 1);
           h.setState('pan', { x: 0, y: 0 });
@@ -161,12 +173,6 @@
           const bitsAllocated = dataSet.uint16('x00280100');
           const pixelDataElement = dataSet.elements['x7fe00010'];
 
-          if (!rows || !cols || !pixelDataElement) {
-            h.showError('Unsupported DICOM Format', 'This file contains metadata but no viewable image data (pixel data might be encapsulated or compressed).');
-            renderMetadataOnly(meta, file, h);
-            return;
-          }
-
           const wcDefault = parseFloat(dataSet.string('x00281050')) || 40;
           const wwDefault = parseFloat(dataSet.string('x00281051')) || 400;
           const ri = parseFloat(dataSet.string('x00281052')) || 0;
@@ -175,101 +181,131 @@
           h.setState('defaultWC', wcDefault);
           h.setState('defaultWW', wwDefault);
 
-          renderFull(file, h, meta, rows, cols, bitsAllocated, wcDefault, wwDefault, dataSet, pixelDataElement, ri, rs);
+          renderLayout(file, h, meta, rows, cols, bitsAllocated, wcDefault, wwDefault, dataSet, pixelDataElement, ri, rs);
         } catch (err) {
-          h.showError('Could not open DICOM', 'The file might be corrupted or using an unsupported transfer syntax. Error: ' + err.message);
+          h.showError('Could not open DICOM file', 'This file may be corrupted, encrypted, or uses an unsupported DICOM variant. Error: ' + err.message);
         }
       }
     });
 
-    function renderMetadataOnly(meta, file, h) {
+    function renderLayout(file, h, meta, rows, cols, bitsAllocated, wcDefault, wwDefault, dataSet, pixelDataElement, ri, rs) {
+      const hasImage = rows && cols && pixelDataElement;
+      
       const html = `
         <div class="p-6 h-full flex flex-col bg-white">
+          <!-- U1. File info bar -->
           <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">
-            <span class="font-semibold text-surface-800">${file.name}</span>
+            <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
             <span class="text-surface-300">|</span>
             <span>${formatSize(file.size)}</span>
             <span class="text-surface-300">|</span>
             <span class="text-surface-500">.dcm (DICOM)</span>
-          </div>
-          <div class="flex-1 overflow-hidden">
-            ${renderMetadataTable(meta)}
-          </div>
-        </div>
-      `;
-      h.render(html);
-      setupMetadataInteractions(h);
-    }
-
-    function renderFull(file, h, meta, rows, cols, bitsAllocated, wcDefault, wwDefault, dataSet, pixelDataElement, ri, rs) {
-      const html = `
-        <div class="p-6 h-full flex flex-col bg-white">
-          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">
-            <span class="font-semibold text-surface-800">${file.name}</span>
-            <span class="text-surface-300">|</span>
-            <span>${formatSize(file.size)}</span>
-            <span class="text-surface-300">|</span>
-            <span class="text-surface-500">.dcm (DICOM)</span>
+            ${hasImage ? `
+              <span class="text-surface-300">|</span>
+              <span class="text-surface-500">${cols} × ${rows} • ${bitsAllocated}-bit</span>
+            ` : ''}
           </div>
 
           <div class="flex-1 flex flex-col lg:flex-row gap-6 min-h-0">
-            <div class="flex-1 flex flex-col gap-4 min-h-0">
-              <div class="flex-1 bg-black rounded-2xl border border-surface-200 shadow-inner flex items-center justify-center overflow-hidden relative group" id="viewer-container">
-                <canvas id="dicom-canvas" class="transition-transform cursor-grab active:cursor-grabbing origin-center"></canvas>
-                
-                <div class="absolute top-4 left-4">
-                   <div class="bg-black/60 backdrop-blur px-3 py-1.5 rounded-lg text-white text-[10px] font-mono border border-white/20 flex flex-col gap-0.5">
-                     <span>DIM: ${cols} × ${rows}</span>
-                     <span>RES: ${bitsAllocated}-bit</span>
-                   </div>
+            <!-- Left Side: Viewer (if image exists) -->
+            ${hasImage ? `
+              <div class="flex-1 flex flex-col gap-4 min-h-0">
+                <div class="flex-1 bg-black rounded-2xl border border-surface-200 shadow-inner flex items-center justify-center overflow-hidden relative group" id="viewer-container">
+                  <canvas id="dicom-canvas" class="transition-transform cursor-grab active:cursor-grabbing origin-center"></canvas>
+                  
+                  <!-- Overlays -->
+                  <div class="absolute top-4 left-4 pointer-events-none">
+                     <div class="bg-black/60 backdrop-blur px-3 py-2 rounded-lg text-white text-[10px] font-mono border border-white/20 flex flex-col gap-1">
+                       <div class="text-white/50 border-b border-white/10 pb-1 mb-1 font-bold uppercase tracking-wider">Image Specs</div>
+                       <span>DIM: ${cols} × ${rows}</span>
+                       <span>BIT: ${bitsAllocated}-bit</span>
+                       <span>SRC: ${escapeHtml(file.name)}</span>
+                     </div>
+                  </div>
+
+                  <div class="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    <div class="bg-black/60 backdrop-blur px-3 py-1.5 rounded-lg text-white text-[10px] border border-white/20">
+                      Scroll to zoom • Drag to pan
+                    </div>
+                  </div>
                 </div>
 
-                <div class="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div class="bg-black/60 backdrop-blur px-3 py-1.5 rounded-lg text-white text-[10px] border border-white/20">
-                    Scroll to zoom • Drag to pan
+                <!-- Controls -->
+                <div class="bg-surface-50 p-5 rounded-2xl border border-surface-200 grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                      <label class="text-[11px] font-bold text-surface-500 uppercase tracking-widest">Window Center (Level)</label>
+                      <span id="wc-val" class="text-xs font-mono text-brand-600 font-bold bg-brand-50 px-2 py-0.5 rounded">${wcDefault}</span>
+                    </div>
+                    <input type="range" id="win-center" min="-1000" max="2000" value="${wcDefault}" 
+                      class="w-full h-2 bg-surface-200 rounded-lg appearance-none cursor-pointer accent-brand-600">
+                  </div>
+                  <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                      <label class="text-[11px] font-bold text-surface-500 uppercase tracking-widest">Window Width</label>
+                      <span id="ww-val" class="text-xs font-mono text-brand-600 font-bold bg-brand-50 px-2 py-0.5 rounded">${wwDefault}</span>
+                    </div>
+                    <input type="range" id="win-width" min="1" max="4000" value="${wwDefault}" 
+                      class="w-full h-2 bg-surface-200 rounded-lg appearance-none cursor-pointer accent-brand-600">
                   </div>
                 </div>
               </div>
-
-              <div class="bg-surface-50 p-5 rounded-2xl border border-surface-200 grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div class="space-y-3">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[11px] font-bold text-surface-500 uppercase tracking-widest">Window Center</label>
-                    <span id="wc-val" class="text-xs font-mono text-brand-600 font-bold bg-brand-50 px-2 py-0.5 rounded">${wcDefault}</span>
+            ` : `
+              <div class="flex-1 flex items-center justify-center bg-surface-50 rounded-2xl border border-dashed border-surface-200 p-12 text-center">
+                <div class="max-w-sm">
+                  <div class="w-16 h-16 bg-surface-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                   </div>
-                  <input type="range" id="win-center" min="-1000" max="2000" value="${wcDefault}" 
-                    class="w-full h-2 bg-surface-200 rounded-lg appearance-none cursor-pointer accent-brand-600">
-                </div>
-                <div class="space-y-3">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[11px] font-bold text-surface-500 uppercase tracking-widest">Window Width</label>
-                    <span id="ww-val" class="text-xs font-mono text-brand-600 font-bold bg-brand-50 px-2 py-0.5 rounded">${wwDefault}</span>
-                  </div>
-                  <input type="range" id="win-width" min="1" max="4000" value="${wwDefault}" 
-                    class="w-full h-2 bg-surface-200 rounded-lg appearance-none cursor-pointer accent-brand-600">
+                  <h3 class="text-lg font-semibold text-surface-900 mb-2">Metadata Only</h3>
+                  <p class="text-surface-500 text-sm">This DICOM file contains metadata but the pixel data is either compressed, encapsulated, or missing.</p>
                 </div>
               </div>
-            </div>
+            `}
 
+            <!-- Right Side: Metadata -->
             <div class="w-full lg:w-96 flex flex-col gap-4 min-h-0">
               <div class="flex items-center justify-between">
                 <h3 class="font-bold text-surface-800 flex items-center gap-2">
                   <span class="w-1.5 h-5 bg-brand-500 rounded-full"></span>
-                  Metadata
+                  DICOM Tags
                 </h3>
                 <span class="text-xs bg-brand-100 text-brand-700 px-2.5 py-0.5 rounded-full font-bold">${meta.length} Tags</span>
               </div>
               
               <div class="relative">
-                <input type="text" id="tag-search" placeholder="Filter tags or values..." 
-                  class="w-full pl-9 pr-4 py-2.5 bg-surface-50 border border-surface-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all">
-                <div class="absolute left-3 top-3 text-surface-400">
+                <input type="text" id="tag-search" placeholder="Search tags or values..." 
+                  class="w-full pl-10 pr-4 py-2.5 bg-surface-50 border border-surface-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all">
+                <div class="absolute left-3.5 top-3 text-surface-400">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                 </div>
               </div>
 
               <div class="flex-1 overflow-hidden">
-                ${renderMetadataTable(meta)}
+                <div class="h-full overflow-hidden border border-surface-200 rounded-2xl bg-white flex flex-col">
+                  <div class="overflow-y-auto flex-1 scrollbar-thin" id="meta-scroll-area">
+                    <table class="min-w-full text-sm" id="tags-table">
+                      <thead class="sticky top-0 bg-white/95 backdrop-blur z-10 border-b border-surface-200">
+                        <tr>
+                          <th class="px-4 py-3 text-left font-semibold text-surface-700">Tag</th>
+                          <th class="px-4 py-3 text-left font-semibold text-surface-700">Value</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-surface-100">
+                        ${meta.map(m => `
+                          <tr class="even:bg-surface-50/50 hover:bg-brand-50 transition-colors group">
+                            <td class="px-4 py-3 font-mono text-[10px] text-surface-400 whitespace-nowrap align-top">
+                              ${escapeHtml(m.tag)}
+                            </td>
+                            <td class="px-4 py-3">
+                              <div class="text-[11px] font-bold text-surface-800 group-hover:text-brand-700 transition-colors mb-0.5">${escapeHtml(m.name)}</div>
+                              <div class="text-[11px] text-surface-500 break-all line-clamp-2" title="${escapeHtml(m.value)}">${escapeHtml(m.value)}</div>
+                            </td>
+                          </tr>
+                        `).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -278,6 +314,13 @@
 
       h.render(html);
 
+      if (hasImage) {
+        setupViewer(h, dataSet, pixelDataElement, rows, cols, bitsAllocated, wcDefault, wwDefault, ri, rs);
+      }
+      setupMetadataInteractions();
+    }
+
+    function setupViewer(h, dataSet, pixelDataElement, rows, cols, bitsAllocated, wcDefault, wwDefault, ri, rs) {
       const canvas = document.getElementById('dicom-canvas');
       const ctx = canvas.getContext('2d');
       const container = document.getElementById('viewer-container');
@@ -287,7 +330,8 @@
 
       const pixelData = getPixelData(dataSet, pixelDataElement, bitsAllocated);
       if (!pixelData) {
-        h.showError('Encapsulated Data', 'This DICOM uses a compressed format (e.g. JPEG-LS, RLE) that requires a heavy decoder. Showing metadata only.');
+        h.showError('Unsupported Image Compression', 'This DICOM file uses a compressed format (e.g. JPEG-LS, JPEG2000, or RLE) which requires a full DICOM library. Showing metadata only.');
+        // Re-render metadata only if possible, or just keep the current "Metadata Only" message
         return;
       }
 
@@ -296,7 +340,7 @@
       const wcVal = document.getElementById('wc-val');
       const wwVal = document.getElementById('ww-val');
 
-      drawFn = function() {
+      drawFn = function () {
         const wc = parseFloat(wcInput.value);
         const ww = parseFloat(wwInput.value);
         const inverted = h.getState().inverted;
@@ -331,44 +375,15 @@
       wwInput.oninput = drawFn;
 
       setupZoomPan(container, canvas, h);
-      setupMetadataInteractions(h);
     }
 
-    function renderMetadataTable(meta) {
-      return `
-        <div class="h-full overflow-hidden border border-surface-200 rounded-2xl bg-white flex flex-col">
-          <div class="overflow-y-auto flex-1 scrollbar-thin">
-            <table class="min-w-full text-sm" id="tags-table">
-              <thead class="sticky top-0 bg-white/95 backdrop-blur z-10 border-b border-surface-200">
-                <tr>
-                  <th class="px-4 py-3 text-left font-semibold text-surface-700">Tag</th>
-                  <th class="px-4 py-3 text-left font-semibold text-surface-700">Data</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-surface-100">
-                ${meta.map(m => `
-                  <tr class="even:bg-surface-50/50 hover:bg-brand-50 transition-colors group">
-                    <td class="px-4 py-3 font-mono text-[10px] text-surface-400 whitespace-nowrap align-top">${m.tag}</td>
-                    <td class="px-4 py-3">
-                      <div class="text-[11px] font-bold text-surface-800 group-hover:text-brand-700 transition-colors mb-0.5">${m.name}</div>
-                      <div class="text-[11px] text-surface-500 break-all line-clamp-2" title="${m.value}">${m.value}</div>
-                    </td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      `;
-    }
-
-    function setupMetadataInteractions(h) {
+    function setupMetadataInteractions() {
       const searchInput = document.getElementById('tag-search');
       if (!searchInput) return;
       
       const rows = document.querySelectorAll('#tags-table tbody tr');
       searchInput.oninput = () => {
-        const query = searchInput.value.toLowerCase();
+        const query = searchInput.value.toLowerCase().trim();
         rows.forEach(row => {
           const text = row.textContent.toLowerCase();
           row.style.display = text.includes(query) ? '' : 'none';
@@ -382,21 +397,26 @@
       let isDragging = false;
       let lastPos = { x: 0, y: 0 };
 
-      const update = () => {
+      const updateTransform = () => {
         canvas.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
       };
 
       const onWheel = (e) => {
         e.preventDefault();
         const delta = e.deltaY > 0 ? 0.9 : 1.1;
-        zoom = Math.min(20, Math.max(0.1, zoom * delta));
+        const newZoom = Math.min(20, Math.max(0.1, zoom * delta));
+        
+        // Better zoom centering could be done here but simple scale is okay for now
+        zoom = newZoom;
         h.setState('zoom', zoom);
-        update();
+        updateTransform();
       };
 
       const onMouseDown = (e) => {
+        if (e.button !== 0) return; // Only left click
         isDragging = true;
         lastPos = { x: e.clientX, y: e.clientY };
+        canvas.classList.add('grabbing');
       };
 
       const onMouseMove = (e) => {
@@ -407,11 +427,12 @@
         pan.y += dy;
         lastPos = { x: e.clientX, y: e.clientY };
         h.setState('pan', { ...pan });
-        update();
+        updateTransform();
       };
 
       const onMouseUp = () => {
         isDragging = false;
+        canvas.classList.remove('grabbing');
       };
 
       container.addEventListener('wheel', onWheel, { passive: false });
@@ -433,14 +454,21 @@
         const offset = element.dataOffset;
         const length = element.length;
         
+        // dicomParser elements have dataOffset which is the offset into the byteArray
         if (bits === 16) {
           if (length % 2 !== 0) return null;
+          // Use DataView or TypedArray buffer slice to handle endianness and alignment
           const buffer = byteArray.buffer.slice(byteArray.byteOffset + offset, byteArray.byteOffset + offset + length);
+          // Standard DICOM pixel data is Little Endian by default for Implicit/Explicit VR Little Endian
+          // dicomParser handles the transfer syntax, but for pixel data we need to be careful.
+          // Most common is Little Endian.
           return new Int16Array(buffer);
         } else if (bits === 8) {
           return new Uint8Array(byteArray.buffer.slice(byteArray.byteOffset + offset, byteArray.byteOffset + offset + length));
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('Error extracting pixel data:', e);
+      }
       return null;
     }
   };
