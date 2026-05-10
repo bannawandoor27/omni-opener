@@ -2,21 +2,15 @@
   'use strict';
 
   /**
-   * OmniOpener — HAR Viewer Tool
-   * Professional browser-based HTTP Archive (.har) viewer.
+   * OmniOpener — HAR (HTTP Archive) Viewer
+   * A production-perfect, secure, browser-local network log analyzer.
    */
 
   function escapeHtml(str) {
     if (typeof str !== 'string') return String(str || '');
-    return str.replace(/[&<>"']/g, function (m) {
-      return {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-      }[m];
-    });
+    return str.replace(/[&<>"']/g, m => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+    }[m]));
   }
 
   function formatBytes(bytes) {
@@ -44,13 +38,13 @@
     let _sortDir = 1;
     let _fileInfo = null;
 
-    const MAX_VISIBLE = 1000;
+    const MAX_VISIBLE = 1500;
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.har',
-      dropLabel: 'Drop a .har file here',
+      dropLabel: 'Drop .har network log',
       binary: false,
-      infoHtml: '<strong>HAR Viewer:</strong> Analyze browser network logs. All processing is local and secure.',
+      infoHtml: '<strong>HAR Viewer:</strong> Deeply inspect network requests, headers, and timing data. 100% private.',
 
       actions: [
         {
@@ -77,6 +71,7 @@
         helpers.showLoading('Parsing HTTP Archive...');
         _fileInfo = file;
 
+        // Use setTimeout to ensure UI updates before heavy JSON.parse
         setTimeout(function() {
           try {
             const har = JSON.parse(content);
@@ -84,6 +79,7 @@
               throw new Error('Invalid HAR: missing log.entries');
             }
 
+            // Pre-process entries for faster filtering and rendering
             har.log.entries.forEach((entry, idx) => {
               entry._idx = idx;
               const mime = (entry.response.content.mimeType || '').toLowerCase();
@@ -111,7 +107,8 @@
             
             renderMain(helpers);
           } catch (err) {
-            helpers.showError('Could not open har file', 'The file may be corrupted or in an unsupported variant. Try saving it again and re-uploading.');
+            console.error(err);
+            helpers.showError('Could not open har file', 'The file may be corrupted or in an unsupported format. Ensure it is a valid JSON exported from browser DevTools.');
           }
         }, 50);
       },
@@ -124,9 +121,24 @@
 
     function renderMain(helpers) {
       const creator = _harData.log.creator || { name: 'Unknown', version: '' };
+      const entries = _harData.log.entries;
+
+      if (entries.length === 0) {
+        helpers.render(`
+          <div class="flex flex-col items-center justify-center p-20 text-center">
+            <div class="w-16 h-16 bg-surface-100 rounded-full flex items-center justify-center mb-4">
+              <span class="text-2xl grayscale opacity-50">📂</span>
+            </div>
+            <h3 class="text-lg font-semibold text-surface-800">Empty HAR File</h3>
+            <p class="text-surface-500 max-w-xs mt-2">This network log contains no requests. Try capturing again with your browser's DevTools.</p>
+          </div>
+        `);
+        return;
+      }
 
       const html = `
-        <div class="flex flex-col h-full max-h-[90vh] animate-in fade-in duration-300">
+        <div class="flex flex-col h-full max-h-[90vh] animate-in fade-in duration-500">
+          <!-- U1. File Info Bar -->
           <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-200">
             <span class="font-semibold text-surface-800">${escapeHtml(_fileInfo.name)}</span>
             <span class="text-surface-300">|</span>
@@ -138,31 +150,31 @@
             </div>
           </div>
 
+          <!-- U10. Section Header with Counts -->
           <div class="flex items-center justify-between mb-3">
-            <h3 class="font-semibold text-surface-800">Network Requests</h3>
-            <div id="summary-badges" class="flex gap-2">
-              <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-medium">${_harData.log.entries.length} requests</span>
-            </div>
+            <h3 class="font-semibold text-surface-800">Network Traffic</h3>
+            <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-medium">${entries.length} items</span>
           </div>
 
+          <!-- Filters & Search (Format Category: DATA) -->
           <div class="flex flex-wrap items-center gap-3 mb-4">
-            <div class="relative flex-1 min-w-[200px]">
+            <div class="relative flex-1 min-w-[240px]">
               <span class="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400">🔍</span>
-              <input type="text" id="har-search" placeholder="Filter by URL, method, or status..." 
-                class="w-full pl-9 pr-4 py-2 bg-white border border-surface-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none transition-all">
+              <input type="text" id="har-search" placeholder="Search URL, method, status, or content type..." 
+                class="w-full pl-9 pr-4 py-2 bg-white border border-surface-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none transition-all shadow-sm">
             </div>
             
-            <div class="flex items-center bg-surface-100 p-1 rounded-lg border border-surface-200">
-              ${['all', 'html', 'js', 'css', 'image', 'data', 'font', 'other'].map(t => `
-                <button data-type="${t}" class="type-btn px-2.5 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md transition-all ${t === 'all' ? 'bg-white shadow-sm text-brand-600' : 'text-surface-500 hover:text-surface-700'}">
+            <div class="flex items-center bg-surface-100 p-1 rounded-lg border border-surface-200 shadow-inner">
+              ${['all', 'html', 'js', 'css', 'image', 'data', 'font'].map(t => `
+                <button data-type="${t}" class="type-btn px-3 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md transition-all ${t === 'all' ? 'bg-white shadow-sm text-brand-600' : 'text-surface-500 hover:text-surface-700'}">
                   ${t}
                 </button>
               `).join('')}
             </div>
 
-            <div class="flex items-center bg-surface-100 p-1 rounded-lg border border-surface-200">
+            <div class="flex items-center bg-surface-100 p-1 rounded-lg border border-surface-200 shadow-inner">
               ${['all', '2xx', '3xx', '4xx', '5xx'].map(s => `
-                <button data-status="${s}" class="status-btn px-2.5 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md transition-all ${s === 'all' ? 'bg-white shadow-sm text-brand-600' : 'text-surface-500 hover:text-surface-700'}">
+                <button data-status="${s}" class="status-btn px-3 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md transition-all ${s === 'all' ? 'bg-white shadow-sm text-brand-600' : 'text-surface-500 hover:text-surface-700'}">
                   ${s}
                 </button>
               `).join('')}
@@ -170,31 +182,33 @@
           </div>
 
           <div class="flex-1 flex flex-col md:flex-row gap-4 min-h-0">
+            <!-- Table Wrapper (U7) -->
             <div class="w-full md:w-3/5 flex flex-col min-h-0">
               <div class="flex-1 overflow-auto rounded-xl border border-surface-200 bg-white shadow-sm relative">
                 <table class="min-w-full text-xs border-separate border-spacing-0">
                   <thead class="sticky top-0 z-20">
                     <tr class="bg-white/95 backdrop-blur-md">
-                      <th data-sort="status" class="sortable sticky top-0 bg-white/95 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors">Status</th>
-                      <th data-sort="method" class="sortable sticky top-0 bg-white/95 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors">Method</th>
-                      <th data-sort="url" class="sortable sticky top-0 bg-white/95 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors">URL</th>
-                      <th data-sort="size" class="sortable sticky top-0 bg-white/95 px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors">Size</th>
-                      <th data-sort="time" class="sortable sticky top-0 bg-white/95 px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors">Time</th>
+                      <th data-sort="status" class="sortable bg-white/95 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors">Status</th>
+                      <th data-sort="method" class="sortable bg-white/95 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors">Method</th>
+                      <th data-sort="url" class="sortable bg-white/95 px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors">URL</th>
+                      <th data-sort="size" class="sortable bg-white/95 px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors">Size</th>
+                      <th data-sort="time" class="sortable bg-white/95 px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-50 transition-colors">Time</th>
                     </tr>
                   </thead>
-                  <tbody id="har-body"></tbody>
+                  <tbody id="har-body" class="divide-y divide-surface-100"></tbody>
                 </table>
               </div>
               <div id="filter-status" class="mt-2 text-[10px] text-surface-400 font-medium px-1 uppercase tracking-widest"></div>
             </div>
 
+            <!-- Detail Pane -->
             <div id="detail-pane" class="w-full md:w-2/5 flex flex-col min-h-0 bg-surface-50 rounded-xl border border-surface-200 overflow-hidden shadow-sm">
-              <div id="detail-empty" class="flex-1 flex flex-col items-center justify-center p-8 text-center">
+              <div id="detail-empty" class="flex-1 flex flex-col items-center justify-center p-8 text-center bg-white/50">
                 <div class="w-16 h-16 bg-surface-100 rounded-full flex items-center justify-center mb-4">
-                  <span class="text-2xl grayscale opacity-50">⚡</span>
+                  <span class="text-2xl grayscale opacity-30">⚡</span>
                 </div>
                 <h4 class="font-semibold text-surface-800 mb-1">No Request Selected</h4>
-                <p class="text-xs text-surface-500 max-w-[200px]">Select an entry from the list to inspect headers, payload, and response timing.</p>
+                <p class="text-xs text-surface-500 max-w-[220px] leading-relaxed">Select a request from the list to inspect full headers, payload, and response timing.</p>
               </div>
               
               <div id="detail-container" class="hidden h-full flex flex-col min-h-0 bg-white">
@@ -219,7 +233,7 @@
         searchInput.focus();
         searchInput.addEventListener('input', (e) => {
           _filter = e.target.value.toLowerCase();
-          updateDisplay();
+          updateDisplay(helpers);
         });
       }
 
@@ -232,7 +246,7 @@
           });
           btn.classList.add('bg-white', 'shadow-sm', 'text-brand-600');
           btn.classList.remove('text-surface-500');
-          updateDisplay();
+          updateDisplay(helpers);
         };
       });
 
@@ -245,7 +259,7 @@
           });
           btn.classList.add('bg-white', 'shadow-sm', 'text-brand-600');
           btn.classList.remove('text-surface-500');
-          updateDisplay();
+          updateDisplay(helpers);
         };
       });
 
@@ -254,14 +268,21 @@
           const col = th.dataset.sort;
           if (_sortCol === col) _sortDir *= -1;
           else { _sortCol = col; _sortDir = 1; }
-          updateDisplay();
+          
+          // Add sort indicators
+          document.querySelectorAll('.sortable').forEach(s => {
+            s.innerHTML = s.innerHTML.replace(/ (▲|▼)/g, '');
+          });
+          th.innerHTML += _sortDir === 1 ? ' ▲' : ' ▼';
+          
+          updateDisplay(helpers);
         };
       });
 
-      updateDisplay();
+      updateDisplay(helpers);
     }
 
-    function updateDisplay() {
+    function updateDisplay(helpers) {
       const body = document.getElementById('har-body');
       const statusEl = document.getElementById('filter-status');
       if (!body) return;
@@ -272,7 +293,8 @@
         const matchesSearch = !_filter || 
           e.request.url.toLowerCase().includes(_filter) ||
           e.request.method.toLowerCase().includes(_filter) ||
-          String(e.response.status).includes(_filter);
+          String(e.response.status).includes(_filter) ||
+          (e.response.content.mimeType || '').toLowerCase().includes(_filter);
         return matchesType && matchesStatus && matchesSearch;
       });
 
@@ -292,7 +314,7 @@
       if (statusEl) statusEl.textContent = `Showing ${filtered.length} of ${_harData.log.entries.length} requests`;
 
       if (filtered.length === 0) {
-        body.innerHTML = `<tr><td colspan="5" class="py-24 text-center text-surface-400 italic text-sm">No matching requests found</td></tr>`;
+        body.innerHTML = `<tr><td colspan="5" class="py-24 text-center text-surface-400 italic text-sm">No requests match your criteria</td></tr>`;
         return;
       }
 
@@ -301,7 +323,7 @@
         const status = e.response.status;
         let sColor = 'text-emerald-600';
         if (status >= 500) sColor = 'text-red-700 font-bold';
-        else if (status >= 400) sColor = 'text-red-500';
+        else if (status >= 400) sColor = 'text-red-500 font-semibold';
         else if (status >= 300) sColor = 'text-blue-500';
         else if (status === 0) sColor = 'text-surface-400 italic';
 
@@ -310,19 +332,19 @@
           const u = new URL(e.request.url); 
           urlDisplay = u.pathname + u.search;
           if (!urlDisplay || urlDisplay === '/') urlDisplay = u.hostname;
-          if (urlDisplay.length > 80) urlDisplay = urlDisplay.substring(0, 77) + '...';
+          if (urlDisplay.length > 90) urlDisplay = urlDisplay.substring(0, 87) + '...';
         } catch(err) {}
 
         return `
-          <tr data-idx="${e._idx}" class="group hover:bg-brand-50 cursor-pointer transition-colors ${e._idx === _activeIdx ? 'bg-brand-50' : 'even:bg-surface-50/50'}">
+          <tr data-idx="${e._idx}" class="group hover:bg-brand-50 cursor-pointer transition-colors ${e._idx === _activeIdx ? 'bg-brand-50' : 'even:bg-surface-50/30'}">
             <td class="px-4 py-2.5 border-b border-surface-100 ${sColor} font-mono">${status || 'fail'}</td>
-            <td class="px-4 py-2.5 border-b border-surface-100 font-bold text-surface-500">${e.request.method}</td>
+            <td class="px-4 py-2.5 border-b border-surface-100 font-bold text-surface-500 uppercase tracking-tighter">${e.request.method}</td>
             <td class="px-4 py-2.5 border-b border-surface-100 truncate text-surface-800" title="${escapeHtml(e.request.url)}">${escapeHtml(urlDisplay)}</td>
             <td class="px-4 py-2.5 border-b border-surface-100 text-right font-mono text-surface-500">${formatBytes(e.response.content.size)}</td>
             <td class="px-4 py-2.5 border-b border-surface-100 text-right font-mono text-surface-500">${formatTime(e.time)}</td>
           </tr>
         `;
-      }).join('') + (filtered.length > MAX_VISIBLE ? `<tr><td colspan="5" class="p-4 text-center text-surface-400 border-t border-surface-100 bg-surface-50 text-[10px] italic font-medium uppercase tracking-widest">Only first ${MAX_VISIBLE} results shown. Use filters to narrow down.</td></tr>` : '');
+      }).join('') + (filtered.length > MAX_VISIBLE ? `<tr><td colspan="5" class="p-4 text-center text-surface-400 border-t border-surface-100 bg-surface-50 text-[10px] italic font-medium uppercase tracking-widest">Only first ${MAX_VISIBLE} results shown.</td></tr>` : '');
 
       body.querySelectorAll('tr[data-idx]').forEach(tr => {
         tr.onclick = () => {
@@ -362,35 +384,35 @@
       let contentHtml = '';
       if (tabId === 'headers') {
         contentHtml = `
-          <div class="space-y-6 animate-in slide-in-from-right-2 duration-300">
+          <div class="space-y-6 animate-in slide-in-from-right-3 duration-300">
             <section>
-              <h3 class="font-bold text-surface-800 mb-3 text-[10px] uppercase tracking-[0.15em] flex items-center gap-2">
+              <h3 class="font-bold text-surface-800 mb-3 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-brand-500"></span>
-                General Information
+                Request Summary
               </h3>
-              <div class="rounded-xl border border-surface-200 p-4 space-y-3 text-[11px] bg-surface-50/30">
-                <div class="flex gap-4"><span class="w-24 shrink-0 text-surface-400 font-semibold uppercase tracking-tighter">Request URL</span> <span class="text-surface-900 break-all select-all font-mono leading-relaxed">${escapeHtml(entry.request.url)}</span></div>
+              <div class="rounded-xl border border-surface-200 p-4 space-y-3 text-[11px] bg-surface-50/50 shadow-inner">
+                <div class="flex gap-4"><span class="w-24 shrink-0 text-surface-400 font-semibold uppercase tracking-tighter">URL</span> <span class="text-surface-900 break-all select-all font-mono leading-relaxed">${escapeHtml(entry.request.url)}</span></div>
                 <div class="flex gap-4"><span class="w-24 shrink-0 text-surface-400 font-semibold uppercase tracking-tighter">Method</span> <span class="font-black text-brand-600 uppercase">${entry.request.method}</span></div>
-                <div class="flex gap-4"><span class="w-24 shrink-0 text-surface-400 font-semibold uppercase tracking-tighter">Status Code</span> <span class="font-bold text-surface-900">${entry.response.status} ${escapeHtml(entry.response.statusText)}</span></div>
-                <div class="flex gap-4"><span class="w-24 shrink-0 text-surface-400 font-semibold uppercase tracking-tighter">Remote Addr</span> <span class="text-surface-600 font-mono">${escapeHtml(entry.serverIPAddress || 'N/A')}</span></div>
+                <div class="flex gap-4"><span class="w-24 shrink-0 text-surface-400 font-semibold uppercase tracking-tighter">Status</span> <span class="font-bold text-surface-900">${entry.response.status} ${escapeHtml(entry.response.statusText)}</span></div>
+                <div class="flex gap-4"><span class="w-24 shrink-0 text-surface-400 font-semibold uppercase tracking-tighter">Remote IP</span> <span class="text-surface-600 font-mono">${escapeHtml(entry.serverIPAddress || 'Unknown')}</span></div>
               </div>
             </section>
 
             <section>
               <div class="flex items-center justify-between mb-3">
-                <h3 class="font-bold text-surface-800 text-[10px] uppercase tracking-[0.15em] flex items-center gap-2">
+                <h3 class="font-bold text-surface-800 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2">
                   <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                   Response Headers
                 </h3>
                 <span class="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold border border-emerald-100">${entry.response.headers.length}</span>
               </div>
-              <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white">
-                <table class="min-w-full text-[10px] leading-tight">
+              <div class="overflow-hidden rounded-xl border border-surface-200 bg-white shadow-sm">
+                <table class="min-w-full text-[10px] leading-tight divide-y divide-surface-100">
                   <tbody>
                     ${entry.response.headers.map(h => `
-                      <tr class="even:bg-surface-50/50 hover:bg-brand-50/30 transition-colors">
-                        <td class="px-4 py-2.5 font-bold text-surface-500 border-b border-surface-100 w-1/3 break-all">${escapeHtml(h.name)}</td>
-                        <td class="px-4 py-2.5 text-surface-800 border-b border-surface-100 break-all select-all font-mono">${escapeHtml(h.value)}</td>
+                      <tr class="hover:bg-emerald-50/30 transition-colors">
+                        <td class="px-4 py-2.5 font-bold text-surface-500 w-1/3 break-all bg-surface-50/30">${escapeHtml(h.name)}</td>
+                        <td class="px-4 py-2.5 text-surface-800 break-all select-all font-mono">${escapeHtml(h.value)}</td>
                       </tr>
                     `).join('')}
                   </tbody>
@@ -400,19 +422,19 @@
 
             <section>
               <div class="flex items-center justify-between mb-3">
-                <h3 class="font-bold text-surface-800 text-[10px] uppercase tracking-[0.15em] flex items-center gap-2">
+                <h3 class="font-bold text-surface-800 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2">
                   <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
                   Request Headers
                 </h3>
                 <span class="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold border border-blue-100">${entry.request.headers.length}</span>
               </div>
-              <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white">
-                <table class="min-w-full text-[10px] leading-tight">
+              <div class="overflow-hidden rounded-xl border border-surface-200 bg-white shadow-sm">
+                <table class="min-w-full text-[10px] leading-tight divide-y divide-surface-100">
                   <tbody>
                     ${entry.request.headers.map(h => `
-                      <tr class="even:bg-surface-50/50 hover:bg-brand-50/30 transition-colors">
-                        <td class="px-4 py-2.5 font-bold text-surface-500 border-b border-surface-100 w-1/3 break-all">${escapeHtml(h.name)}</td>
-                        <td class="px-4 py-2.5 text-surface-800 border-b border-surface-100 break-all select-all font-mono">${escapeHtml(h.value)}</td>
+                      <tr class="hover:bg-blue-50/30 transition-colors">
+                        <td class="px-4 py-2.5 font-bold text-surface-500 w-1/3 break-all bg-surface-50/30">${escapeHtml(h.name)}</td>
+                        <td class="px-4 py-2.5 text-surface-800 break-all select-all font-mono">${escapeHtml(h.value)}</td>
                       </tr>
                     `).join('')}
                   </tbody>
@@ -425,53 +447,53 @@
         const qp = entry.request.queryString || [];
         const post = entry.request.postData;
         contentHtml = `
-          <div class="space-y-6 animate-in slide-in-from-right-2 duration-300">
+          <div class="space-y-6 animate-in slide-in-from-right-3 duration-300">
             <section>
               <div class="flex items-center justify-between mb-3">
-                <h3 class="font-bold text-surface-800 text-[10px] uppercase tracking-[0.15em] flex items-center gap-2">
+                <h3 class="font-bold text-surface-800 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2">
                   <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                   Query Parameters
                 </h3>
                 <span class="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-bold border border-amber-100">${qp.length}</span>
               </div>
               ${qp.length ? `
-                <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white">
-                  <table class="min-w-full text-[10px] leading-tight">
+                <div class="overflow-hidden rounded-xl border border-surface-200 bg-white shadow-sm">
+                  <table class="min-w-full text-[10px] leading-tight divide-y divide-surface-100">
                     <tbody>
                       ${qp.map(p => `
-                        <tr class="even:bg-surface-50/50 hover:bg-brand-50/30 transition-colors">
-                          <td class="px-4 py-2.5 font-bold text-surface-500 border-b border-surface-100 w-1/3 break-all">${escapeHtml(p.name)}</td>
-                          <td class="px-4 py-2.5 text-surface-800 border-b border-surface-100 break-all select-all font-mono">${escapeHtml(p.value)}</td>
+                        <tr class="hover:bg-amber-50/30 transition-colors">
+                          <td class="px-4 py-2.5 font-bold text-surface-500 w-1/3 break-all bg-surface-50/30">${escapeHtml(p.name)}</td>
+                          <td class="px-4 py-2.5 text-surface-800 break-all select-all font-mono">${escapeHtml(p.value)}</td>
                         </tr>
                       `).join('')}
                     </tbody>
                   </table>
                 </div>
-              ` : `<div class="p-10 text-center text-surface-400 border border-dashed border-surface-200 rounded-xl italic text-xs bg-surface-50/50">No query parameters found</div>`}
+              ` : `<div class="p-10 text-center text-surface-400 border border-dashed border-surface-200 rounded-xl italic text-xs bg-surface-50/50">No query parameters</div>`}
             </section>
 
             <section>
-              <h3 class="font-bold text-surface-800 mb-3 text-[10px] uppercase tracking-[0.15em] flex items-center gap-2">
+              <h3 class="font-bold text-surface-800 mb-3 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                Request Body
+                POST Body
               </h3>
               ${post ? `
                 <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm">
-                  <div class="bg-surface-50 px-4 py-2 text-[10px] font-bold text-surface-500 border-b border-surface-200 flex justify-between items-center">
+                  <div class="bg-surface-50 px-4 py-2 text-[9px] font-black text-surface-400 border-b border-surface-200 flex justify-between items-center">
                     <span class="uppercase tracking-widest">${escapeHtml(post.mimeType)}</span>
                   </div>
                   <pre class="p-5 text-[11px] font-mono bg-gray-950 text-gray-200 overflow-x-auto leading-relaxed whitespace-pre-wrap break-all selection:bg-brand-500/30">${escapeHtml(post.text || '')}</pre>
                 </div>
-              ` : `<div class="p-10 text-center text-surface-400 border border-dashed border-surface-200 rounded-xl italic text-xs bg-surface-50/50">No request body provided</div>`}
+              ` : `<div class="p-10 text-center text-surface-400 border border-dashed border-surface-200 rounded-xl italic text-xs bg-surface-50/50">No POST body</div>`}
             </section>
           </div>
         `;
       } else if (tabId === 'response') {
         const content = entry.response.content;
         contentHtml = `
-          <div class="space-y-4 h-full flex flex-col animate-in slide-in-from-right-2 duration-300">
+          <div class="space-y-4 h-full flex flex-col animate-in slide-in-from-right-3 duration-300">
             <div class="flex items-center justify-between">
-              <h3 class="font-bold text-surface-800 text-[10px] uppercase tracking-[0.15em] flex items-center gap-2">
+              <h3 class="font-bold text-surface-800 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
                 Response Body
               </h3>
@@ -482,18 +504,19 @@
             
             <div class="flex-1 min-h-[200px]">
               ${content.text ? `
+                <!-- U8. Code/pre block -->
                 <div class="rounded-xl overflow-hidden border border-surface-200 h-full flex flex-col bg-white shadow-sm">
                   <div class="bg-surface-50 px-4 py-2.5 flex items-center justify-between border-b border-surface-200">
-                    <span class="text-[10px] font-bold text-surface-400 uppercase tracking-[0.2em]">${escapeHtml(content.mimeType || 'Source')}</span>
-                    <button id="copy-response" class="text-[10px] font-bold text-brand-600 hover:text-brand-700 uppercase tracking-widest transition-colors">Copy Body</button>
+                    <span class="text-[10px] font-bold text-surface-400 uppercase tracking-[0.2em]">${escapeHtml(content.mimeType || 'Content')}</span>
+                    <button id="copy-response" class="text-[10px] font-bold text-brand-600 hover:text-brand-700 uppercase tracking-widest transition-colors">Copy</button>
                   </div>
-                  <pre class="flex-1 p-5 text-[11px] font-mono bg-gray-950 text-gray-200 overflow-auto leading-relaxed whitespace-pre-wrap break-all selection:bg-brand-500/30">${escapeHtml(content.text)}</pre>
+                  <pre class="flex-1 p-5 text-[11px] font-mono bg-gray-950 text-gray-100 overflow-auto leading-relaxed whitespace-pre-wrap break-all selection:bg-brand-500/30">${escapeHtml(content.text)}</pre>
                 </div>
               ` : `
                 <div class="h-full flex flex-col items-center justify-center p-12 text-center text-surface-400 border border-dashed border-surface-200 rounded-xl bg-surface-50/50">
                   <div class="w-12 h-12 bg-surface-100 rounded-full flex items-center justify-center mb-4 opacity-50">📄</div>
-                  <p class="text-xs font-semibold text-surface-600 mb-1">No content available</p>
-                  <p class="text-[10px] max-w-[200px] leading-relaxed">The response body was not captured. Check if this request was cached or aborted.</p>
+                  <p class="text-xs font-semibold text-surface-600 mb-1">Body not available</p>
+                  <p class="text-[10px] max-w-[200px] leading-relaxed">The response body was not captured in this HAR file.</p>
                 </div>
               `}
             </div>
@@ -517,12 +540,12 @@
         ].filter(b => b.val > 0);
 
         contentHtml = `
-          <div class="space-y-8 animate-in slide-in-from-right-2 duration-300">
+          <div class="space-y-8 animate-in slide-in-from-right-3 duration-300">
             <section>
               <div class="flex items-center justify-between mb-6">
-                <h3 class="font-bold text-surface-800 text-[10px] uppercase tracking-[0.15em] flex items-center gap-2">
+                <h3 class="font-bold text-surface-800 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2">
                   <span class="w-1.5 h-1.5 rounded-full bg-violet-500"></span>
-                  Execution Timing
+                  Timing Waterfall
                 </h3>
                 <span class="text-xs font-black text-brand-700 bg-brand-50 px-3 py-1 rounded-lg border border-brand-100">${formatTime(total)}</span>
               </div>
@@ -532,12 +555,12 @@
                   const percent = Math.max(1, (b.val / total * 100)).toFixed(1);
                   return `
                     <div class="space-y-1.5 group">
-                      <div class="flex justify-between text-[11px] font-semibold">
-                        <span class="text-surface-500 uppercase tracking-tighter">${b.label}</span>
+                      <div class="flex justify-between text-[10px] font-bold">
+                        <span class="text-surface-400 uppercase tracking-widest">${b.label}</span>
                         <span class="text-surface-900 font-mono">${b.val.toFixed(2)}ms <span class="text-surface-300 ml-1 font-normal">(${percent}%)</span></span>
                       </div>
-                      <div class="h-2.5 bg-surface-100 rounded-full overflow-hidden border border-surface-200/50">
-                        <div class="${b.color} h-full rounded-full transition-all duration-1000 ease-out shadow-sm" style="width: ${percent}%"></div>
+                      <div class="h-2 bg-surface-100 rounded-full overflow-hidden border border-surface-200/50 shadow-inner">
+                        <div class="${b.color} h-full rounded-full transition-all duration-700 ease-out" style="width: ${percent}%"></div>
                       </div>
                     </div>
                   `;
@@ -546,18 +569,18 @@
             </section>
 
             <div class="p-5 bg-surface-50 rounded-2xl border border-surface-200 shadow-inner">
-              <h4 class="text-[10px] font-black uppercase tracking-[0.2em] text-surface-400 mb-4">Network Metadata</h4>
+              <h4 class="text-[10px] font-black uppercase tracking-[0.3em] text-surface-400 mb-4">Metadata</h4>
               <div class="space-y-3 text-[11px]">
                 <div class="flex justify-between items-center border-b border-surface-100/50 pb-2">
                   <span class="text-surface-500 font-medium">Started At</span>
                   <span class="text-surface-900 font-bold">${new Date(entry.startedDateTime).toLocaleString()}</span>
                 </div>
                 <div class="flex justify-between items-center border-b border-surface-100/50 pb-2">
-                  <span class="text-surface-500 font-medium">Connection ID</span>
+                  <span class="text-surface-500 font-medium">Connection</span>
                   <span class="text-surface-900 font-mono font-bold">${escapeHtml(entry.connection || 'N/A')}</span>
                 </div>
                 <div class="flex justify-between items-center">
-                  <span class="text-surface-500 font-medium">HTTP Protocol</span>
+                  <span class="text-surface-500 font-medium">Protocol</span>
                   <span class="text-surface-900 font-bold bg-white px-2 py-0.5 rounded border border-surface-200">${escapeHtml(entry.response.httpVersion || 'HTTP/1.1')}</span>
                 </div>
               </div>
