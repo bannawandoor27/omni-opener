@@ -73,6 +73,13 @@
           }
         },
         {
+          label: '📋 Copy Image',
+          id: 'copy-img',
+          onClick: function (h, btn) {
+            copyImageToClipboard(h, btn);
+          }
+        },
+        {
           label: '📋 Copy Metadata',
           id: 'copy-meta',
           onClick: function (h, btn) {
@@ -116,6 +123,7 @@
             if (window.ExifReader) {
               try {
                 metadata = ExifReader.load(content);
+                // Flatten metadata for easier display
                 for (var key in metadata) {
                   if (metadata[key] && metadata[key].description) {
                     metadata[key] = metadata[key].description;
@@ -154,7 +162,7 @@
     if (s.metadata && Object.keys(s.metadata).length > 0) {
       var rows = '';
       for (var key in s.metadata) {
-        if (typeof s.metadata[key] !== 'object') {
+        if (typeof s.metadata[key] !== 'object' && s.metadata[key] !== undefined && s.metadata[key] !== null) {
           rows += '<tr class="border-b border-surface-100">' +
             '<td class="py-1.5 pr-3 text-[10px] font-bold text-surface-400 uppercase tracking-tight whitespace-nowrap align-top">' + esc(key) + '</td>' +
             '<td class="py-1.5 text-[11px] text-surface-700 break-all">' + esc(s.metadata[key]) + '</td>' +
@@ -180,7 +188,7 @@
         '</div>' +
         '<div class="relative w-full flex justify-center bg-[url(\'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAAAAAA6mKC9AAAAGElEQVQYV2N4DwX/oYBhgDE8BOn4S8VfWAMA6as8f9zEAn8AAAAASUVORK5CYII=\')] rounded-2xl shadow-xl border border-surface-200 overflow-hidden" style="min-height: 400px;">' +
           '<img id="webp-preview-img" src="' + s.previewUrl + '" ' +
-            'style="display: block; max-width: 100%; height: auto; transform: scale(1) rotate(0deg); transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0 10px 25px rgba(0,0,0,0.1));" ' +
+            'style="display: block; max-width: 100%; height: auto; transform: scale(' + (s.zoom || 1) + ') rotate(' + (s.rotate || 0) + 'deg); transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0 10px 25px rgba(0,0,0,0.1));" ' +
             'class="m-auto">' +
         '</div>' +
         metaHtml +
@@ -194,6 +202,35 @@
     if (el) {
       el.style.transform = 'scale(' + (s.zoom || 1) + ') rotate(' + (s.rotate || 0) + 'deg)';
     }
+  }
+
+  function copyImageToClipboard(h, btn) {
+    var s = h.getState();
+    var img = new Image();
+    img.onload = function () {
+      var canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob(function (blob) {
+        try {
+          var item = new ClipboardItem({ 'image/png': blob });
+          navigator.clipboard.write([item]).then(function () {
+            var orig = btn.textContent;
+            btn.textContent = '✓ Copied!';
+            setTimeout(function () { btn.textContent = orig; }, 1500);
+          }).catch(function (err) {
+            console.error('Clipboard error:', err);
+            h.copyToClipboard('Failed to copy image. Browser might not support it.', btn);
+          });
+        } catch (err) {
+          console.error('Clipboard item error:', err);
+          h.copyToClipboard('Failed to copy image.', btn);
+        }
+      }, 'image/png');
+    };
+    img.src = s.previewUrl;
   }
 
   function exportAs(h, mime, ext) {
