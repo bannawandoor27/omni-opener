@@ -3,8 +3,7 @@
 
   /**
    * OmniOpener WARC Tool
-   * Senior Staff Engineer Edition
-   * Supports .warc and .warc.gz (including concatenated GZIP)
+   * Production Perfect Edition
    */
 
   let currentObjectUrls = [];
@@ -13,9 +12,7 @@
     currentObjectUrls.forEach(url => {
       try {
         URL.revokeObjectURL(url);
-      } catch (e) {
-        // Ignore revocation errors
-      }
+      } catch (e) {}
     });
     currentObjectUrls = [];
   }
@@ -65,21 +62,15 @@
     return -1;
   }
 
-  /**
-   * WARC files are often concatenated GZIP members.
-   * Standard pako.inflate only handles the first member.
-   */
   function decompressConcatenatedGzip(data) {
     const chunks = [];
     let offset = 0;
     while (offset < data.length) {
-      // Check for GZIP magic number
       if (data[offset] !== 0x1f || data[offset + 1] !== 0x8b) {
         offset++;
         continue;
       }
       try {
-        // We use a new Inflate instance for each member
         const inflater = new pako.Inflate();
         inflater.push(data.subarray(offset), true);
         if (inflater.err) {
@@ -87,8 +78,6 @@
           continue;
         }
         chunks.push(inflater.result);
-        
-        // Find next member start
         const nextHeader = findSequence(data, [0x1f, 0x8b], offset + 2);
         if (nextHeader === -1) break;
         offset = nextHeader;
@@ -96,9 +85,7 @@
         break;
       }
     }
-    
     if (chunks.length === 0) throw new Error('Could not decompress GZIP archive.');
-    
     const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
     const result = new Uint8Array(totalLength);
     let pos = 0;
@@ -115,7 +102,6 @@
     const decoder = new TextDecoder();
 
     while (offset < bytes.length) {
-      // Skip leading newlines/whitespace
       while (offset < bytes.length && (bytes[offset] === 10 || bytes[offset] === 13 || bytes[offset] === 32)) {
         offset++;
       }
@@ -127,7 +113,6 @@
       const headerText = decoder.decode(bytes.subarray(offset, headerEnd));
       const lines = headerText.split('\r\n');
       if (!lines[0] || !lines[0].startsWith('WARC/')) {
-        // Not a valid record start, skip one byte and retry
         offset++;
         continue;
       }
@@ -162,12 +147,11 @@
         record.body = bytes.subarray(bodyStart);
         record.truncated = true;
         records.push(record);
-        break; 
+        break;
       } else {
         record.body = bytes.subarray(bodyStart, bodyEnd);
         records.push(record);
       }
-
       offset = bodyEnd;
     }
     return records;
@@ -175,7 +159,7 @@
 
   function generateHexDump(buffer) {
     const bytes = new Uint8Array(buffer);
-    const maxLen = 8192; // Slightly more for "Staff" level
+    const maxLen = 8192;
     const len = Math.min(bytes.length, maxLen);
     let out = '';
     for (let i = 0; i < len; i += 16) {
@@ -198,7 +182,6 @@
   }
 
   function sanitizeHtml(html) {
-    // Basic sanitization for iframe preview
     return html
       .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '<!-- script removed -->')
       .replace(/\son\w+="[^"]*"/gi, '')
@@ -220,7 +203,7 @@
             if (!state.records) return;
             const uris = state.records.map(r => r.uri).filter(u => u).join('\n');
             if (!uris) {
-              h.showError('No URIs', 'No target URIs found in this archive.');
+              h.showError('No URIs Found', 'No target URIs were found in this archive.');
               return;
             }
             h.copyToClipboard(uris, btn);
@@ -257,29 +240,22 @@
       },
 
       onFile: function _onFileFn(file, content, h) {
-        // B1 & B8: Check dependency and handle strict mode self-reference
         if (typeof pako === 'undefined') {
-          h.showLoading('Initializing decompression engine...');
+          h.showLoading('Loading decompression engine...');
           setTimeout(function () { _onFileFn(file, content, h); }, 150);
           return;
         }
 
         cleanupUrls();
-        h.showLoading('Analyzing WARC structure...');
+        h.showLoading('Extracting WARC records...');
 
-        // Wrap in setTimeout to ensure UI updates with loading message
         setTimeout(function () {
           try {
-            // B2: Ensure binary content handling
             let data = new Uint8Array(content);
-            
-            // Handle GZIP (Concatenated or Single)
             if (data[0] === 0x1f && data[1] === 0x8b) {
               try {
-                // Try standard pako first
                 data = pako.inflate(data);
               } catch (e) {
-                // B4: Handle concatenated gzip members if standard fails
                 try {
                   data = decompressConcatenatedGzip(data);
                 } catch (e2) {
@@ -290,8 +266,7 @@
 
             const records = parseWarc(data);
             if (!records || records.length === 0) {
-              // U5: Empty state
-              h.showError('Invalid Archive', 'The file does not contain valid WARC records.');
+              h.showError('Empty Archive', 'This file does not appear to contain any valid WARC records.');
               return;
             }
 
@@ -304,11 +279,9 @@
               sortDir: 1,
               viewingRecordIdx: -1
             });
-            
             renderMain(h);
           } catch (err) {
-            // U3: Friendly error
-            h.showError('Could not open WARC file', 'The file may be corrupted, encrypted, or in an unsupported format. Error: ' + err.message);
+            h.showError('Could not open WARC file', 'The file may be corrupted or in an unsupported format. Error: ' + err.message);
           }
         }, 50);
       }
@@ -320,7 +293,6 @@
     const records = state.records || [];
     const searchTerm = (state.searchTerm || '').toLowerCase();
 
-    // U4 & PART 4: Data filtering
     const filtered = searchTerm ? records.filter(r =>
       (r.uri || '').toLowerCase().includes(searchTerm) ||
       (r.contentType || '').toLowerCase().includes(searchTerm) ||
@@ -328,72 +300,66 @@
       (r.id || '').toLowerCase().includes(searchTerm)
     ) : records;
 
-    // Sorting logic
-    const sorted = state.sortCol ? [...filtered].sort((a, b) => {
-      let vA, vB;
-      if (state.sortCol === 'uri') { vA = a.uri; vB = b.uri; }
-      else if (state.sortCol === 'type') { vA = a.type; vB = b.type; }
-      else if (state.sortCol === 'size') { vA = a.body ? a.body.length : 0; vB = b.body ? b.body.length : 0; }
-      else if (state.sortCol === 'date') { vA = a.date; vB = b.date; }
-      else { vA = 0; vB = 0; }
-      
-      if (vA < vB) return -1 * state.sortDir;
-      if (vA > vB) return 1 * state.sortDir;
-      return 0;
-    }) : filtered;
+    if (state.sortCol) {
+      filtered.sort((a, b) => {
+        let vA, vB;
+        if (state.sortCol === 'uri') { vA = a.uri; vB = b.uri; }
+        else if (state.sortCol === 'type') { vA = a.type; vB = b.type; }
+        else if (state.sortCol === 'size') { vA = a.body ? a.body.length : 0; vB = b.body ? b.body.length : 0; }
+        else if (state.sortCol === 'date') { vA = a.date; vB = b.date; }
+        else { vA = 0; vB = 0; }
+        if (vA < vB) return -1 * state.sortDir;
+        if (vA > vB) return 1 * state.sortDir;
+        return 0;
+      });
+    }
 
-    // B7: Large file handling (pagination)
     const PAGE_SIZE = 1000;
-    const displayItems = sorted.slice(0, PAGE_SIZE);
+    const displayItems = filtered.slice(0, PAGE_SIZE);
 
     const html = `
       <div class="p-4 md:p-8 max-w-7xl mx-auto animate-in fade-in duration-500">
         <!-- U1: File Info Bar -->
-        <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100 shadow-sm">
-          <span class="font-bold text-surface-800">${esc(state.fileName)}</span>
+        <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-200">
+          <span class="font-semibold text-surface-800">${esc(state.fileName)}</span>
           <span class="text-surface-300">|</span>
           <span>${formatSize(state.fileSize)}</span>
-          <span class="text-surface-300">|</span>
-          <span class="text-brand-600 font-medium">${records.length.toLocaleString()} records</span>
           <span class="text-surface-300">|</span>
           <span class="text-surface-500">.warc file</span>
         </div>
 
         <div class="space-y-6">
-          <!-- U10: Section Header with Search -->
-          <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <!-- U10: Section Header -->
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
             <div>
-              <div class="flex items-center gap-2 mb-1">
-                <h3 class="font-bold text-surface-900 text-xl">Archive Explorer</h3>
-                <span class="text-[10px] bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">${filtered.length} matches</span>
-              </div>
-              <p class="text-sm text-surface-500">Filter and inspect individual WARC records</p>
+              <h3 class="font-semibold text-surface-800 text-lg">Archive Contents</h3>
+              <p class="text-xs text-surface-500 mt-0.5">${records.length.toLocaleString()} total records</p>
             </div>
-            
-            <div class="relative w-full md:w-96 group">
-              <input type="text" id="warc-search" placeholder="Search URI, content-type, or record type..." value="${esc(state.searchTerm)}"
-                class="w-full pl-11 pr-4 py-2.5 text-sm bg-white border border-surface-200 rounded-xl focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none transition-all shadow-sm">
-              <span class="absolute left-4 top-3 text-surface-400 group-focus-within:text-brand-500 transition-colors">
-                <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <div class="relative w-full md:w-80">
+              <input type="text" id="warc-search" placeholder="Filter records..." value="${esc(state.searchTerm)}"
+                class="w-full pl-10 pr-4 py-2 text-sm bg-white border border-surface-200 rounded-xl focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none transition-all">
+              <span class="absolute left-3.5 top-2.5 text-surface-400">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
               </span>
+              <span class="absolute right-3 top-2.5 text-[10px] bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-bold">${filtered.length}</span>
             </div>
           </div>
 
-          <!-- U7: Table Implementation -->
-          <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm bg-white">
-            <table class="min-w-full text-sm border-separate border-spacing-0">
+          <!-- U7: Table -->
+          <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white">
+            <table class="min-w-full text-sm">
               <thead>
-                <tr>
-                  <th class="sticky top-0 z-10 bg-surface-50/95 backdrop-blur px-4 py-3.5 text-left font-semibold text-surface-700 border-b border-surface-200 w-12 rounded-tl-xl">#</th>
-                  <th class="sticky top-0 z-10 bg-surface-50/95 backdrop-blur px-4 py-3.5 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors group" data-sort="type">
-                    Type ${state.sortCol==='type'?(state.sortDir===1?'<span class="text-brand-500 ml-1">▲</span>':'<span class="text-brand-500 ml-1">▼</span>'):'<span class="opacity-0 group-hover:opacity-40 ml-1">↕</span>'}
+                <tr class="bg-surface-50">
+                  <th class="sticky top-0 z-10 bg-white/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 w-16">#</th>
+                  <th class="sticky top-0 z-10 bg-white/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:text-brand-600 transition-colors" data-sort="type">
+                    Type ${state.sortCol === 'type' ? (state.sortDir === 1 ? '▲' : '▼') : ''}
                   </th>
-                  <th class="sticky top-0 z-10 bg-surface-50/95 backdrop-blur px-4 py-3.5 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors group" data-sort="uri">
-                    Target URI ${state.sortCol==='uri'?(state.sortDir===1?'<span class="text-brand-500 ml-1">▲</span>':'<span class="text-brand-500 ml-1">▼</span>'):'<span class="opacity-0 group-hover:opacity-40 ml-1">↕</span>'}
+                  <th class="sticky top-0 z-10 bg-white/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:text-brand-600 transition-colors" data-sort="uri">
+                    Target URI ${state.sortCol === 'uri' ? (state.sortDir === 1 ? '▲' : '▼') : ''}
                   </th>
-                  <th class="sticky top-0 z-10 bg-surface-50/95 backdrop-blur px-4 py-3.5 text-left font-semibold text-surface-700 border-b border-surface-200">Content Type</th>
-                  <th class="sticky top-0 z-10 bg-surface-50/95 backdrop-blur px-4 py-3.5 text-right font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors group rounded-tr-xl" data-sort="size">
-                    Size ${state.sortCol==='size'?(state.sortDir===1?'<span class="text-brand-500 ml-1">▲</span>':'<span class="text-brand-500 ml-1">▼</span>'):'<span class="opacity-0 group-hover:opacity-40 ml-1">↕</span>'}
+                  <th class="sticky top-0 z-10 bg-white/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200">MIME Type</th>
+                  <th class="sticky top-0 z-10 bg-white/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:text-brand-600 transition-colors" data-sort="size">
+                    Size ${state.sortCol === 'size' ? (state.sortDir === 1 ? '▲' : '▼') : ''}
                   </th>
                 </tr>
               </thead>
@@ -401,20 +367,20 @@
                 ${displayItems.map((r, i) => {
                   const realIdx = records.indexOf(r);
                   return `
-                  <tr class="even:bg-surface-50/30 hover:bg-brand-50/60 transition-colors cursor-pointer group" data-idx="${realIdx}">
-                    <td class="px-4 py-3 text-surface-400 font-mono text-[10px]">${realIdx + 1}</td>
-                    <td class="px-4 py-3">
-                      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white border border-surface-200 text-[10px] font-bold text-surface-700 uppercase shadow-sm">
+                  <tr class="even:bg-surface-50 hover:bg-brand-50 transition-colors cursor-pointer" data-idx="${realIdx}">
+                    <td class="px-4 py-2.5 text-surface-400 font-mono text-xs">${realIdx + 1}</td>
+                    <td class="px-4 py-2.5">
+                      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-surface-100 text-[10px] font-bold text-surface-600 uppercase">
                         ${getIcon(r.type)} ${esc(r.type)}
                       </span>
                     </td>
-                    <td class="px-4 py-3 font-mono text-[11px] text-surface-800 break-all max-w-xl">
+                    <td class="px-4 py-2.5 font-mono text-[11px] text-surface-700 break-all max-w-md">
                       ${esc(r.uri || '—')}
                     </td>
-                    <td class="px-4 py-3 text-surface-500 text-xs">
+                    <td class="px-4 py-2.5 text-surface-500 text-xs truncate max-w-[150px]">
                       ${esc(r.contentType || '—')}
                     </td>
-                    <td class="px-4 py-3 text-right text-surface-600 font-mono text-xs tabular-nums">
+                    <td class="px-4 py-2.5 text-right text-surface-600 font-mono text-xs tabular-nums">
                       ${formatSize(r.body ? r.body.length : 0)}
                     </td>
                   </tr>
@@ -424,9 +390,8 @@
                   <tr>
                     <td colspan="5" class="py-20 text-center">
                       <div class="flex flex-col items-center justify-center opacity-40">
-                        <svg class="w-12 h-12 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                        <div class="text-lg font-medium">No matching records</div>
-                        <div class="text-sm">Try a different search term</div>
+                        <svg class="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                        <p class="text-base font-medium">No matching records found</p>
                       </div>
                     </td>
                   </tr>
@@ -436,63 +401,46 @@
           </div>
           
           ${filtered.length > PAGE_SIZE ? `
-            <div class="flex items-center justify-center py-4 bg-surface-50 rounded-xl border border-dashed border-surface-300 text-surface-500 text-sm">
-              <span class="mr-2">💡</span>
-              Showing first <b>${PAGE_SIZE}</b> of ${filtered.length.toLocaleString()} matching records. Refine search to see others.
+            <div class="text-center py-4 bg-surface-50 rounded-xl border border-dashed border-surface-200 text-surface-500 text-xs">
+              Showing first <b>${PAGE_SIZE}</b> of ${filtered.length.toLocaleString()} matches.
             </div>
           ` : ''}
         </div>
 
-        <!-- U9 & Modal implementation -->
-        <div id="warc-modal" class="fixed inset-0 z-[100] hidden bg-surface-950/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-10 transition-all duration-300 opacity-0">
-          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-full flex flex-col overflow-hidden transform scale-95 transition-all duration-300">
-            <!-- Modal Header -->
+        <!-- U9: Content Modal -->
+        <div id="warc-modal" class="fixed inset-0 z-[100] hidden bg-surface-950/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-8 transition-opacity duration-300 opacity-0">
+          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-full flex flex-col overflow-hidden transform scale-95 transition-transform duration-300">
             <div class="flex items-center justify-between px-6 py-4 border-b border-surface-100 bg-surface-50/50">
-              <div class="flex items-center gap-4 min-w-0">
-                <div id="m-icon" class="w-12 h-12 rounded-xl bg-white border border-surface-200 flex items-center justify-center text-2xl shadow-sm"></div>
+              <div class="flex items-center gap-3 min-w-0">
+                <div id="m-icon" class="w-10 h-10 rounded-lg bg-white border border-surface-200 flex items-center justify-center text-xl shadow-sm flex-shrink-0"></div>
                 <div class="min-w-0">
-                  <h4 id="m-title" class="text-base font-bold text-surface-900 truncate pr-4"></h4>
-                  <div class="flex items-center gap-2 mt-0.5">
-                    <span id="m-subtitle" class="text-[11px] text-surface-500 font-mono truncate bg-surface-100 px-1.5 py-0.5 rounded"></span>
-                    <span id="m-date" class="text-[11px] text-surface-400 font-medium italic"></span>
-                  </div>
+                  <h4 id="m-title" class="text-sm font-bold text-surface-900 truncate pr-4"></h4>
+                  <p id="m-subtitle" class="text-[10px] text-surface-400 font-mono truncate"></p>
                 </div>
               </div>
               <div class="flex items-center gap-2">
-                <button id="m-dl" title="Download Content Body" class="p-2.5 text-surface-500 hover:text-brand-600 hover:bg-brand-50 rounded-xl transition-all border border-transparent hover:border-brand-200">
+                <button id="m-dl" title="Download Body" class="p-2 text-surface-500 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-all">
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                 </button>
-                <button id="m-close" class="p-2.5 text-surface-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all">
+                <button id="m-close" class="p-2 text-surface-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
                   <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
               </div>
             </div>
 
-            <!-- Modal Tabs -->
             <div class="flex bg-surface-50 border-b border-surface-100 px-6">
-              <button class="m-tab px-6 py-3 text-xs font-bold text-surface-400 border-b-2 border-transparent transition-all hover:text-brand-600 flex items-center gap-2" data-tab="content">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                CONTENT PREVIEW
-              </button>
-              <button class="m-tab px-6 py-3 text-xs font-bold text-surface-400 border-b-2 border-transparent transition-all hover:text-brand-600 flex items-center gap-2" data-tab="headers">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
-                RECORD HEADERS
-              </button>
+              <button class="m-tab px-5 py-3 text-[11px] font-bold text-surface-400 border-b-2 border-transparent transition-all hover:text-brand-600" data-tab="content">CONTENT PREVIEW</button>
+              <button class="m-tab px-5 py-3 text-[11px] font-bold text-surface-400 border-b-2 border-transparent transition-all hover:text-brand-600" data-tab="headers">HEADERS</button>
             </div>
 
-            <!-- Modal Body -->
-            <div class="flex-1 overflow-hidden relative bg-surface-50/30 min-h-[500px]">
-              <div id="m-content-view" class="h-full overflow-auto animate-in fade-in duration-300"></div>
-              <div id="m-headers-view" class="hidden absolute inset-0 overflow-auto p-6 bg-white animate-in slide-in-from-right-4 duration-300"></div>
+            <div class="flex-1 overflow-hidden relative min-h-[400px]">
+              <div id="m-content-view" class="h-full overflow-auto p-4 md:p-6 bg-surface-50/30"></div>
+              <div id="m-headers-view" class="hidden absolute inset-0 overflow-auto p-4 md:p-6 bg-white"></div>
             </div>
             
-            <!-- Modal Footer -->
             <div class="px-6 py-3 bg-surface-50 border-t border-surface-100 flex justify-between items-center text-[10px] text-surface-400 font-medium">
-              <div class="flex items-center gap-4">
-                <span id="m-status" class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-200 text-surface-600"></span>
-                <span id="m-type-badge" class="font-bold uppercase tracking-tighter"></span>
-              </div>
-              <span id="m-size-info" class="font-mono bg-white px-2 py-0.5 rounded border border-surface-200 text-surface-600 shadow-sm"></span>
+              <span id="m-status" class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-200 text-surface-600 capitalize"></span>
+              <span id="m-size-info" class="font-mono"></span>
             </div>
           </div>
         </div>
@@ -501,7 +449,6 @@
 
     h.render(html);
 
-    // Event Listeners
     const searchEl = document.getElementById('warc-search');
     searchEl.oninput = (e) => {
       h.setState({ searchTerm: e.target.value });
@@ -534,41 +481,30 @@
     const modalInner = modal.querySelector('.transform');
     
     modal.classList.remove('hidden');
-    // Force reflow for animations
     void modal.offsetWidth;
     modal.classList.add('opacity-100');
     modalInner.classList.remove('scale-95');
     modalInner.classList.add('scale-100');
     
-    document.getElementById('m-title').textContent = record.uri || 'Unnamed Record';
+    document.getElementById('m-title').textContent = record.uri || 'Record without URI';
     document.getElementById('m-subtitle').textContent = record.id;
-    document.getElementById('m-date').textContent = record.date ? `Captured: ${record.date}` : '';
     document.getElementById('m-icon').textContent = getIcon(record.type);
     document.getElementById('m-size-info').textContent = formatSize(record.body ? record.body.length : 0);
-    document.getElementById('m-status').innerHTML = record.truncated 
-      ? '<span class="text-amber-600">⚠️ Truncated</span>' 
-      : '<span class="text-emerald-600">✓ Complete</span>';
-    document.getElementById('m-type-badge').textContent = record.type;
+    document.getElementById('m-status').textContent = record.type + (record.truncated ? ' (truncated)' : '');
 
-    // Render Headers (U7 style)
+    // U7: Headers table
     const headersHtml = `
-      <div class="max-w-4xl mx-auto space-y-4">
-        <h3 class="font-bold text-surface-900 flex items-center gap-2">
-          WARC/1.x Headers
-          <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-50 text-brand-700">${Object.keys(record.headers).length} fields</span>
-        </h3>
-        <div class="rounded-xl border border-surface-200 overflow-hidden shadow-sm bg-white">
-          <table class="min-w-full text-xs">
-            <tbody class="divide-y divide-surface-100">
-              ${Object.entries(record.headers).map(([k, v]) => `
-                <tr class="hover:bg-surface-50 transition-colors">
-                  <td class="px-4 py-3 bg-surface-50/50 font-bold text-surface-500 w-1/3 border-r border-surface-100 uppercase tracking-tighter">${esc(k)}</td>
-                  <td class="px-4 py-3 text-surface-800 font-mono break-all">${esc(v)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
+      <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm bg-white">
+        <table class="min-w-full text-xs">
+          <tbody class="divide-y divide-surface-100">
+            ${Object.entries(record.headers).map(([k, v]) => `
+              <tr class="hover:bg-surface-50">
+                <td class="px-4 py-3 font-bold text-surface-500 w-1/3 bg-surface-50/50 border-r border-surface-100 uppercase tracking-tighter">${esc(k)}</td>
+                <td class="px-4 py-3 text-surface-800 font-mono break-all">${esc(v)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
       </div>
     `;
     document.getElementById('m-headers-view').innerHTML = headersHtml;
@@ -576,20 +512,14 @@
     const contentView = document.getElementById('m-content-view');
     const ct = (record.contentType || '').toLowerCase();
     
-    // PART 4: Specialized rendering
     if (record.body && record.body.length > 0) {
       if (ct.startsWith('image/')) {
         const blob = new Blob([record.body], { type: record.contentType });
         const url = URL.createObjectURL(blob);
         currentObjectUrls.push(url);
         contentView.innerHTML = `
-          <div class="flex flex-col items-center justify-center p-12 h-full bg-surface-100/30">
-            <div class="relative group">
-              <img src="${url}" class="max-w-full max-h-[400px] rounded-lg shadow-2xl bg-white p-3 ring-1 ring-surface-200 transition-transform group-hover:scale-[1.02]">
-              <div class="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-surface-900 text-white text-[10px] px-3 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-                ${esc(record.contentType)}
-              </div>
-            </div>
+          <div class="flex items-center justify-center p-8 bg-white rounded-xl border border-surface-200 shadow-sm">
+            <img src="${url}" class="max-w-full max-h-[500px] shadow-lg rounded">
           </div>`;
       } else if (ct === 'text/html' || ct === 'application/xhtml+xml') {
         const text = new TextDecoder().decode(record.body);
@@ -598,11 +528,8 @@
         const url = URL.createObjectURL(blob);
         currentObjectUrls.push(url);
         contentView.innerHTML = `
-          <div class="h-full w-full bg-white relative">
-            <div class="absolute top-2 right-4 z-10 bg-amber-50 text-amber-700 text-[10px] px-2 py-0.5 rounded border border-amber-200 shadow-sm animate-pulse">
-              Preview Mode: Scripts Disabled
-            </div>
-            <iframe src="${url}" class="w-full h-full border-none shadow-inner" sandbox="allow-same-origin"></iframe>
+          <div class="h-[500px] w-full bg-white rounded-xl border border-surface-200 overflow-hidden shadow-inner">
+            <iframe src="${url}" class="w-full h-full border-none" sandbox="allow-same-origin"></iframe>
           </div>`;
       } else {
         let text;
@@ -612,59 +539,36 @@
           text = null;
         }
 
-        const isBinary = !text || /[\x00-\x08\x0E-\x1F]/.test(text.slice(0, 8192));
+        const isBinary = !text || /[\x00-\x08\x0E-\x1F]/.test(text.slice(0, 4096));
         
         if (isBinary) {
           contentView.innerHTML = `
-            <div class="p-6">
-              <div class="mb-4 flex items-center gap-3 text-surface-600 bg-surface-100 px-4 py-3 rounded-xl text-xs border border-surface-200">
-                <div class="w-8 h-8 rounded-lg bg-white border border-surface-200 flex items-center justify-center text-lg">📁</div>
-                <div>
-                  <div class="font-bold text-surface-800">Binary Stream Detected</div>
-                  <div>Showing hexadecimal representation of the raw record body.</div>
-                </div>
-              </div>
-              <div class="rounded-xl overflow-hidden border border-surface-200 shadow-md">
-                <pre class="p-4 text-[10px] md:text-xs font-mono bg-gray-950 text-gray-300 overflow-x-auto leading-relaxed scrollbar-thin scrollbar-thumb-surface-700">${generateHexDump(record.body)}</pre>
-              </div>
+            <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm">
+              <pre class="p-4 text-[10px] md:text-xs font-mono bg-gray-900 text-gray-100 overflow-x-auto leading-relaxed scrollbar-thin scrollbar-thumb-surface-700">${generateHexDump(record.body)}</pre>
             </div>
           `;
         } else {
-          // Check for JSON
           let prettyText = text;
           if (ct.includes('json') || (text.trim().startsWith('{') && text.trim().endsWith('}'))) {
-            try {
-              prettyText = JSON.stringify(JSON.parse(text), null, 2);
-            } catch (e) {}
+            try { prettyText = JSON.stringify(JSON.parse(text), null, 2); } catch (e) {}
           }
-
+          // U8: Code block
           contentView.innerHTML = `
-            <div class="p-6">
-              <div class="rounded-xl overflow-hidden border border-surface-200 shadow-md bg-white">
-                <div class="px-4 py-2 bg-surface-50 border-b border-surface-100 flex items-center justify-between">
-                  <span class="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Plain Text Content</span>
-                  <button class="text-[10px] text-brand-600 font-bold hover:underline" id="copy-text-body">COPY TO CLIPBOARD</button>
-                </div>
-                <pre class="p-4 text-xs md:text-sm font-mono bg-gray-950 text-gray-100 overflow-x-auto leading-relaxed whitespace-pre-wrap break-all max-h-[600px]">${esc(prettyText)}</pre>
-              </div>
+            <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm bg-gray-950">
+              <pre class="p-4 text-xs font-mono text-gray-100 overflow-x-auto leading-relaxed whitespace-pre-wrap break-all">${esc(prettyText)}</pre>
             </div>
           `;
-          
-          document.getElementById('copy-text-body').onclick = function(e) {
-            h.copyToClipboard(prettyText, e.target);
-          };
         }
       }
     } else {
       contentView.innerHTML = `
         <div class="flex flex-col items-center justify-center p-20 opacity-30">
-          <svg class="w-16 h-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
-          <div class="text-xl font-bold italic">Empty Record Body</div>
+          <svg class="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+          <div class="text-sm font-medium">Empty record body</div>
         </div>
       `;
     }
 
-    // Modal Actions
     const closeBtn = document.getElementById('m-close');
     const closeFn = () => {
       modal.classList.remove('opacity-100');
@@ -692,7 +596,6 @@
         t.classList.toggle('border-brand-600', isActive);
         t.classList.toggle('text-surface-400', !isActive);
         t.classList.toggle('border-transparent', !isActive);
-        t.classList.toggle('bg-white', isActive);
       });
       document.getElementById('m-content-view').classList.toggle('hidden', activeId !== 'content');
       document.getElementById('m-headers-view').classList.toggle('hidden', activeId !== 'headers');
