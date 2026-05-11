@@ -1,204 +1,68 @@
 /**
  * OmniOpener — EXE (PE) Analyzer Tool
- * Uses OmniTool SDK. Parses PE headers, calculates entropy, and provides a hex dump.
+ * A production-grade browser-based Portable Executable parser.
  */
 (function () {
   'use strict';
 
   window.initTool = function (toolConfig, mountEl) {
-    OmniTool.create(mountEl, toolConfig, {
-      binary: true,
-      dropLabel: 'Drop an .exe or .dll file here',
-      infoHtml: '<strong>Privacy:</strong> Analysis is performed entirely in your browser. No binary data is uploaded.',
+    // Closure variables for memory management
+    let lastFileHash = null;
 
-      actions: [
-        {
-          label: '📋 Copy SHA-256',
-          id: 'copy-hash',
-          onClick: function (h, btn) {
-            const state = h.getState();
-            if (state.hash) h.copyToClipboard(state.hash, btn);
-          }
-        },
-        {
-          label: '📥 Download File',
-          id: 'download',
-          onClick: function (h) {
-            h.download(h.getFile().name, h.getContent());
-          }
-        }
-      ],
+    const MACHINE_TYPES = {
+      0x014c: 'Intel 386',
+      0x8664: 'x64 (AMD64)',
+      0x01c0: 'ARM Little Endian',
+      0xaa64: 'ARM64',
+      0x0200: 'Intel Itanium',
+      0x0166: 'MIPS R4000',
+      0x01f0: 'PowerPC Little Endian'
+    };
 
-      onInit: function (h) {
-        // Prepare any dependencies if needed
-      },
+    const SUBSYSTEMS = {
+      1: 'Native',
+      2: 'Windows GUI',
+      3: 'Windows CLI (Console)',
+      7: 'POSIX',
+      9: 'Windows CE',
+      10: 'EFI Application',
+      11: 'EFI Boot Service Driver',
+      12: 'EFI Runtime Driver',
+      13: 'EFI ROM'
+    };
 
-      onFile: async function (file, content, h) {
-        h.showLoading('Analyzing PE structure...');
+    const CHARACTERISTICS = [
+      { mask: 0x0001, label: 'No Relocs' },
+      { mask: 0x0002, label: 'Executable' },
+      { mask: 0x0004, label: 'Line Numbers Stripped' },
+      { mask: 0x0008, label: 'Local Symbols Stripped' },
+      { mask: 0x0020, label: 'Large Address Aware' },
+      { mask: 0x0100, label: '32-bit Machine' },
+      { mask: 0x0200, label: 'Debug Stripped' },
+      { mask: 0x1000, label: 'System File' },
+      { mask: 0x2000, label: 'DLL' },
+      { mask: 0x4000, label: 'Uniprocessor Only' }
+    ];
 
-        try {
-          const buffer = content;
-          const view = new DataView(buffer);
-
-          // 1. Compute Hash
-          const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-          const hashArray = Array.from(new Uint8Array(hashBuffer));
-          const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-          h.setState('hash', hashHex);
-
-          // 2. Magic Bytes
-          const magicBytes = Array.from(new Uint8Array(buffer.slice(0, 16)))
-            .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-            .join(' ');
-
-          // 3. PE Header Parsing
-          let peInfo = {
-            isValid: false,
-            machine: 'Unknown',
-            timestamp: 'Unknown',
-            sections: 0,
-            characteristics: '0x0000',
-            subsystem: 'Unknown',
-            is64Bit: false
-          };
-
-          if (buffer.byteLength >= 64) {
-            const mzSignature = view.getUint16(0, true);
-            if (mzSignature === 0x5A4D) { // 'MZ'
-              const peOffset = view.getUint32(0x3C, true);
-              if (buffer.byteLength >= peOffset + 24) {
-                const peSignature = view.getUint32(peOffset, true);
-                if (peSignature === 0x00004550) { // 'PE\0\0'
-                  peInfo.isValid = true;
-                  const machineType = view.getUint16(peOffset + 4, true);
-                  peInfo.machine = getMachineType(machineType);
-                  const timestamp = view.getUint32(peOffset + 8, true);
-                  peInfo.timestamp = new Date(timestamp * 1000).toUTCString();
-                  peInfo.sections = view.getUint16(peOffset + 6, true);
-                  peInfo.characteristics = '0x' + view.getUint16(peOffset + 22, true).toString(16).padStart(4, '0').toUpperCase();
-                  
-                  // Optional Header
-                  const magic = view.getUint16(peOffset + 24, true);
-                  peInfo.is64Bit = (magic === 0x20b);
-                  const subsystem = view.getUint16(peOffset + 92, true);
-                  peInfo.subsystem = getSubsystem(subsystem);
-                }
-              }
-            }
-          }
-
-          // 4. Entropy Calculation
-          const entropy = calculateEntropy(new Uint8Array(buffer));
-
-          // 5. Hex Dump (first 4KB)
-          const hexDump = generateHexDump(buffer.slice(0, 4096));
-
-          // Render UI
-          h.render(`
-            <div class="p-6 space-y-6 font-sans bg-white">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Metadata Card -->
-                <div class="bg-surface-50 rounded-xl p-5 border border-surface-200 shadow-sm">
-                  <h4 class="text-xs font-bold text-surface-400 mb-4 uppercase tracking-widest">General Analysis</h4>
-                  <div class="space-y-3 text-sm">
-                    <div class="flex justify-between border-b border-surface-100 pb-2">
-                      <span class="text-surface-500">SHA-256 Hash</span>
-                      <span class="font-mono text-[10px] break-all text-right max-w-[200px]">${hashHex}</span>
-                    </div>
-                    <div class="flex justify-between border-b border-surface-100 pb-2">
-                      <span class="text-surface-500">File Size</span>
-                      <span class="font-medium text-surface-700">${(file.size / 1024 / 1024).toFixed(2)} MB</span>
-                    </div>
-                    <div class="flex justify-between border-b border-surface-100 pb-2">
-                      <span class="text-surface-500">Entropy</span>
-                      <span class="font-medium text-surface-700">${entropy.toFixed(4)} bits/byte</span>
-                    </div>
-                    <div class="pt-1">
-                      <div class="w-full bg-surface-200 h-1.5 rounded-full overflow-hidden">
-                        <div class="bg-brand-500 h-full" style="width: ${(entropy / 8) * 100}%"></div>
-                      </div>
-                      <p class="text-[10px] text-surface-400 mt-1 italic">High entropy (>7.0) may indicate compression or encryption.</p>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- PE Header Card -->
-                <div class="bg-surface-50 rounded-xl p-5 border border-surface-200 shadow-sm">
-                  <h4 class="text-xs font-bold text-surface-400 mb-4 uppercase tracking-widest">PE Header Detail</h4>
-                  ${peInfo.isValid ? `
-                    <div class="space-y-3 text-sm">
-                      <div class="flex justify-between border-b border-surface-100 pb-2">
-                        <span class="text-surface-500">Architecture</span>
-                        <span class="font-medium text-surface-700">${peInfo.machine} (${peInfo.is64Bit ? '64-bit' : '32-bit'})</span>
-                      </div>
-                      <div class="flex justify-between border-b border-surface-100 pb-2">
-                        <span class="text-surface-500">Compile Time</span>
-                        <span class="text-xs text-surface-700 font-medium">${peInfo.timestamp}</span>
-                      </div>
-                      <div class="flex justify-between border-b border-surface-100 pb-2">
-                        <span class="text-surface-500">Sections Count</span>
-                        <span class="font-medium text-surface-700">${peInfo.sections}</span>
-                      </div>
-                      <div class="flex justify-between">
-                        <span class="text-surface-500">Subsystem</span>
-                        <span class="font-medium text-surface-700">${peInfo.subsystem}</span>
-                      </div>
-                    </div>
-                  ` : `
-                    <div class="flex flex-col items-center justify-center h-full py-4 text-surface-400">
-                      <span class="text-2xl mb-2">⚠️</span>
-                      <p class="text-sm italic">Not a valid Portable Executable (PE) file.</p>
-                    </div>
-                  `}
-                </div>
-              </div>
-
-              <!-- Hex Viewer -->
-              <div class="border border-surface-200 rounded-xl overflow-hidden shadow-sm">
-                <div class="bg-surface-100 px-4 py-2.5 border-b border-surface-200 flex justify-between items-center">
-                  <span class="text-[11px] font-bold text-surface-500 uppercase tracking-widest">Binary Preview (First 4KB)</span>
-                  <span class="text-[10px] text-surface-400 font-mono">Offset: 0x00000000</span>
-                </div>
-                <div class="bg-white overflow-auto max-h-[500px]">
-                  <pre class="p-4 font-mono text-[11px] leading-relaxed text-surface-700 whitespace-pre">${hexDump}</pre>
-                </div>
-              </div>
-            </div>
-          `);
-        } catch (err) {
-          h.showError('Analysis Failed', err.message);
-        }
-      }
-    });
-
-    // --- Helper Functions ---
-
-    function getMachineType(type) {
-      const types = {
-        0x014c: 'Intel 386',
-        0x8664: 'x64 (AMD64)',
-        0x01c0: 'ARM Little Endian',
-        0xaa64: 'ARM64',
-        0x0200: 'Intel Itanium',
-        0x0166: 'MIPS R4000',
-        0x01f0: 'PowerPC Little Endian'
-      };
-      return types[type] || `Unknown (0x${type.toString(16)})`;
+    function formatSize(bytes) {
+      if (!bytes) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
-    function getSubsystem(sub) {
-      const systems = {
-        1: 'Native',
-        2: 'Windows GUI',
-        3: 'Windows CLI (Console)',
-        7: 'POSIX',
-        9: 'Windows CE',
-        10: 'EFI Application',
-        11: 'EFI Boot Service Driver',
-        12: 'EFI Runtime Driver',
-        13: 'EFI ROM'
-      };
-      return systems[sub] || `Other (${sub})`;
+    function escapeHtml(str) {
+      if (typeof str !== 'string') return str;
+      return str.replace(/[&<>"']/g, function (m) {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#039;'
+        }[m];
+      });
     }
 
     function calculateEntropy(data) {
@@ -235,5 +99,264 @@
       }
       return out;
     }
+
+    function parsePE(buffer) {
+      const view = new DataView(buffer);
+      const res = {
+        isValid: false,
+        is64Bit: false,
+        machine: 'Unknown',
+        timestamp: null,
+        characteristics: [],
+        entryPoint: 0,
+        subsystem: 'Unknown',
+        sections: []
+      };
+
+      if (buffer.byteLength < 64) return res;
+
+      const mzSignature = view.getUint16(0, true);
+      if (mzSignature !== 0x5A4D) return res;
+
+      const peOffset = view.getUint32(0x3C, true);
+      if (buffer.byteLength < peOffset + 24) return res;
+
+      const peSignature = view.getUint32(peOffset, true);
+      if (peSignature !== 0x00004550) return res;
+
+      res.isValid = true;
+      const machineType = view.getUint16(peOffset + 4, true);
+      res.machine = MACHINE_TYPES[machineType] || `Unknown (0x${machineType.toString(16)})`;
+      
+      const numSections = view.getUint16(peOffset + 6, true);
+      const timestamp = view.getUint32(peOffset + 8, true);
+      res.timestamp = new Date(timestamp * 1000).toUTCString();
+
+      const charBits = view.getUint16(peOffset + 22, true);
+      res.characteristics = CHARACTERISTICS.filter(c => (charBits & c.mask)).map(c => c.label);
+
+      const optionalHeaderOffset = peOffset + 24;
+      const magic = view.getUint16(optionalHeaderOffset, true);
+      res.is64Bit = (magic === 0x20b);
+      
+      res.entryPoint = view.getUint32(optionalHeaderOffset + 16, true);
+      
+      const subIndex = res.is64Bit ? 112 : 92;
+      const subsystem = view.getUint16(optionalHeaderOffset + subIndex, true);
+      res.subsystem = SUBSYSTEMS[subsystem] || `Other (${subsystem})`;
+
+      // Sections
+      const sizeOfOptionalHeader = view.getUint16(peOffset + 20, true);
+      let sectionOffset = optionalHeaderOffset + sizeOfOptionalHeader;
+
+      for (let i = 0; i < numSections; i++) {
+        if (buffer.byteLength < sectionOffset + 40) break;
+        
+        let name = '';
+        for (let j = 0; j < 8; j++) {
+          const charCode = view.getUint8(sectionOffset + j);
+          if (charCode === 0) break;
+          name += String.fromCharCode(charCode);
+        }
+
+        res.sections.push({
+          name: name || `Section ${i}`,
+          virtualSize: view.getUint32(sectionOffset + 8, true),
+          virtualAddress: view.getUint32(sectionOffset + 12, true),
+          rawSize: view.getUint32(sectionOffset + 16, true),
+          rawPointer: view.getUint32(sectionOffset + 20, true),
+          characteristics: view.getUint32(sectionOffset + 36, true)
+        });
+
+        sectionOffset += 40;
+      }
+
+      return res;
+    }
+
+    OmniTool.create(mountEl, toolConfig, {
+      binary: true,
+      dropLabel: 'Drop an .exe, .dll, or .sys file',
+      infoHtml: 'Secure browser-side PE analysis. No file data is uploaded to any server.',
+
+      actions: [
+        {
+          label: '📋 Copy Hash',
+          id: 'copy-hash',
+          onClick: function (h, btn) {
+            const state = h.getState();
+            if (state.hash) {
+              h.copyToClipboard(state.hash, btn);
+            }
+          }
+        },
+        {
+          label: '📥 Download',
+          id: 'download',
+          onClick: function (h) {
+            h.download(h.getFile().name, h.getContent());
+          }
+        }
+      ],
+
+      onFile: async function _onFileFn(file, content, h) {
+        h.showLoading('Analyzing binary structure...');
+
+        try {
+          const buffer = content;
+          
+          // Compute Hash
+          const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+          h.setState('hash', hashHex);
+
+          const pe = parsePE(buffer);
+          const entropy = calculateEntropy(new Uint8Array(buffer));
+          const hexDump = generateHexDump(buffer.slice(0, 4096));
+
+          const infoBar = `
+            <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4 border border-surface-100">
+              <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
+              <span class="text-surface-300">|</span>
+              <span>${formatSize(file.size)}</span>
+              <span class="text-surface-300">|</span>
+              <span class="px-2 py-0.5 rounded-md bg-surface-200 text-surface-700 text-[10px] font-bold uppercase tracking-wider">${pe.isValid ? 'Portable Executable' : 'Binary File'}</span>
+            </div>
+          `;
+
+          const metadataCards = `
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+              <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm hover:border-brand-200 transition-all">
+                <h3 class="text-[11px] font-bold text-surface-400 uppercase tracking-widest mb-3">Checksum & Entropy</h3>
+                <div class="space-y-2">
+                  <div class="flex flex-col">
+                    <span class="text-[10px] text-surface-400 uppercase font-semibold">SHA-256</span>
+                    <span class="text-xs font-mono break-all text-surface-700 mt-0.5">${hashHex}</span>
+                  </div>
+                  <div class="flex flex-col pt-1">
+                    <div class="flex justify-between items-end mb-1">
+                      <span class="text-[10px] text-surface-400 uppercase font-semibold">File Entropy</span>
+                      <span class="text-xs font-bold text-brand-600">${entropy.toFixed(4)} bits/byte</span>
+                    </div>
+                    <div class="w-full bg-surface-100 h-1.5 rounded-full overflow-hidden">
+                      <div class="h-full transition-all duration-1000 ${entropy > 7.2 ? 'bg-orange-500' : 'bg-brand-500'}" style="width: ${(entropy / 8) * 100}%"></div>
+                    </div>
+                    <p class="text-[9px] text-surface-400 mt-1 italic">High entropy (>7.2) suggests compression or packing.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm hover:border-brand-200 transition-all">
+                <h3 class="text-[11px] font-bold text-surface-400 uppercase tracking-widest mb-3">Core Metadata</h3>
+                <div class="space-y-2 text-sm">
+                  <div class="flex justify-between border-b border-surface-50 pb-1.5">
+                    <span class="text-surface-500 text-xs">Architecture</span>
+                    <span class="font-semibold text-surface-800 text-xs">${pe.machine} ${pe.is64Bit ? '(64-bit)' : '(32-bit)'}</span>
+                  </div>
+                  <div class="flex justify-between border-b border-surface-50 pb-1.5">
+                    <span class="text-surface-500 text-xs">Subsystem</span>
+                    <span class="font-semibold text-surface-800 text-xs">${pe.subsystem}</span>
+                  </div>
+                  <div class="flex justify-between border-b border-surface-50 pb-1.5">
+                    <span class="text-surface-500 text-xs">Entry Point</span>
+                    <span class="font-mono text-brand-600 text-xs">0x${pe.entryPoint.toString(16).toUpperCase()}</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-surface-500 text-xs">Compiled</span>
+                    <span class="font-medium text-surface-700 text-[10px]">${pe.timestamp || 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border border-surface-200 p-4 bg-white shadow-sm hover:border-brand-200 transition-all">
+                <h3 class="text-[11px] font-bold text-surface-400 uppercase tracking-widest mb-3">Flags & Characteristics</h3>
+                <div class="flex flex-wrap gap-1.5">
+                  ${pe.characteristics.length > 0 ? pe.characteristics.map(c => `
+                    <span class="px-2 py-1 rounded bg-surface-100 text-surface-600 text-[10px] font-medium border border-surface-200">${c}</span>
+                  `).join('') : '<span class="text-xs text-surface-400 italic">No special flags detected.</span>'}
+                </div>
+              </div>
+            </div>
+          `;
+
+          const sectionsTable = pe.isValid && pe.sections.length > 0 ? `
+            <div class="mb-6">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-surface-800">Section Headers</h3>
+                <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${pe.sections.length} sections</span>
+              </div>
+              <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm">
+                <table class="min-w-full text-xs">
+                  <thead>
+                    <tr class="bg-surface-50 border-b border-surface-200">
+                      <th class="px-4 py-3 text-left font-semibold text-surface-700">Name</th>
+                      <th class="px-4 py-3 text-left font-semibold text-surface-700">Virtual Size</th>
+                      <th class="px-4 py-3 text-left font-semibold text-surface-700">Virtual Addr</th>
+                      <th class="px-4 py-3 text-left font-semibold text-surface-700">Raw Size</th>
+                      <th class="px-4 py-3 text-left font-semibold text-surface-700">Raw Ptr</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-surface-100">
+                    ${pe.sections.map(s => `
+                      <tr class="hover:bg-brand-50 transition-colors">
+                        <td class="px-4 py-2.5 font-bold text-surface-900">${escapeHtml(s.name)}</td>
+                        <td class="px-4 py-2.5 font-mono text-surface-600">0x${s.virtualSize.toString(16).toUpperCase()}</td>
+                        <td class="px-4 py-2.5 font-mono text-surface-600">0x${s.virtualAddress.toString(16).toUpperCase()}</td>
+                        <td class="px-4 py-2.5 font-mono text-surface-600">0x${s.rawSize.toString(16).toUpperCase()}</td>
+                        <td class="px-4 py-2.5 font-mono text-surface-600">0x${s.rawPointer.toString(16).toUpperCase()}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ` : pe.isValid ? `
+            <div class="p-6 text-center border-2 border-dashed border-surface-200 rounded-xl mb-6">
+              <p class="text-surface-400 text-sm">No section information found in the header.</p>
+            </div>
+          ` : '';
+
+          const hexViewer = `
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-surface-800">Binary Preview</h3>
+                <span class="text-[10px] text-surface-400 font-mono uppercase tracking-wider">First 4KB</span>
+              </div>
+              <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm">
+                <pre class="p-4 text-[10px] font-mono bg-gray-950 text-gray-300 overflow-x-auto leading-relaxed max-h-[400px] scrollbar-thin scrollbar-thumb-gray-700">${escapeHtml(hexDump)}</pre>
+              </div>
+            </div>
+          `;
+
+          h.render(`
+            <div class="max-w-6xl mx-auto p-4 md:p-6 lg:p-8 animate-in fade-in duration-500">
+              ${infoBar}
+              ${pe.isValid ? '' : `
+                <div class="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+                  <span class="text-amber-500 mt-0.5">⚠️</span>
+                  <div>
+                    <h4 class="text-sm font-bold text-amber-800">Invalid PE Header</h4>
+                    <p class="text-xs text-amber-700 mt-0.5">The file does not appear to be a standard Windows Portable Executable. Showing raw binary data below.</p>
+                  </div>
+                </div>
+              `}
+              ${metadataCards}
+              ${sectionsTable}
+              ${hexViewer}
+            </div>
+          `);
+
+        } catch (err) {
+          console.error(err);
+          h.showError('Analysis Failed', 'OmniOpener encountered an error while parsing this binary file. It might be corrupt or an unsupported variant.');
+        }
+      },
+
+      onDestroy: function (h) {
+        // Clean up if needed
+        lastFileHash = null;
+      }
+    });
   };
 })();
