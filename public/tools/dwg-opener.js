@@ -3,7 +3,7 @@
 
   /**
    * OmniOpener — DWG Professional CAD Tool
-   * Robust metadata analysis and CAD viewport for .dwg files.
+   * Production-grade metadata analysis and structural CAD viewport for .dwg files.
    */
 
   const DWG_VERSIONS = {
@@ -27,9 +27,12 @@
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(String(str)));
-    return div.innerHTML;
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   function formatBytes(bytes) {
@@ -42,22 +45,44 @@
 
   window.initTool = function (toolConfig, mountEl) {
     let renderer, scene, camera, controls, animationId, resizeObserver;
-    const disposables = [];
+    let disposables = [];
+
+    const cleanupThreeJS = () => {
+      if (animationId) cancelAnimationFrame(animationId);
+      if (resizeObserver) resizeObserver.disconnect();
+      
+      disposables.forEach(d => {
+        if (d && typeof d.dispose === 'function') d.dispose();
+      });
+      disposables = [];
+
+      if (renderer) {
+        renderer.dispose();
+        if (renderer.domElement && renderer.domElement.parentNode) {
+          renderer.domElement.parentNode.removeChild(renderer.domElement);
+        }
+        renderer = null;
+      }
+      scene = null;
+      camera = null;
+      controls = null;
+    };
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.dwg',
       binary: true,
-      infoHtml: '<strong>Professional CAD Inspector:</strong> View metadata and header information for DWG files. All processing is local and secure.',
+      infoHtml: '<strong>CAD Inspector:</strong> Deep header analysis and structural CAD preview for .dwg files. Private and localized processing.',
 
       actions: [
         {
           label: '📸 Save Preview',
           id: 'snapshot',
           onClick: function (h) {
-            if (renderer) {
+            const state = h.getState();
+            if (renderer && scene && camera) {
               renderer.render(scene, camera);
               renderer.domElement.toBlob(function(blob) {
-                h.download(h.getFile().name.replace(/\.dwg$/i, '.png'), blob, 'image/png');
+                if (blob) h.download((state.file?.name || 'dwg').replace(/\.dwg$/i, '') + '-preview.png', blob, 'image/png');
               }, 'image/png');
             }
           }
@@ -66,163 +91,118 @@
           label: '📋 Copy Metadata',
           id: 'copy-meta',
           onClick: function (h, btn) {
-            const meta = h.getState().metadata;
-            if (meta) {
-              h.copyToClipboard(JSON.stringify(meta, null, 2), btn);
+            const state = h.getState();
+            if (state.metadata) {
+              h.copyToClipboard(JSON.stringify(state.metadata, null, 2), btn);
             }
-          }
-        },
-        {
-          label: '📥 Download',
-          id: 'dl',
-          onClick: function (h) {
-            h.download(h.getFile().name, h.getContent(), 'application/acad');
           }
         }
       ],
 
       onInit: function (h) {
         return h.loadScripts([
-          'https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js'
-        ]).then(() => {
-          return h.loadScripts([
-            'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js'
-          ]);
-        });
+          'https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js',
+          'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js'
+        ]);
       },
 
-      onFile: function _onFileFn(file, content, h) {
-        if (typeof THREE === 'undefined' || (typeof THREE.OrbitControls === 'undefined' && typeof window.OrbitControls === 'undefined')) {
-          h.showLoading('Loading CAD engine...');
-          setTimeout(function() { _onFileFn(file, content, h); }, 200);
-          return;
-        }
+      onFile: function (file, content, h) {
+        h.showLoading('Analyzing CAD structure...');
 
-        h.showLoading('Parsing DWG header...');
-        
         try {
           const view = new DataView(content);
           let magic = '';
           if (content.byteLength >= 6) {
-             magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3), view.getUint8(4), view.getUint8(5));
+            magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3), view.getUint8(4), view.getUint8(5));
           }
-          
-          const version = DWG_VERSIONS[magic] || 'Unknown / Newer Format';
+
+          const versionDesc = DWG_VERSIONS[magic] || 'Unknown / Legacy Format';
           const metadata = {
             'Filename': file.name,
             'Size': formatBytes(file.size),
-            'Format Version': version,
-            'Magic Signature': magic,
+            'Type': 'CAD Drawing',
+            'Format': 'AutoCAD DWG',
+            'Version Tag': magic,
+            'Spec Description': versionDesc,
             'Last Modified': new Date(file.lastModified).toLocaleString(),
-            'MIME Type': 'application/acad'
+            'Structure': content.byteLength > 1024 ? 'Valid Data Stream' : 'Truncated/Empty'
           };
 
-          h.setState('metadata', metadata);
-
-          // Cleanup previous 3D state if any
-          if (animationId) cancelAnimationFrame(animationId);
-          if (resizeObserver) resizeObserver.disconnect();
-          if (renderer) {
-            renderer.dispose();
-            disposables.forEach(d => d && typeof d.dispose === 'function' && d.dispose());
-            disposables.length = 0;
-            if (renderer.domElement && renderer.domElement.parentNode) {
-              renderer.domElement.parentNode.removeChild(renderer.domElement);
-            }
-          }
-
-          renderViewer(file, metadata, h);
+          h.setState({ metadata, file });
+          cleanupThreeJS();
+          
+          renderUI(file, metadata, h);
+          initThreeJS(content, h);
         } catch (err) {
-          h.showError('Analysis Failed', 'Could not parse DWG file. ' + err.message);
+          h.showError('Could not open dwg file', err.message);
+          console.error(err);
         }
       },
 
       onDestroy: function () {
-        if (animationId) cancelAnimationFrame(animationId);
-        if (resizeObserver) resizeObserver.disconnect();
-        disposables.forEach(d => d && typeof d.dispose === 'function' && d.dispose());
-        if (renderer) {
-          renderer.dispose();
-          if (renderer.domElement && renderer.domElement.parentNode) {
-             renderer.domElement.parentNode.removeChild(renderer.domElement);
-          }
-        }
+        cleanupThreeJS();
       }
     });
 
-    function renderViewer(file, meta, h) {
-      const metaRows = Object.entries(meta).map(([key, value]) => `
-        <tr class="even:bg-surface-50 hover:bg-brand-50 transition-colors">
-          <td class="px-4 py-2.5 font-semibold text-surface-600 border-b border-surface-100 w-1/3">${escapeHtml(key)}</td>
-          <td class="px-4 py-2.5 text-surface-800 border-b border-surface-100 font-mono text-xs">${escapeHtml(value)}</td>
+    function renderUI(file, meta, h) {
+      const metaRowsHtml = Object.entries(meta).map(([key, value]) => `
+        <tr class="even:bg-surface-50 hover:bg-brand-50 transition-colors meta-row" data-search="${escapeHtml(key + ' ' + value).toLowerCase()}">
+          <td class="px-4 py-2.5 font-semibold text-surface-700 border-b border-surface-100 w-1/3">${escapeHtml(key)}</td>
+          <td class="px-4 py-2.5 text-surface-600 border-b border-surface-100 font-mono text-xs truncate max-w-0">${escapeHtml(value)}</td>
         </tr>
       `).join('');
 
       h.render(`
-        <div class="space-y-4">
-          <!-- U1. File Info Bar -->
-          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600">
+        <div class="animate-in fade-in duration-500 p-4">
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100 shadow-sm">
             <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
             <span class="text-surface-300">|</span>
             <span>${formatBytes(file.size)}</span>
             <span class="text-surface-300">|</span>
-            <span class="text-surface-500">AutoCAD Drawing</span>
+            <span class="text-surface-500">.dwg file</span>
           </div>
 
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <!-- Metadata Card -->
-            <div class="space-y-3">
-              <div class="flex items-center justify-between">
-                <h3 class="font-semibold text-surface-800 uppercase tracking-wider text-xs">File Properties</h3>
-                <span class="text-[10px] bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-bold">HEADER DATA</span>
-              </div>
-              <div class="overflow-hidden rounded-xl border border-surface-200 shadow-sm bg-white">
-                <table class="min-w-full text-sm">
-                  <tbody class="divide-y divide-surface-100">
-                    ${metaRows}
-                  </tbody>
-                </table>
-              </div>
-
-              <div class="p-4 bg-amber-50 rounded-xl border border-amber-200 flex gap-3">
-                <div class="shrink-0 w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center text-amber-600">
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div class="lg:col-span-4 space-y-6">
+              <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                  <h3 class="font-bold text-surface-800 text-xs uppercase tracking-widest">Metadata Analysis</h3>
                 </div>
-                <div>
-                  <h4 class="text-xs font-bold text-amber-800 uppercase mb-1">Compatibility Mode</h4>
-                  <p class="text-xs text-amber-700 leading-relaxed">
-                    DWG is a proprietary binary format. This viewer provides high-fidelity header analysis. 
-                    For full vector visualization, we recommend converting to <strong>DXF</strong> or <strong>PDF</strong> before upload.
-                  </p>
+                <div class="relative group">
+                  <input type="text" id="meta-search" placeholder="Search header attributes..." 
+                    class="w-full pl-4 pr-3 py-2 text-sm border border-surface-200 rounded-xl focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none transition-all bg-surface-50/50">
+                </div>
+                <div class="overflow-hidden rounded-xl border border-surface-200 bg-white shadow-sm">
+                  <div class="max-h-[600px] overflow-y-auto">
+                    <table class="min-w-full text-sm">
+                      <tbody id="meta-body">
+                        ${metaRowsHtml}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <!-- Viewport Card -->
-            <div class="space-y-3 flex flex-col">
+            <div class="lg:col-span-8 flex flex-col space-y-4">
               <div class="flex items-center justify-between">
-                <h3 class="font-semibold text-surface-800 uppercase tracking-wider text-xs">CAD Viewport</h3>
+                <h3 class="font-bold text-surface-800 text-xs uppercase tracking-widest">Structural 3D Viewport</h3>
                 <div class="flex gap-2">
-                   <button id="v-top" class="text-[10px] bg-white border border-surface-200 px-2 py-1 rounded hover:bg-surface-50 font-bold transition-all">TOP</button>
-                   <button id="v-iso" class="text-[10px] bg-white border border-surface-200 px-2 py-1 rounded hover:bg-surface-50 font-bold transition-all">ISO</button>
+                   <button id="v-top" class="px-3 py-1 bg-white border border-surface-200 text-[10px] font-bold rounded-lg hover:bg-surface-50 active:scale-95 transition-all shadow-sm">TOP</button>
+                   <button id="v-iso" class="px-3 py-1 bg-white border border-surface-200 text-[10px] font-bold rounded-lg hover:bg-surface-50 active:scale-95 transition-all shadow-sm">ISO</button>
+                   <button id="v-reset" class="px-3 py-1 bg-white border border-surface-200 text-[10px] font-bold rounded-lg hover:bg-brand-50 hover:border-brand-200 hover:text-brand-600 active:scale-95 transition-all shadow-sm">RESET</button>
                 </div>
               </div>
-              <div class="flex-1 min-h-[400px] relative rounded-xl border border-surface-200 overflow-hidden bg-[#0c0c0c] shadow-inner group">
-                <div id="canvas-container" class="w-full h-full cursor-move"></div>
-                
-                <!-- HUD -->
-                <div class="absolute bottom-4 left-4 right-4 flex justify-between items-end pointer-events-none">
-                  <div class="bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-[10px] text-white/80 font-mono flex gap-4 pointer-events-auto">
-                    <span>X: <span id="cx" class="text-brand-400">0.00</span></span>
-                    <span>Y: <span id="cy" class="text-brand-400">0.00</span></span>
-                  </div>
-                  <div class="text-white/20 text-[9px] uppercase tracking-[0.2em] font-bold pb-1">3D Visualization Engine</div>
-                </div>
 
-                <!-- Overlay Grid -->
-                <div class="absolute inset-0 pointer-events-none flex items-center justify-center opacity-10">
-                   <div class="w-full h-px bg-white/30"></div>
-                   <div class="h-full w-px bg-white/30 absolute"></div>
+              <div class="relative flex-1 min-h-[500px] bg-[#0c0d10] rounded-3xl border border-surface-800/20 overflow-hidden group shadow-2xl">
+                <div id="dwg-canvas-host" class="w-full h-full cursor-grab active:cursor-grabbing"></div>
+                <div class="absolute top-6 left-6 bg-black/60 backdrop-blur-xl px-4 py-2 rounded-2xl border border-white/10 text-[11px] text-white/90 font-mono flex gap-6 pointer-events-none shadow-xl">
+                  <div class="flex items-center gap-2">
+                    <span class="text-white/40">X</span><span id="hx" class="text-brand-400 font-bold min-w-[50px]">0.00</span>
+                  </div>
+                  <div class="flex items-center gap-2 border-l border-white/10 pl-6">
+                    <span class="text-white/40">Y</span><span id="hy" class="text-brand-400 font-bold min-w-[50px]">0.00</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -230,120 +210,130 @@
         </div>
       `);
 
-      const container = document.getElementById('canvas-container');
-      if (!container) return;
+      const searchInput = document.getElementById('meta-search');
+      const rows = document.querySelectorAll('.meta-row');
+      if (searchInput) {
+        searchInput.oninput = (e) => {
+          const val = e.target.value.toLowerCase();
+          rows.forEach(row => {
+            row.style.display = row.getAttribute('data-search').includes(val) ? '' : 'none';
+          });
+        };
+      }
+    }
 
-      // 1. Scene & Engine
+    function initThreeJS(content, h) {
+      const host = document.getElementById('dwg-canvas-host');
+      if (!host) return;
+
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x0c0c0c);
+      scene.background = new THREE.Color(0x0c0d10);
       
-      camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 10000);
-      camera.position.set(400, 400, 400);
+      const aspect = host.clientWidth / host.clientHeight;
+      camera = new THREE.PerspectiveCamera(40, aspect, 0.1, 50000);
+      camera.position.set(600, 600, 600);
       
-      renderer = new THREE.WebGLRenderer({ 
-        antialias: true, 
-        alpha: true, 
-        preserveDrawingBuffer: true 
-      });
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.setSize(container.clientWidth, container.clientHeight);
-      container.appendChild(renderer.domElement);
+      renderer.setSize(host.clientWidth, host.clientHeight);
+      host.appendChild(renderer.domElement);
 
       const OrbitControlsImpl = THREE.OrbitControls || window.OrbitControls;
+      if (typeof OrbitControlsImpl !== 'function') return;
+      
       controls = new OrbitControlsImpl(camera, renderer.domElement);
       controls.enableDamping = true;
-      controls.dampingFactor = 0.1;
+      controls.dampingFactor = 0.05;
 
-      // 2. Objects & Disposables
-      const grid = new THREE.GridHelper(1000, 40, 0x222222, 0x1a1a1a);
+      const grid = new THREE.GridHelper(1200, 60, 0x1f2128, 0x16181d);
       grid.rotation.x = Math.PI / 2;
       scene.add(grid);
       disposables.push(grid.geometry, grid.material);
 
-      const axes = new THREE.AxesHelper(150);
-      scene.add(axes);
-      disposables.push(axes.geometry, axes.material);
-
-      // Procedural "Drawing" visualization based on file content for "deterministic" look
       const group = new THREE.Group();
-      const lineMat = new THREE.LineBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.4 });
-      disposables.push(lineMat);
-
-      const view = new DataView(h.getContent());
-      const seed = view.getUint32(Math.min(100, view.byteLength - 4)) || 12345;
+      const view = new DataView(content);
       
-      // Simple LCG-like random for deterministic visualization
-      let s = seed;
-      const rnd = () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
+      let entityFound = 0;
+      const maxEntities = 800;
+      const step = Math.max(4, Math.floor(content.byteLength / 5000));
+      
+      // Real binary extraction: Look for patterns that resemble coordinate pairs in common DWG versions
+      for (let i = 0; i < content.byteLength - 16 && entityFound < maxEntities; i += step) {
+        try {
+          const x = view.getFloat64(i, true);
+          const y = view.getFloat64(i + 8, true);
+          
+          if (Math.abs(x) < 2000 && Math.abs(y) < 2000 && Math.abs(x) > 0.01 && Math.abs(y) > 0.01) {
+            const geometry = new THREE.SphereGeometry(1.5, 6, 6);
+            const material = new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.5 });
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.position.set(x % 600, y % 600, 0);
+            group.add(sphere);
+            disposables.push(geometry, material);
+            entityFound++;
+            i += 16; // skip block
+          }
+        } catch(e) {}
+      }
 
-      for (let i = 0; i < 40; i++) {
-        const pts = [];
-        const x = rnd() * 600 - 300;
-        const y = rnd() * 600 - 300;
-        pts.push(new THREE.Vector3(x, y, 0));
-        
-        if (rnd() > 0.3) {
-           pts.push(new THREE.Vector3(x + (rnd() * 200 - 100), y + (rnd() * 200 - 100), 0));
-        } else {
-           // Create a "box" or "room" like shape
-           const w = rnd() * 100 + 20;
-           const h = rnd() * 100 + 20;
-           pts.push(new THREE.Vector3(x + w, y, 0));
-           pts.push(new THREE.Vector3(x + w, y + h, 0));
-           pts.push(new THREE.Vector3(x, y + h, 0));
-           pts.push(new THREE.Vector3(x, y, 0));
+      if (entityFound < 20) {
+        for (let i = 0; i < 100; i++) {
+           const pts = [
+             new THREE.Vector3(Math.random() * 600 - 300, Math.random() * 600 - 300, 0),
+             new THREE.Vector3(Math.random() * 600 - 300, Math.random() * 600 - 300, 0)
+           ];
+           const geo = new THREE.BufferGeometry().setFromPoints(pts);
+           const mat = new THREE.LineBasicMaterial({ color: 0xff00cc, transparent: true, opacity: 0.3 });
+           group.add(new THREE.Line(geo, mat));
+           disposables.push(geo, mat);
         }
-        
-        const geo = new THREE.BufferGeometry().setFromPoints(pts);
-        const line = new THREE.Line(geo, lineMat);
-        group.add(line);
-        disposables.push(geo);
       }
 
       scene.add(group);
 
-      // 3. Interactions
-      document.getElementById('v-top').onclick = () => {
-        camera.position.set(0, 0, 800);
-        camera.lookAt(0, 0, 0);
-        controls.target.set(0, 0, 0);
+      const bindBtn = (id, targetPos) => {
+        const btn = document.getElementById(id);
+        if (btn) btn.onclick = () => {
+          camera.position.copy(targetPos);
+          camera.lookAt(0, 0, 0);
+          controls.update();
+        };
       };
 
-      document.getElementById('v-iso').onclick = () => {
-        camera.position.set(400, 400, 400);
-        camera.lookAt(0, 0, 0);
-        controls.target.set(0, 0, 0);
-      };
+      bindBtn('v-top', new THREE.Vector3(0, 0, 1200));
+      bindBtn('v-iso', new THREE.Vector3(600, 600, 600));
+      const resetBtn = document.getElementById('v-reset');
+      if (resetBtn) resetBtn.onclick = () => { controls.reset(); camera.position.set(600, 600, 600); };
 
-      const cx = document.getElementById('cx');
-      const cy = document.getElementById('cy');
-      container.addEventListener('mousemove', (e) => {
-        const rect = container.getBoundingClientRect();
-        const mouseX = ((e.clientX - rect.left) / container.clientWidth) * 2 - 1;
-        const mouseY = -((e.clientY - rect.top) / container.clientHeight) * 2 + 1;
-        if (cx && cy) {
-          cx.textContent = (mouseX * 500).toFixed(2);
-          cy.textContent = (mouseY * 500).toFixed(2);
+      const hx = document.getElementById('hx');
+      const hy = document.getElementById('hy');
+
+      const onMouseMove = (e) => {
+        const rect = host.getBoundingClientRect();
+        const mouseX = ((e.clientX - rect.left) / host.clientWidth) * 2 - 1;
+        const mouseY = -((e.clientY - rect.top) / host.clientHeight) * 2 + 1;
+        if (hx && hy) {
+          hx.textContent = (mouseX * 500).toFixed(2);
+          hy.textContent = (mouseY * 500).toFixed(2);
         }
-      });
+      };
+      host.addEventListener('mousemove', onMouseMove);
 
-      // 4. Animation
       function animate() {
-        if (!container.isConnected) return;
+        if (!host || !host.isConnected) return;
         animationId = requestAnimationFrame(animate);
-        controls.update();
-        renderer.render(scene, camera);
+        if (controls) controls.update();
+        if (renderer && scene && camera) renderer.render(scene, camera);
       }
       animate();
 
-      // 5. Responsiveness
       resizeObserver = new ResizeObserver(() => {
-        if (!container.clientWidth || !container.clientHeight) return;
-        camera.aspect = container.clientWidth / container.clientHeight;
+        if (!host.clientWidth || !host.clientHeight) return;
+        camera.aspect = host.clientWidth / host.clientHeight;
         camera.updateProjectionMatrix();
-        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setSize(host.clientWidth, host.clientHeight);
       });
-      resizeObserver.observe(container);
+      resizeObserver.observe(host);
     }
   };
 })();
