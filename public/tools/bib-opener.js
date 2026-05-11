@@ -2,51 +2,58 @@
   'use strict';
 
   window.initTool = function (toolConfig, mountEl) {
-    var _bibtexParseUrl = 'https://cdn.jsdelivr.net/npm/bibtex-parse-js@0.0.24/bibtex-parse.min.js';
+    const LIB_URL = 'https://cdn.jsdelivr.net/npm/bibtex-parse-js@0.0.24/bibtex-parse.min.js';
+    let _entries = [];
+    let _query = '';
 
     OmniTool.create(mountEl, toolConfig, {
       accept: '.bib',
       dropLabel: 'Drop a BibTeX (.bib) file here',
       binary: false,
-      infoHtml: '<strong>Privacy:</strong> This tool parses your .bib references entirely in your browser. No data is ever sent to any server.',
+      infoHtml: '<strong>Privacy:</strong> Your BibTeX references are parsed entirely in your browser. No data is ever uploaded to any server.',
 
       onInit: function (h) {
         if (typeof bibtexParse === 'undefined') {
-          h.loadScript(_bibtexParseUrl);
+          h.loadScript(LIB_URL);
         }
       },
 
       onFile: function _onFileFn(file, content, h) {
-        h.showLoading('Parsing BibTeX entries...');
+        // B1. Race condition check
+        if (typeof bibtexParse === 'undefined') {
+          h.showLoading('Loading parser...');
+          setTimeout(function() { _onFileFn(file, content, h); }, 100);
+          return;
+        }
 
-        var tryParse = function () {
-          if (typeof bibtexParse === 'undefined') {
-            // Script not ready yet, wait and try again
-            setTimeout(function() { _onFileFn(file, content, h); }, 200);
-            return;
-          }
+        // U6. Show loading before heavy parsing
+        h.showLoading('Parsing BibTeX database...');
 
+        // Allow UI to update before blocking thread with parse
+        setTimeout(function() {
           try {
-            var entries = bibtexParse.toJSON(content);
+            // bibtex-parse-js toJSON returns array of objects
+            const entries = bibtexParse.toJSON(content);
             
             if (!entries || entries.length === 0) {
-              h.showError('No entries found', 'This file doesn\'t seem to contain valid BibTeX entries or is empty.');
+              // U5. Empty state handled in render, but if it's literally empty/invalid:
+              h.showError('No entries found', 'This file doesn\'t seem to contain valid BibTeX entries or is empty. Please check the file content.');
               return;
             }
 
-            h.setState('entries', entries);
-            h.setState('query', '');
-            render(file, entries, h);
+            _entries = entries;
+            _query = '';
+            render(file, h);
           } catch (err) {
-            h.showError('Could not parse BibTeX file', 'The file format might be invalid or use unsupported extensions. ' + err.message);
+            // U3. Friendly error messages
+            h.showError('Parsing failed', 'The BibTeX file may have syntax errors or use unsupported characters. Error: ' + err.message);
           }
-        };
-
-        tryParse();
+        }, 50);
       },
 
       onDestroy: function (h) {
-        // Cleanup if necessary
+        _entries = [];
+        _query = '';
       },
 
       actions: [
@@ -54,24 +61,22 @@
           label: '📋 Copy JSON',
           id: 'copy-json',
           onClick: function (h, btn) {
-            var entries = h.getState().entries;
-            if (entries) h.copyToClipboard(JSON.stringify(entries, null, 2), btn);
+            if (_entries.length) h.copyToClipboard(JSON.stringify(_entries, null, 2), btn);
           }
         },
         {
           label: '📥 Download JSON',
           id: 'dl-json',
           onClick: function (h) {
-            var entries = h.getState().entries;
-            if (entries) {
-              var filename = (h.getFile().name || 'references.bib').replace(/\.bib$/i, '') + '.json';
-              h.download(filename, JSON.stringify(entries, null, 2), 'application/json');
+            if (_entries.length) {
+              const filename = (h.getFile().name || 'references.bib').replace(/\.bib$/i, '') + '.json';
+              h.download(filename, JSON.stringify(_entries, null, 2), 'application/json');
             }
           }
         },
         {
-          label: '📋 Copy BibTeX',
-          id: 'copy-bib',
+          label: '📄 Export BibTeX',
+          id: 'export-bib',
           onClick: function (h, btn) {
             h.copyToClipboard(h.getContent(), btn);
           }
@@ -79,146 +84,143 @@
       ]
     });
 
-    function render(file, entries, h) {
-      var query = h.getState().query || '';
-      var filtered = entries;
-      
-      if (query) {
-        var q = query.toLowerCase();
-        filtered = entries.filter(function (e) {
-          var tags = e.entryTags || {};
-          var haystack = (
-            (e.citationKey || '') + ' ' + 
-            (e.entryType || '') + ' ' + 
-            (tags.title || '') + ' ' + 
-            (tags.author || '') + ' ' + 
-            (tags.journal || '') + ' ' + 
-            (tags.year || '')
-          ).toLowerCase();
-          return haystack.indexOf(q) !== -1;
-        });
-      }
+    function render(file, h) {
+      const q = _query.trim().toLowerCase();
+      const filtered = q === '' ? _entries : _entries.filter(e => {
+        const tags = e.entryTags || {};
+        const searchable = [
+          e.citationKey,
+          e.entryType,
+          tags.title,
+          tags.author,
+          tags.journal,
+          tags.booktitle,
+          tags.year,
+          tags.publisher
+        ].filter(Boolean).join(' ').toLowerCase();
+        return searchable.indexOf(q) !== -1;
+      });
 
-      var html = '<div class="p-4 md:p-6 max-w-5xl mx-auto">';
-      
+      let html = '<div class="p-4 md:p-6 max-w-5xl mx-auto">';
+
       // U1. File info bar
-      html += '<div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">' +
-        '<span class="font-semibold text-surface-800 truncate max-w-[200px]" title="' + h.escape(file.name) + '">' + h.escape(file.name) + '</span>' +
-        '<span class="text-surface-300">|</span>' +
-        '<span>' + formatSize(file.size) + '</span>' +
-        '<span class="text-surface-300">|</span>' +
-        '<span class="text-surface-500">.bib file</span>' +
-      '</div>';
+      html += `
+        <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">
+          <span class="font-semibold text-surface-800">${h.escape(file.name)}</span>
+          <span class="text-surface-300">|</span>
+          <span>${formatSize(file.size)}</span>
+          <span class="text-surface-300">|</span>
+          <span class="text-surface-500">.bib file</span>
+        </div>`;
 
-      // U10. Section header with counts + Search
-      html += '<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">' +
-        '<div>' +
-          '<h3 class="font-bold text-xl text-surface-900">BibTeX References</h3>' +
-          '<p class="text-sm text-surface-500 mt-1">' + (filtered.length === entries.length ? entries.length + ' entries total' : 'Showing ' + filtered.length + ' of ' + entries.length + ' entries') + '</p>' +
-        '</div>' +
-        '<div class="relative min-w-[280px]">' +
-          '<input type="text" id="bib-search" value="' + h.escape(query) + '" placeholder="Search title, author, key..." ' +
-          'class="w-full pl-10 pr-4 py-2.5 bg-white border border-surface-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none transition-all shadow-sm">' +
-          '<div class="absolute left-3.5 top-1/2 -translate-y-1/2 text-surface-400">' +
-            '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
+      // Search and stats
+      html += `
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <div>
+            <h3 class="font-semibold text-surface-800 text-lg">BibTeX Entries</h3>
+            <span class="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">
+              ${filtered.length} ${filtered.length === 1 ? 'item' : 'items'} 
+              ${q ? 'matching search' : 'total'}
+            </span>
+          </div>
+          <div class="relative min-w-[300px]">
+            <input type="text" id="bib-search" value="${h.escape(_query)}" 
+              placeholder="Filter by title, author, year, or key..." 
+              class="w-full pl-10 pr-4 py-2 border border-surface-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none transition-all shadow-sm">
+            <div class="absolute left-3.5 top-1/2 -translate-y-1/2 text-surface-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </div>
+          </div>
+        </div>`;
 
       // U5. Empty state
       if (filtered.length === 0) {
-        html += '<div class="flex flex-col items-center justify-center py-20 px-4 text-center bg-surface-50 rounded-2xl border-2 border-dashed border-surface-200">' +
-          '<div class="w-16 h-16 bg-surface-100 rounded-full flex items-center justify-center mb-4 text-surface-400">' +
-            '<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>' +
-          '</div>' +
-          '<h4 class="text-lg font-semibold text-surface-800">No entries found</h4>' +
-          '<p class="text-surface-500 max-w-xs mx-auto mt-2">Try adjusting your search terms or upload a different .bib file.</p>' +
-        '</div>';
+        html += `
+          <div class="flex flex-col items-center justify-center py-20 bg-surface-50 rounded-2xl border-2 border-dashed border-surface-200">
+            <p class="text-surface-500">${q ? 'No results match your search.' : 'This file contains no valid references.'}</p>
+          </div>`;
       } else {
-        // Entries list
+        // B7. Large file handling (truncate DOM)
+        const limit = 500;
+        const display = filtered.slice(0, limit);
+
         html += '<div class="space-y-4">';
-        
-        // Truncation for performance (U7/B7)
-        var limit = 200;
-        var displayItems = filtered.slice(0, limit);
-        
-        displayItems.forEach(function (entry) {
-          var tags = entry.entryTags || {};
-          var title = stripBraces(tags.title || 'Untitled');
-          var author = stripBraces(tags.author || 'Unknown');
-          var year = tags.year || tags.date || '';
-          var type = (entry.entryType || 'article').toLowerCase();
-          
+        display.forEach(entry => {
+          const tags = entry.entryTags || {};
+          const title = cleanText(tags.title || 'Untitled Reference');
+          const authors = cleanText(tags.author || 'No authors listed');
+          const year = tags.year || tags.date || '';
+          const type = entry.entryType || 'article';
+
           // U9. Content cards
-          html += '<div class="group bg-white rounded-xl border border-surface-200 p-5 hover:border-brand-400 hover:shadow-md transition-all duration-200">';
-          
-          html += '<div class="flex flex-wrap items-start justify-between gap-3 mb-3">';
-          html += '<div class="flex-1 min-w-0">';
-          html += '<h4 class="font-bold text-surface-900 leading-tight mb-1 group-hover:text-brand-600 transition-colors">' + h.escape(title) + '</h4>';
-          html += '<p class="text-sm text-surface-600 font-medium">' + h.escape(author) + (year ? ' <span class="text-surface-400">(' + h.escape(year) + ')</span>' : '') + '</p>';
-          html += '</div>';
-          html += '<span class="px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-surface-100 text-surface-500 border border-surface-200">' + h.escape(type) + '</span>';
-          html += '</div>';
-          
-          html += '<div class="text-xs font-mono text-brand-600 bg-brand-50/50 px-2 py-1 rounded inline-block mb-4 select-all">@' + h.escape(entry.citationKey) + '</div>';
-          
-          // Tags / Fields
-          html += '<div class="flex flex-wrap gap-2">';
-          var skip = ['title', 'author', 'year', 'date'];
-          Object.keys(tags).forEach(function (key) {
-            if (skip.indexOf(key.toLowerCase()) === -1 && tags[key]) {
-              var val = stripBraces(tags[key]);
-              if (val.length > 200) val = val.substring(0, 197) + '...';
-              html += '<div class="flex items-center text-[11px] bg-surface-50 text-surface-600 rounded-md border border-surface-100 overflow-hidden">';
-              html += '<span class="bg-surface-100 px-2 py-1 font-bold border-r border-surface-200 text-surface-500">' + h.escape(key.toUpperCase()) + '</span>';
-              html += '<span class="px-2 py-1">' + h.escape(val) + '</span>';
-              html += '</div>';
-            }
-          });
-          html += '</div>';
-          
-          html += '</div>';
+          html += `
+            <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:shadow-sm transition-all bg-white group">
+              <div class="flex items-start justify-between gap-4 mb-2">
+                <div class="flex-1">
+                  <h4 class="font-bold text-surface-900 leading-snug group-hover:text-brand-600 transition-colors">${h.escape(title)}</h4>
+                  <p class="text-sm text-surface-600 mt-1">${h.escape(authors)} ${year ? `<span class="text-surface-400">(${h.escape(year)})</span>` : ''}</p>
+                </div>
+                <span class="shrink-0 px-2 py-0.5 rounded bg-surface-100 text-[10px] font-bold text-surface-500 uppercase tracking-wider border border-surface-200">${h.escape(type)}</span>
+              </div>
+              
+              <div class="flex items-center gap-2 mb-3">
+                <span class="text-[10px] font-mono bg-brand-50 text-brand-700 px-1.5 py-0.5 rounded border border-brand-100 select-all">@${h.escape(entry.citationKey)}</span>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                ${Object.entries(tags)
+                  .filter(([k, v]) => !['title', 'author', 'year', 'date'].includes(k.toLowerCase()) && v)
+                  .map(([k, v]) => `
+                    <div class="flex text-xs">
+                      <span class="w-20 shrink-0 font-medium text-surface-400 uppercase tracking-tighter">${h.escape(k)}</span>
+                      <span class="text-surface-700 truncate" title="${h.escape(cleanText(v))}">${h.escape(cleanText(v))}</span>
+                    </div>
+                  `).join('')}
+              </div>
+            </div>`;
         });
 
         if (filtered.length > limit) {
-          html += '<div class="py-8 text-center text-surface-500 text-sm border-t border-surface-100 mt-4">' +
-            'Showing first ' + limit + ' of ' + filtered.length + ' entries. Use search to find specific records.' +
-          '</div>';
+          html += `
+            <div class="p-6 text-center text-surface-500 text-sm italic">
+              Showing first ${limit} of ${filtered.length} entries. Use search to find specific items.
+            </div>`;
         }
-        
         html += '</div>';
       }
 
       html += '</div>';
-
       h.render(html);
 
-      // Search event
-      var searchInput = document.getElementById('bib-search');
+      // Re-bind events
+      const searchInput = document.getElementById('bib-search');
       if (searchInput) {
-        searchInput.focus();
-        // Place cursor at end
-        var val = searchInput.value;
-        searchInput.value = '';
-        searchInput.value = val;
-        
-        searchInput.addEventListener('input', function (e) {
-          h.setState('query', e.target.value);
-          render(file, entries, h);
+        searchInput.addEventListener('input', (e) => {
+          _query = e.target.value;
+          render(file, h);
+          // Maintain focus
+          document.getElementById('bib-search').focus();
         });
+        
+        // Restore focus and cursor position if it was active
+        if (_query) {
+          searchInput.focus();
+          searchInput.setSelectionRange(_query.length, _query.length);
+        }
       }
     }
 
-    function stripBraces(str) {
+    function cleanText(str) {
       if (typeof str !== 'string') return '';
-      return str.replace(/\{/g, '').replace(/\}/g, '');
+      // Remove BibTeX curly braces around text/formulas
+      return str.replace(/\{+/g, '').replace(/\}+/g, '').trim();
     }
 
     function formatSize(bytes) {
-      if (bytes === 0) return '0 B';
-      var k = 1024;
-      var sizes = ['B', 'KB', 'MB', 'GB'];
-      var i = Math.floor(Math.log(bytes) / Math.log(k));
+      if (!bytes) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
       return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     }
   };
