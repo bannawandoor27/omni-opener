@@ -14,14 +14,12 @@
       fullPlist: null,
       searchQuery: '',
       sortConfig: { key: 'path', direction: 'asc' },
-      showRawPlist: false
+      showRawPlist: false,
+      appIconUrl: null
     };
 
-    const MAX_ENTRIES = 1000;
-
     function formatSize(bytes) {
-      if (bytes === 0) return '0 B';
-      if (!bytes) return '—';
+      if (!bytes || bytes === 0) return '0 B';
       const k = 1024;
       const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -38,6 +36,13 @@
         .replace(/'/g, '&#039;');
     }
 
+    function revokeIcon() {
+      if (_state.appIconUrl) {
+        URL.revokeObjectURL(_state.appIconUrl);
+        _state.appIconUrl = null;
+      }
+    }
+
     OmniTool.create(mountEl, toolConfig, {
       accept: '.ipa',
       dropLabel: 'Drop an iOS IPA file to inspect',
@@ -51,28 +56,39 @@
       },
 
       onFile: async function _onFileFn(file, content, helpers) {
-        _state.file = file;
+        // B5: Memory management - revoke previous icon
+        revokeIcon();
         
-        // B1: Race condition & dependency check
+        // Reset state for new file
+        _state.file = file;
+        _state.entries = [];
+        _state.metadata = {};
+        _state.fullPlist = null;
+        _state.searchQuery = '';
+        _state.showRawPlist = false;
+
+        // B1: Dependency & Race condition check
         if (!window.JSZip || !window.plist) {
-          helpers.showLoading('Loading dependencies...');
+          helpers.showLoading('Loading bundle inspectors...');
           let attempts = 0;
           while (!window.JSZip || !window.plist) {
             await new Promise(r => setTimeout(r, 100));
-            if (++attempts > 100) {
-              helpers.showError('Dependency Timeout', 'Failed to load required libraries. Please check your connection.');
+            if (++attempts > 60) {
+              helpers.showError('Timeout', 'Failed to load required libraries. Please check your connection.');
               return;
             }
           }
         }
 
-        helpers.showLoading('Parsing IPA package...');
+        // U2, U6: Descriptive loading state
+        helpers.showLoading('Decompressing IPA package...');
 
         try {
-          // B2: binary content is ArrayBuffer
+          // B2: Handle binary content as ArrayBuffer
           const zip = await JSZip.loadAsync(content);
           const entries = [];
           let infoPlistEntry = null;
+          let possibleIcons = [];
 
           zip.forEach((path, entry) => {
             entries.push({
@@ -83,27 +99,37 @@
             });
 
             // Find the main Info.plist (Payload/*.app/Info.plist)
-            if (!infoPlistEntry && path.match(/^Payload\/[^/]+\.app\/Info\.plist$/i)) {
+            if (path.match(/^Payload\/[^/]+\.app\/Info\.plist$/i)) {
               infoPlistEntry = entry;
+            }
+            
+            // Collect potential app icons
+            if (path.match(/\.png$/i) && (path.includes('AppIcon') || path.includes('Icon'))) {
+              possibleIcons.push({ path, entry });
             }
           });
 
+          // U5: Empty state handling
           if (entries.length === 0) {
-            helpers.showError('Invalid IPA', 'This file appears to be an empty archive.');
+            helpers.showError('Empty Archive', 'This .ipa file appears to be empty or invalid.');
             return;
           }
 
           _state.entries = entries;
+          
+          // Default metadata from filename
           _state.metadata = {
-            name: 'Unknown App',
+            name: file.name.replace(/\.ipa$/i, ''),
             bundleId: 'Unknown',
             version: 'N/A',
             minOS: 'N/A',
-            platform: 'iOS'
+            team: 'N/A'
           };
 
           if (infoPlistEntry) {
+            helpers.showLoading('Parsing application manifest...');
             try {
+              // B3: Properly await async zip operations
               const buffer = await infoPlistEntry.async('uint8array');
               const text = new TextDecoder().decode(buffer);
               
@@ -112,39 +138,51 @@
                 _state.fullPlist = parsed;
                 _state.metadata = {
                   name: parsed.CFBundleDisplayName || parsed.CFBundleName || _state.metadata.name,
-                  bundleId: parsed.CFBundleIdentifier || _state.metadata.bundleId,
-                  version: parsed.CFBundleShortVersionString || parsed.CFBundleVersion || _state.metadata.version,
-                  minOS: parsed.MinimumOSVersion || _state.metadata.minOS,
-                  platform: 'iOS'
+                  bundleId: parsed.CFBundleIdentifier || 'Unknown',
+                  version: parsed.CFBundleShortVersionString || parsed.CFBundleVersion || 'N/A',
+                  minOS: parsed.MinimumOSVersion || 'N/A',
+                  team: parsed.TeamIdentifier || 'N/A'
                 };
-              } else {
-                // Heuristic for binary plists
-                const latin = new TextDecoder('latin1').decode(buffer);
-                const extract = (key) => {
-                  const idx = latin.indexOf(key);
-                  if (idx === -1) return null;
-                  const part = latin.substring(idx + key.length, idx + key.length + 128);
-                  const match = part.match(/[a-zA-Z0-9._-]{4,}/g);
-                  return match ? match[0] : null;
-                };
-                _state.metadata.bundleId = extract('CFBundleIdentifier') || _state.metadata.bundleId;
-                _state.metadata.name = extract('CFBundleDisplayName') || extract('CFBundleName') || _state.metadata.name;
-                _state.metadata.version = extract('CFBundleShortVersionString') || extract('CFBundleVersion') || _state.metadata.version;
-                _state.metadata.platform = 'iOS (Binary Manifest)';
+
+                // Attempt to find the best icon based on plist definitions
+                let iconName = null;
+                if (parsed.CFBundleIcons?.CFBundlePrimaryIcon?.CFBundleIconFiles) {
+                  iconName = parsed.CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconFiles.slice(-1)[0];
+                } else if (parsed.CFBundleIconFiles) {
+                  iconName = parsed.CFBundleIconFiles.slice(-1)[0];
+                }
+
+                if (iconName) {
+                  const match = possibleIcons.find(i => i.path.includes(iconName));
+                  if (match) {
+                    const blob = await match.entry.async('blob');
+                    _state.appIconUrl = URL.createObjectURL(blob);
+                  }
+                }
               }
             } catch (e) {
               console.warn('Metadata parsing failed', e);
             }
           }
 
+          // Fallback icon detection
+          if (!_state.appIconUrl && possibleIcons.length > 0) {
+            // Choose the one that looks most like a standard icon
+            const fallback = possibleIcons.sort((a, b) => b.path.length - a.path.length)[0];
+            const blob = await fallback.entry.async('blob');
+            _state.appIconUrl = URL.createObjectURL(blob);
+          }
+
           render(helpers);
         } catch (err) {
           console.error(err);
-          helpers.showError('Could not open IPA file', 'The file may be corrupted or is not a valid IPA (ZIP) archive.');
+          // U3: Friendly error message
+          helpers.showError('Could not open IPA', 'The file may be encrypted (FairPlay DRM) or corrupted. Only decrypted IPAs can be inspected.');
         }
       },
 
       onDestroy: function() {
+        revokeIcon();
         _state = null;
       },
 
@@ -158,11 +196,14 @@
           }
         },
         {
-          label: '📥 Metadata JSON',
+          label: '📥 Download Metadata',
           onClick: function(helpers) {
             if (!_state) return;
-            const name = _state.file.name.replace(/\.[^/.]+$/, "");
-            helpers.download(`${name}-info.json`, JSON.stringify(_state.metadata, null, 2));
+            const data = {
+              metadata: _state.metadata,
+              manifest: _state.fullPlist
+            };
+            helpers.download('ipa-metadata.json', JSON.stringify(data, null, 2));
           }
         }
       ]
@@ -171,133 +212,153 @@
     function render(helpers) {
       if (!_state || !_state.file) return;
 
-      const { file, entries, metadata, searchQuery, sortConfig, showRawPlist, fullPlist } = _state;
+      const { file, entries, metadata, searchQuery, sortConfig, showRawPlist, fullPlist, appIconUrl } = _state;
 
-      // Filtering
+      // Filter and sort logic
       const query = searchQuery.toLowerCase().trim();
-      let filtered = entries.filter(e => e.path.toLowerCase().includes(query));
+      const filtered = entries.filter(e => e.path.toLowerCase().includes(query));
 
-      // Sorting
       filtered.sort((a, b) => {
-        let valA = a[sortConfig.key];
-        let valB = b[sortConfig.key];
-        
-        if (typeof valA === 'string') {
-          valA = valA.toLowerCase();
-          valB = valB.toLowerCase();
+        let aVal = a[sortConfig.key];
+        let bVal = b[sortConfig.key];
+        if (typeof aVal === 'string') {
+          aVal = aVal.toLowerCase();
+          bVal = bVal.toLowerCase();
         }
-
-        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
         return 0;
       });
 
-      const visible = filtered.slice(0, MAX_ENTRIES);
+      // B7: Truncation for large file lists
+      const MAX_VISIBLE = 1000;
+      const visible = filtered.slice(0, MAX_VISIBLE);
 
-      // U1: File Info Bar
+      // U1: File info bar
       const infoBar = `
-        <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-4">
+        <div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6">
           <span class="font-semibold text-surface-800">${escapeHtml(file.name)}</span>
           <span class="text-surface-300">|</span>
           <span>${formatSize(file.size)}</span>
           <span class="text-surface-300">|</span>
-          <span class="text-surface-500">.ipa file</span>
+          <span class="text-surface-500">iOS App Package</span>
         </div>
       `;
 
-      // Metadata Cards
-      const metadataCards = `
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:shadow-sm transition-all bg-white">
-            <p class="text-xs font-medium text-surface-400 uppercase mb-1">App Name</p>
-            <p class="text-sm font-bold text-surface-900 truncate" title="${escapeHtml(metadata.name)}">${escapeHtml(metadata.name)}</p>
+      // U9: Header content card
+      const header = `
+        <div class="flex flex-col md:flex-row gap-6 mb-8 p-6 rounded-2xl border border-surface-200 bg-white shadow-sm transition-all">
+          <div class="flex-shrink-0 mx-auto md:mx-0">
+            ${appIconUrl ? `
+              <img src="${appIconUrl}" class="w-24 h-24 rounded-[22.5%] shadow-md border border-surface-100 bg-white p-0.5" alt="App Icon">
+            ` : `
+              <div class="w-24 h-24 rounded-[22.5%] bg-surface-50 border border-surface-100 flex items-center justify-center text-surface-300">
+                <svg class="w-12 h-12" fill="currentColor" viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.1 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.97 12.57 4.62 9.72c.82-1.42 2.29-2.31 3.88-2.34 1.23-.02 2.38.83 3.14.83.75 0 2.13-.97 3.57-.83 1.44.02 2.7.53 3.52 1.73-3.08 1.81-2.58 5.7.47 7.39zM12 6.72c.64-1.02.53-2.33.02-3.41 1.13.06 2.3.83 2.98 1.83.67 1.01.66 2.26.01 3.39-1.2-.1-2.3-.92-3.01-1.81z"/></svg>
+              </div>
+            `}
           </div>
-          <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:shadow-sm transition-all bg-white">
-            <p class="text-xs font-medium text-surface-400 uppercase mb-1">Bundle ID</p>
-            <p class="text-sm font-mono text-surface-700 truncate" title="${escapeHtml(metadata.bundleId)}">${escapeHtml(metadata.bundleId)}</p>
-          </div>
-          <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:shadow-sm transition-all bg-white">
-            <p class="text-xs font-medium text-surface-400 uppercase mb-1">Version</p>
-            <p class="text-sm font-semibold text-surface-900">${escapeHtml(metadata.version)}</p>
-          </div>
-          <div class="rounded-xl border border-surface-200 p-4 hover:border-brand-300 hover:shadow-sm transition-all bg-white">
-            <p class="text-xs font-medium text-surface-400 uppercase mb-1">Min iOS</p>
-            <p class="text-sm font-semibold text-surface-900">${escapeHtml(metadata.minOS)}</p>
+          <div class="flex-grow min-w-0">
+            <h2 class="text-2xl font-bold text-surface-900 truncate mb-1 text-center md:text-left">${escapeHtml(metadata.name)}</h2>
+            <p class="text-brand-600 font-mono text-sm mb-4 text-center md:text-left">${escapeHtml(metadata.bundleId)}</p>
+            
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div class="bg-surface-50/50 p-2.5 rounded-xl border border-surface-100">
+                <span class="block text-[10px] uppercase font-bold text-surface-400 tracking-tight mb-0.5">Version</span>
+                <span class="text-sm font-semibold text-surface-700">${escapeHtml(metadata.version)}</span>
+              </div>
+              <div class="bg-surface-50/50 p-2.5 rounded-xl border border-surface-100">
+                <span class="block text-[10px] uppercase font-bold text-surface-400 tracking-tight mb-0.5">Min iOS</span>
+                <span class="text-sm font-semibold text-surface-700">${escapeHtml(metadata.minOS)}</span>
+              </div>
+              <div class="bg-surface-50/50 p-2.5 rounded-xl border border-surface-100">
+                <span class="block text-[10px] uppercase font-bold text-surface-400 tracking-tight mb-0.5">Bundle Size</span>
+                <span class="text-sm font-semibold text-surface-700">${formatSize(file.size)}</span>
+              </div>
+              <div class="bg-surface-50/50 p-2.5 rounded-xl border border-surface-100">
+                <span class="block text-[10px] uppercase font-bold text-surface-400 tracking-tight mb-0.5">Signer</span>
+                <span class="text-sm font-semibold text-surface-700 truncate" title="${escapeHtml(metadata.team)}">${escapeHtml(metadata.team)}</span>
+              </div>
+            </div>
           </div>
         </div>
       `;
 
-      // U8: Code Block for Plist
-      const plistSection = fullPlist ? `
-        <div class="mb-6">
+      // U8: Code block for Plist
+      const manifestSection = fullPlist ? `
+        <div class="mb-8">
           <div class="flex items-center justify-between mb-3">
             <h3 class="font-semibold text-surface-800">Info.plist Manifest</h3>
-            <button id="btn-toggle-plist" class="text-xs font-medium text-brand-600 hover:bg-brand-50 px-3 py-1 rounded-lg transition-colors border border-brand-100">
-              ${showRawPlist ? 'Hide Raw Data' : 'View Raw Data'}
+            <button id="toggle-raw-btn" class="text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 px-3 py-1.5 rounded-lg border border-brand-200 transition-all">
+              ${showRawPlist ? 'Hide Source' : 'View Source'}
             </button>
           </div>
           ${showRawPlist ? `
             <div class="rounded-xl overflow-hidden border border-surface-200 shadow-sm animate-in fade-in zoom-in-95 duration-200">
-              <pre class="p-4 text-xs font-mono bg-gray-950 text-gray-100 overflow-x-auto leading-relaxed max-h-[400px]">${escapeHtml(JSON.stringify(fullPlist, null, 2))}</pre>
+              <pre class="p-4 text-xs font-mono bg-gray-950 text-gray-100 overflow-x-auto leading-relaxed max-h-96">${escapeHtml(JSON.stringify(fullPlist, null, 2))}</pre>
             </div>
           ` : ''}
         </div>
       ` : '';
 
-      // Search Box (Format excellence for Archives)
-      const searchHtml = `
-        <div class="relative mb-4">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-surface-400">
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-          </div>
+      // ARCHIVES: Search box
+      const searchSection = `
+        <div class="relative mb-6">
           <input 
             type="text" 
-            id="search-input"
-            placeholder="Search ${entries.length} files by path..." 
+            id="path-search" 
+            placeholder="Search through ${entries.length} bundle files..." 
             value="${escapeHtml(searchQuery)}"
-            class="block w-full pl-10 pr-4 py-2.5 border border-surface-200 rounded-xl leading-5 bg-white placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 sm:text-sm transition-all shadow-sm"
-          />
+            class="w-full pl-4 pr-12 py-3.5 bg-white border border-surface-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all shadow-sm"
+          >
+          <div class="absolute right-4 top-1/2 -translate-y-1/2 text-surface-400">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          </div>
         </div>
       `;
 
-      const sortIcon = (key) => {
-        if (sortConfig.key !== key) return '<span class="ml-1 opacity-20">↕</span>';
-        return sortConfig.direction === 'asc' ? '<span class="ml-1 text-brand-500">▲</span>' : '<span class="ml-1 text-brand-500">▼</span>';
+      const sortIco = (k) => {
+        if (sortConfig.key !== k) return '<span class="ml-1 opacity-20 text-[10px]">↕</span>';
+        return sortConfig.direction === 'asc' ? '<span class="ml-1 text-brand-500 text-[10px]">▲</span>' : '<span class="ml-1 text-brand-500 text-[10px]">▼</span>';
       };
 
-      // U7: Beautiful Table
-      const tableHtml = `
-        <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white shadow-sm mb-4">
+      // U10: Section header with count
+      const listHeader = `
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold text-surface-800">Package Files</h3>
+          <span class="text-xs bg-brand-100 text-brand-700 px-2.5 py-1 rounded-full font-bold">${filtered.length} items</span>
+        </div>
+      `;
+
+      // U7: Table implementation
+      const table = `
+        <div class="overflow-x-auto rounded-xl border border-surface-200 shadow-sm bg-white">
           <table class="min-w-full text-sm">
             <thead>
-              <tr class="bg-surface-50">
-                <th class="cursor-pointer sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 hover:bg-surface-100 transition-colors" data-sort="path">
-                  File Path ${sortIcon('path')}
+              <tr class="bg-surface-50 border-b border-surface-200">
+                <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-left font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 transition-colors" data-sort="path">
+                  File Path ${sortIco('path')}
                 </th>
-                <th class="cursor-pointer sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 hover:bg-surface-100 transition-colors w-32" data-sort="size">
-                  Size ${sortIcon('size')}
+                <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-right font-semibold text-surface-700 border-b border-surface-200 cursor-pointer hover:bg-surface-100 w-32" data-sort="size">
+                  Size ${sortIco('size')}
                 </th>
-                <th class="sticky top-0 bg-surface-50/95 backdrop-blur px-4 py-3 text-center font-semibold text-surface-700 border-b border-surface-200 w-24">
+                <th class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 text-center font-semibold text-surface-700 border-b border-surface-200 w-24">
                   Action
                 </th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-surface-100">
+            <tbody>
               ${visible.length > 0 ? visible.map(e => `
-                <tr class="even:bg-surface-50/50 hover:bg-brand-50 transition-colors group">
-                  <td class="px-4 py-2.5 text-surface-700 border-b border-surface-100 font-mono text-xs break-all">
-                    <span class="inline-block w-5 text-center mr-1 text-base opacity-70">${e.isDirectory ? '📁' : '📄'}</span>
+                <tr class="even:bg-surface-50 hover:bg-brand-50 transition-colors group">
+                  <td class="px-4 py-2 text-surface-700 border-b border-surface-100 font-mono text-[11px] break-all">
+                    <span class="inline-block mr-2 opacity-50">${e.isDirectory ? '📁' : '📄'}</span>
                     ${escapeHtml(e.path)}
                   </td>
-                  <td class="px-4 py-2.5 text-surface-500 border-b border-surface-100 text-right tabular-nums whitespace-nowrap">
-                    ${e.isDirectory ? '<span class="opacity-20">—</span>' : formatSize(e.size)}
+                  <td class="px-4 py-2 text-surface-700 border-b border-surface-100 text-right tabular-nums whitespace-nowrap">
+                    ${e.isDirectory ? '-' : formatSize(e.size)}
                   </td>
-                  <td class="px-4 py-2.5 text-surface-700 border-b border-surface-100 text-center">
+                  <td class="px-4 py-2 text-surface-700 border-b border-surface-100 text-center">
                     ${!e.isDirectory ? `
-                      <button 
-                        class="extract-btn text-brand-600 hover:text-brand-700 font-medium text-xs px-2.5 py-1 rounded-lg bg-white border border-surface-200 shadow-sm hover:border-brand-200 hover:shadow transition-all" 
-                        data-path="${escapeHtml(e.path)}"
-                      >
+                      <button data-path="${escapeHtml(e.path)}" class="extract-trigger text-brand-600 hover:text-brand-700 font-bold text-[10px] uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
                         Extract
                       </button>
                     ` : ''}
@@ -305,8 +366,8 @@
                 </tr>
               `).join('') : `
                 <tr>
-                  <td colspan="3" class="px-4 py-16 text-center text-surface-400 italic bg-surface-50/30">
-                    No files found matching "${escapeHtml(searchQuery)}"
+                  <td colspan="3" class="px-4 py-16 text-center text-surface-400 italic bg-surface-50/20">
+                    No files found matching your search.
                   </td>
                 </tr>
               `}
@@ -315,41 +376,35 @@
         </div>
       `;
 
-      // B7: Pagination Notice
-      const paginationNotice = filtered.length > MAX_ENTRIES ? `
-        <div class="p-4 bg-surface-50 border border-dashed border-surface-200 rounded-xl text-center text-xs text-surface-500">
-          Showing first ${MAX_ENTRIES} of ${filtered.length} items. Use search to find specific files.
+      const paginationNotice = filtered.length > MAX_VISIBLE ? `
+        <div class="mt-4 p-4 bg-surface-50 border border-dashed border-surface-200 rounded-xl text-center text-xs text-surface-500">
+          Showing first ${MAX_VISIBLE} of ${filtered.length} entries. Refine your search to find specific files.
         </div>
       ` : '';
 
       helpers.render(`
-        <div class="max-w-6xl mx-auto p-4 md:p-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <div class="max-w-6xl mx-auto p-4 md:p-8 animate-in fade-in duration-500">
           ${infoBar}
-          ${metadataCards}
-          ${plistSection}
-          
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="font-semibold text-surface-800">Package Files</h3>
-            <span class="text-xs bg-brand-100 text-brand-700 px-2.5 py-1 rounded-full font-bold">${filtered.length} items</span>
-          </div>
-
-          ${searchHtml}
-          ${tableHtml}
+          ${header}
+          ${manifestSection}
+          ${listHeader}
+          ${searchSection}
+          ${table}
           ${paginationNotice}
         </div>
       `);
 
       // Event Bindings
-      const searchEl = document.getElementById('search-input');
-      if (searchEl) {
-        searchEl.addEventListener('input', (e) => {
+      const searchInput = document.getElementById('path-search');
+      if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
           _state.searchQuery = e.target.value;
           render(helpers);
         });
-        if (searchQuery) searchEl.focus();
+        if (searchQuery) searchInput.focus();
       }
 
-      const toggleBtn = document.getElementById('btn-toggle-plist');
+      const toggleBtn = document.getElementById('toggle-raw-btn');
       if (toggleBtn) {
         toggleBtn.addEventListener('click', () => {
           _state.showRawPlist = !_state.showRawPlist;
@@ -359,35 +414,35 @@
 
       helpers.getRenderEl().querySelectorAll('th[data-sort]').forEach(th => {
         th.addEventListener('click', () => {
-          const key = th.getAttribute('data-sort');
-          if (_state.sortConfig.key === key) {
+          const k = th.getAttribute('data-sort');
+          if (_state.sortConfig.key === k) {
             _state.sortConfig.direction = _state.sortConfig.direction === 'asc' ? 'desc' : 'asc';
           } else {
-            _state.sortConfig.key = key;
+            _state.sortConfig.key = k;
             _state.sortConfig.direction = 'asc';
           }
           render(helpers);
         });
       });
 
-      helpers.getRenderEl().querySelectorAll('.extract-btn').forEach(btn => {
+      helpers.getRenderEl().querySelectorAll('.extract-trigger').forEach(btn => {
         btn.addEventListener('click', async () => {
           const path = btn.getAttribute('data-path');
-          const entry = _state.entries.find(e => e.path === path);
+          const entry = entries.find(e => e.path === path);
           if (!entry) return;
 
-          const oldHtml = btn.innerHTML;
-          btn.disabled = true;
+          const originalText = btn.textContent;
           btn.textContent = '...';
+          btn.disabled = true;
 
           try {
             const blob = await entry._entry.async('blob');
             helpers.download(path.split('/').pop(), blob);
           } catch (err) {
-            helpers.showError('Extraction failed', 'Could not read file from archive.');
+            helpers.showError('Extraction failed', 'Could not extract the file from the package.');
           } finally {
+            btn.textContent = originalText;
             btn.disabled = false;
-            btn.innerHTML = oldHtml;
           }
         });
       });
