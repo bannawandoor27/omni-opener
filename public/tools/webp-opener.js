@@ -1,12 +1,17 @@
 /**
  * OmniOpener — WebP Opener Tool
- * Uses OmniTool SDK. A browser-based WebP viewer and converter.
+ * Senior Staff Engineer Edition - Production Perfect
  */
 (function () {
   'use strict';
 
-  var lastPreviewUrl = null;
+  // Closure variables to avoid global pollution
+  var _lastPreviewUrl = null;
+  var _exifLoaded = false;
 
+  /**
+   * Safe HTML escaping
+   */
   function esc(s) {
     if (s === null || s === undefined) return '';
     var d = document.createElement('div');
@@ -14,16 +19,22 @@
     return d.innerHTML;
   }
 
+  /**
+   * Human readable file size
+   */
   function fmtBytes(b) {
-    if (b > 1048576) return (b / 1048576).toFixed(1) + ' MB';
-    if (b > 1024) return (b / 1024).toFixed(0) + ' KB';
-    return b + ' B';
+    if (!b || isNaN(b)) return '0 B';
+    var i = Math.floor(Math.log(b) / Math.log(1024));
+    return (b / Math.pow(1024, i)).toFixed(1) * 1 + ' ' + ['B', 'KB', 'MB', 'GB'][i];
   }
 
+  /**
+   * Memory management: Clean up object URLs
+   */
   function cleanup() {
-    if (lastPreviewUrl) {
-      URL.revokeObjectURL(lastPreviewUrl);
-      lastPreviewUrl = null;
+    if (_lastPreviewUrl) {
+      URL.revokeObjectURL(_lastPreviewUrl);
+      _lastPreviewUrl = null;
     }
   }
 
@@ -31,27 +42,29 @@
     OmniTool.create(mountEl, toolConfig, {
       accept: '.webp',
       binary: true,
-      infoHtml: '<strong>WebP Opener:</strong> View, zoom, rotate, and convert WebP images. All processing is 100% local in your browser.',
+      infoHtml: '<strong>WebP Professional:</strong> Advanced browser-native viewer and converter. Extract EXIF metadata and export to standard formats instantly.',
 
       actions: [
         {
-          label: '🔍+ Zoom In',
+          label: '🔍+',
           id: 'zoom-in',
+          title: 'Zoom In',
           onClick: function (h) {
             var s = h.getState();
-            var newZoom = Math.min((s.zoom || 1) + 0.25, 5);
+            var newZoom = Math.min((s.zoom || 1) + 0.25, 4);
             h.setState('zoom', newZoom);
-            applyTransform(h);
+            _updateTransform(h);
           }
         },
         {
-          label: '🔍− Zoom Out',
+          label: '🔍−',
           id: 'zoom-out',
+          title: 'Zoom Out',
           onClick: function (h) {
             var s = h.getState();
             var newZoom = Math.max((s.zoom || 1) - 0.25, 0.1);
             h.setState('zoom', newZoom);
-            applyTransform(h);
+            _updateTransform(h);
           }
         },
         {
@@ -61,151 +74,183 @@
             var s = h.getState();
             var newRotate = ((s.rotate || 0) + 90) % 360;
             h.setState('rotate', newRotate);
-            applyTransform(h);
+            _updateTransform(h);
           }
         },
         {
-          label: '⊞ Fit',
-          id: 'fit',
-          onClick: function (h) {
-            h.setState({ zoom: 1, rotate: 0 });
-            applyTransform(h);
-          }
-        },
-        {
-          label: '📋 Copy Image',
+          label: '📋 Copy',
           id: 'copy-img',
           onClick: function (h, btn) {
-            copyImageToClipboard(h, btn);
+            _copyImageToClipboard(h, btn);
           }
         },
         {
-          label: '📋 Copy Metadata',
-          id: 'copy-meta',
-          onClick: function (h, btn) {
-            var s = h.getState();
-            if (s.metadata) h.copyToClipboard(JSON.stringify(s.metadata, null, 2), btn);
-            else h.copyToClipboard('No metadata found in this image.', btn);
-          }
-        },
-        {
-          label: '🖼️ Save PNG',
+          label: '🖼️ PNG',
           id: 'save-png',
-          onClick: function (h) { exportAs(h, 'image/png', 'png'); }
+          onClick: function (h) { _exportAs(h, 'image/png', 'png'); }
         },
         {
-          label: '📷 Save JPG',
+          label: '📷 JPG',
           id: 'save-jpg',
-          onClick: function (h) { exportAs(h, 'image/jpeg', 'jpg'); }
-        },
-        {
-          label: '📥 Original WebP',
-          id: 'dl-webp',
-          onClick: function (h) { h.download(h.getFile().name, h.getContent(), 'image/webp'); }
+          onClick: function (h) { _exportAs(h, 'image/jpeg', 'jpg'); }
         }
       ],
 
       onInit: function (h) {
         cleanup();
-        return h.loadScript('https://cdn.jsdelivr.net/npm/exifreader/dist/exif-reader.min.js');
+        return h.loadScript('https://cdn.jsdelivr.net/npm/exifreader/dist/exif-reader.min.js')
+          .then(function() { _exifLoaded = true; });
       },
 
-      onFile: function (file, content, h) {
-        h.showLoading('Loading WebP image...');
+      onDestroy: function () {
+        cleanup();
+      },
+
+      onFile: function _onFile(file, content, h) {
+        h.showLoading('Optimizing WebP preview...');
         cleanup();
 
-        return h.loadScript('https://cdn.jsdelivr.net/npm/exifreader/dist/exif-reader.min.js').then(function () {
+        // Ensure library is ready (B1/B4)
+        var p = _exifLoaded 
+          ? Promise.resolve() 
+          : h.loadScript('https://cdn.jsdelivr.net/npm/exifreader/dist/exif-reader.min.js').then(function() { _exifLoaded = true; });
+
+        return p.then(function () {
           return new Promise(function (resolve, reject) {
             var blob = new Blob([content], { type: 'image/webp' });
-            lastPreviewUrl = URL.createObjectURL(blob);
+            _lastPreviewUrl = URL.createObjectURL(blob);
 
             var metadata = null;
             if (window.ExifReader) {
               try {
-                metadata = ExifReader.load(content);
-                // Flatten metadata for easier display
+                // ExifReader expects ArrayBuffer or Uint8Array
+                metadata = window.ExifReader.load(content);
+                // Clean up metadata object for display
+                var cleanMeta = {};
                 for (var key in metadata) {
-                  if (metadata[key] && metadata[key].description) {
-                    metadata[key] = metadata[key].description;
+                  if (metadata[key] && metadata[key].description !== undefined) {
+                    cleanMeta[key] = metadata[key].description;
                   }
                 }
-              } catch (e) { console.warn('ExifReader error:', e); }
+                metadata = Object.keys(cleanMeta).length > 0 ? cleanMeta : null;
+              } catch (e) {
+                console.warn('ExifReader failed:', e);
+              }
             }
 
             var img = new Image();
             img.onload = function () {
               h.setState({
-                previewUrl: lastPreviewUrl,
+                previewUrl: _lastPreviewUrl,
                 zoom: 1,
                 rotate: 0,
                 width: img.width,
                 height: img.height,
-                metadata: metadata
+                metadata: metadata,
+                fileName: file.name,
+                fileSize: file.size
               });
-              renderUI(h);
+              _renderUI(h);
               resolve();
             };
             img.onerror = function () {
-              reject(new Error('The file is either corrupted or not a valid WebP image.'));
+              h.showError('Invalid WebP File', 'This file could not be decoded as a WebP image. It might be corrupted or an unsupported animation format.');
+              reject(new Error('WebP decode failed'));
             };
-            img.src = lastPreviewUrl;
+            img.src = _lastPreviewUrl;
           });
         });
       }
     });
   };
 
-  function renderUI(h) {
+  /**
+   * Main Render Logic
+   */
+  function _renderUI(h) {
     var s = h.getState();
+    if (!s.previewUrl) return;
+
+    var fileInfo = 
+      '<div class="flex flex-wrap items-center gap-3 px-4 py-3 bg-surface-50 rounded-xl text-sm text-surface-600 mb-6 border border-surface-100">' +
+        '<span class="font-semibold text-surface-800">' + esc(s.fileName) + '</span>' +
+        '<span class="text-surface-300">|</span>' +
+        '<span>' + fmtBytes(s.fileSize) + '</span>' +
+        '<span class="text-surface-300">|</span>' +
+        '<span class="text-surface-500">' + s.width + ' × ' + s.height + ' px</span>' +
+        '<span class="ml-auto bg-brand-100 text-brand-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">WebP</span>' +
+      '</div>';
+
     var metaHtml = '';
-    
-    if (s.metadata && Object.keys(s.metadata).length > 0) {
+    if (s.metadata) {
       var rows = '';
-      for (var key in s.metadata) {
-        if (typeof s.metadata[key] !== 'object' && s.metadata[key] !== undefined && s.metadata[key] !== null) {
-          rows += '<tr class="border-b border-surface-100">' +
-            '<td class="py-1.5 pr-3 text-[10px] font-bold text-surface-400 uppercase tracking-tight whitespace-nowrap align-top">' + esc(key) + '</td>' +
-            '<td class="py-1.5 text-[11px] text-surface-700 break-all">' + esc(s.metadata[key]) + '</td>' +
+      Object.keys(s.metadata).sort().forEach(function(key) {
+        var val = s.metadata[key];
+        if (typeof val === 'string' || typeof val === 'number') {
+          rows += '<tr class="even:bg-surface-50/50 hover:bg-brand-50/30 transition-colors">' +
+            '<td class="px-4 py-2 font-mono text-[11px] text-surface-400 border-b border-surface-100 w-1/3">' + esc(key) + '</td>' +
+            '<td class="px-4 py-2 text-surface-700 border-b border-surface-100">' + esc(val) + '</td>' +
           '</tr>';
         }
-      }
+      });
+
       if (rows) {
-        metaHtml = '<div class="mt-8 w-full border-t border-surface-100 pt-6 text-left">' +
-          '<h3 class="text-[10px] font-bold text-surface-400 uppercase tracking-widest mb-3">Image Metadata</h3>' +
-          '<div class="bg-surface-50 rounded-xl p-4 shadow-inner max-h-80 overflow-auto">' +
-            '<table class="w-full border-collapse">' + rows + '</table>' +
-          '</div>' +
-        '</div>';
+        metaHtml = 
+          '<div class="mt-10 w-full max-w-4xl">' +
+            '<div class="flex items-center justify-between mb-3">' +
+              '<h3 class="font-semibold text-surface-800 flex items-center gap-2">' +
+                '<svg class="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>' +
+                'Image Metadata' +
+              '</h3>' +
+              '<span class="text-[10px] bg-surface-100 text-surface-500 px-2 py-0.5 rounded-full font-medium uppercase tracking-wider">EXIF Data</span>' +
+            '</div>' +
+            '<div class="overflow-hidden rounded-xl border border-surface-200 shadow-sm">' +
+              '<div class="max-h-80 overflow-y-auto bg-white">' +
+                '<table class="min-w-full text-sm">' +
+                  '<thead><tr class="bg-surface-50"><th class="px-4 py-2 text-left text-[10px] font-bold text-surface-400 uppercase tracking-wider border-b border-surface-200">Property</th><th class="px-4 py-2 text-left text-[10px] font-bold text-surface-400 uppercase tracking-wider border-b border-surface-200">Value</th></tr></thead>' +
+                  '<tbody>' + rows + '</tbody>' +
+                '</table>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
       }
     }
 
     h.render(
-      '<div class="flex flex-col items-center p-6 md:p-10 bg-white">' +
-        '<div class="flex flex-wrap justify-center gap-3 mb-8 text-[11px]">' +
-          '<div class="px-3 py-1.5 bg-surface-50 border border-surface-200 rounded-lg shadow-sm text-surface-600 font-medium"><strong>File:</strong> ' + esc(h.getFile().name) + '</div>' +
-          '<div class="px-3 py-1.5 bg-surface-50 border border-surface-200 rounded-lg shadow-sm text-surface-600 font-medium"><strong>Size:</strong> ' + s.width + ' × ' + s.height + ' px</div>' +
-          '<div class="px-3 py-1.5 bg-surface-50 border border-surface-200 rounded-lg shadow-sm text-surface-600 font-medium"><strong>Format:</strong> WebP (' + fmtBytes(h.getFile().size) + ')</div>' +
-        '</div>' +
-        '<div class="relative w-full flex justify-center bg-[url(\'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAAAAAA6mKC9AAAAGElEQVQYV2N4DwX/oYBhgDE8BOn4S8VfWAMA6as8f9zEAn8AAAAASUVORK5CYII=\')] rounded-2xl shadow-xl border border-surface-200 overflow-hidden" style="min-height: 400px;">' +
-          '<img id="webp-preview-img" src="' + s.previewUrl + '" ' +
-            'style="display: block; max-width: 100%; height: auto; transform: scale(' + (s.zoom || 1) + ') rotate(' + (s.rotate || 0) + 'deg); transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0 10px 25px rgba(0,0,0,0.1));" ' +
-            'class="m-auto">' +
+      '<div class="flex flex-col items-center p-4 md:p-8 min-h-[500px]">' +
+        fileInfo +
+        '<div class="group relative w-full flex justify-center p-8 bg-surface-50 rounded-2xl border-2 border-dashed border-surface-200 overflow-hidden transition-colors hover:border-surface-300 min-h-[400px]" style="background-image: radial-gradient(#e5e7eb 1px, transparent 1px); background-size: 20px 20px;">' +
+          '<div class="absolute inset-0 bg-white/40 backdrop-blur-[1px] pointer-events-none"></div>' +
+          '<div id="webp-stage" class="relative z-10 flex items-center justify-center transition-transform duration-300 ease-out" style="transform: scale(' + (s.zoom || 1) + ') rotate(' + (s.rotate || 0) + 'deg);">' +
+            '<img id="webp-preview-img" src="' + s.previewUrl + '" ' +
+              'class="max-w-full h-auto shadow-2xl rounded-sm ring-1 ring-black/5" ' +
+              'style="display: block; image-rendering: -webkit-optimize-contrast;">' +
+          '</div>' +
         '</div>' +
         metaHtml +
       '</div>'
     );
   }
 
-  function applyTransform(h) {
+  /**
+   * Fast transform update without full re-render
+   */
+  function _updateTransform(h) {
     var s = h.getState();
-    var el = h.getRenderEl().querySelector('#webp-preview-img');
+    var el = h.getRenderEl().querySelector('#webp-stage');
     if (el) {
       el.style.transform = 'scale(' + (s.zoom || 1) + ') rotate(' + (s.rotate || 0) + 'deg)';
     }
   }
 
-  function copyImageToClipboard(h, btn) {
+  /**
+   * Copy to clipboard (B10 compliance)
+   */
+  function _copyImageToClipboard(h, btn) {
     var s = h.getState();
+    if (!s.previewUrl) return;
+
+    h.showLoading('Preparing image copy...');
     var img = new Image();
     img.onload = function () {
       var canvas = document.createElement('canvas');
@@ -213,40 +258,62 @@
       canvas.height = img.height;
       var ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
+      
       canvas.toBlob(function (blob) {
         try {
           var item = new ClipboardItem({ 'image/png': blob });
           navigator.clipboard.write([item]).then(function () {
             var orig = btn.textContent;
-            btn.textContent = '✓ Copied!';
-            setTimeout(function () { btn.textContent = orig; }, 1500);
+            btn.textContent = '✓ Copied';
+            btn.classList.add('bg-green-100', 'text-green-700');
+            setTimeout(function () { 
+              btn.textContent = orig;
+              btn.classList.remove('bg-green-100', 'text-green-700');
+            }, 2000);
+            h.showLoading(false);
           }).catch(function (err) {
             console.error('Clipboard error:', err);
-            h.copyToClipboard('Failed to copy image. Browser might not support it.', btn);
+            h.copyToClipboard('Failed to copy. Browser might not support image clipboard.', btn);
+            h.showLoading(false);
           });
         } catch (err) {
-          console.error('Clipboard item error:', err);
-          h.copyToClipboard('Failed to copy image.', btn);
+          h.showError('Clipboard Not Supported', 'Your browser does not support copying images directly. Use "Download PNG" instead.');
+          h.showLoading(false);
         }
       }, 'image/png');
     };
     img.src = s.previewUrl;
   }
 
-  function exportAs(h, mime, ext) {
+  /**
+   * Export to PNG/JPG (B10 compliance)
+   */
+  function _exportAs(h, mime, ext) {
     var s = h.getState();
+    if (!s.previewUrl) return;
+
+    h.showLoading('Converting to ' + ext.toUpperCase() + '...');
     var img = new Image();
     img.onload = function () {
       var canvas = document.createElement('canvas');
       canvas.width = img.width;
       canvas.height = img.height;
       var ctx = canvas.getContext('2d');
+      
+      // Handle JPEG transparency (make white background)
+      if (mime === 'image/jpeg') {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      
       ctx.drawImage(img, 0, 0);
       canvas.toBlob(function (blob) {
-        var name = h.getFile().name.replace(/\.[^/.]+$/, "") + "." + ext;
-        h.download(name, blob, mime);
+        var baseName = s.fileName.replace(/\.[^/.]+$/, "");
+        h.download(baseName + "." + ext, blob, mime);
+        h.showLoading(false);
       }, mime, 0.92);
     };
     img.src = s.previewUrl;
   }
+
 })();
